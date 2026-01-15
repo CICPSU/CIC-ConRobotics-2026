@@ -179,3 +179,60 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+
+# ---------------- ROS 2 / colcon ----------------
+build/
+install/
+log/
+*.bag
+*.bag.active
+*.db3
+rosbag2_*
+
+# ROS 2 generated/temporary
+**/COLCON_IGNORE
+**/.colcon/
+**/.ros/
+**/ros2_ws/build/
+**/ros2_ws/install/
+**/ros2_ws/log/
+
+# ---------------- Isaac Sim / Omniverse ----------------
+# (Caches and user data can be huge. Keep them out of git.)
+**/.nvidia-omniverse/
+**/omniverse/
+**/.ov/
+**/ov/
+**/isaacsim_cache/
+**/isaac-sim-cache/
+**/.cache/ov/
+**/.cache/nvidia/omniverse/
+
+# If you keep local USD caches or compiled assets in the repo tree:
+**/*.usd~ 
+**/*.usda~ 
+**/*.usdc~ 
+
+# ---------------- OS / Editors ----------------
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+*.code-workspace
+
+# ---------------- Large binaries (optional policy) ----------------
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.rar
+
+# Meshes / assets (optional - only if you do NOT want to version them)
+# *.stl
+# *.dae
+# *.obj
+# *.fbx
+# *.glb
+# *.gltf
