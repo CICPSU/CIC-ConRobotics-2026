@@ -1,0 +1,30 @@
+type: task
+frame: base_link
+end_effector: bucket_end_link
+unit: meter
+densify_dt: 0.10
+
+# A simple "dig-like" cycle in task space.
+# x,z are in meters in the base_link frame.
+# pitch is in radians in the X-Z plane (rotation about +Y).
+waypoints:
+  - t: 0.0
+    pose: {x: 1.20, y: 0.00, z: 0.45, pitch: -0.30}
+  - t: 2.0   # approach
+    pose: {x: 1.45, y: 0.00, z: 0.18, pitch: -0.65}
+  - t: 3.5   # penetrate
+    pose: {x: 1.55, y: 0.00, z: 0.12, pitch: -0.75}
+  - t: 5.0   # scoop arc (lift slightly while curling orientation up)
+    pose: {x: 1.42, y: 0.00, z: 0.22, pitch: -0.25}
+  - t: 7.0   # lift/carry
+    pose: {x: 1.25, y: 0.00, z: 0.55, pitch: -0.10}
+  - t: 9.0   # swing to dump (set y != 0 to force swing motion)
+    pose: {x: 1.25, y: 0.60, z: 0.55, pitch: -0.10}
+  - t: 10.0  # dump (pitch forward)
+    pose: {x: 1.25, y: 0.60, z: 0.55, pitch: 0.20}
+  - t: 12.0  # return home
+    pose: {x: 1.20, y: 0.00, z: 0.45, pitch: -0.30}
+
+ik:
+  solver: planar_approx
+  seed: previous

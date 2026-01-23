@@ -1,0 +1,46 @@
+joints:
+
+  swing_joint:
+    hardware_id: swing_motor
+    axis: z
+    direction: 1
+    zero_offset: 0.0
+    limits:
+      min: -3.14
+      max: 3.14
+
+  boom_joint:
+    hardware_id: boom_motor
+    axis: y
+    direction: -1
+    zero_offset: 0.0
+    limits:
+      min: -1.20
+      max: 0.30
+
+  arm_joint:
+    hardware_id: arm_motor
+    axis: y
+    direction: 1
+    zero_offset: 0.0
+    limits:
+      min: -1.50
+      max: 1.20
+
+  bucket_joint:
+    hardware_id: bucket_motor
+    axis: y
+    direction: 1
+    zero_offset: 0.0
+    limits:
+      min: -1.80
+      max: 1.20
+
+  bucket_end_joint:
+    hardware_id: bucket_end_motor
+    axis: x
+    direction: 1
+    zero_offset: 0.0
+    limits:
+      min: -1.57
+      max: 1.57

@@ -1,0 +1,60 @@
+type: joint
+unit: rad
+joints: [swing_joint, boom_joint, arm_joint, bucket_joint, bucket_end_joint]
+interp: linear
+densify_dt: 0.20
+
+keyframes:
+  # --- Home / settle ---
+  - t: 0.0
+    q: [0.00, -0.10, 0.60, -0.20, 0.0]
+  - t: 0.8
+    q: [0.00, -0.10, 0.60, -0.20, 0.0]
+
+  # --- Digging motion (same shape as your current v1) ---
+  - t: 2.0
+    q: [0.00, -0.28, 0.88, -0.18, 0.0]
+  - t: 3.0
+    q: [0.00, -0.34, 0.96, -0.16, 0.0]
+  - t: 4.8
+    q: [0.00, -0.33, 0.94, -0.75, 0.0]
+
+  # --- Lift / carry ---
+  - t: 6.8
+    q: [0.00, -0.12, 0.72, -0.72, 0.0]
+
+  # --- Start swing (your current 0.55 rad) ---
+  - t: 8.0
+    q: [0.55, -0.12, 0.72, -0.72, 0.0]
+
+  # --- Increase swing further for SIDE DUMP (bigger turn) ---
+  - t: 9.0
+    q: [1.25, -0.12, 0.72, -0.72, 0.0]
+
+  # --- Dump: open bucket ---
+  - t: 10.2
+    q: [1.25, -0.12, 0.72, 0.25, 0.0]
+  - t: 11.2
+    q: [1.25, -0.12, 0.72, 0.25, 0.0]
+
+  # --- Small shake to "drop" ---
+  - t: 11.6
+    q: [1.25, -0.12, 0.72, 0.15, 0.0]
+  - t: 12.0
+    q: [1.25, -0.12, 0.72, 0.25, 0.0]
+  - t: 12.4
+    q: [1.25, -0.12, 0.72, 0.15, 0.0]
+  - t: 12.8
+    q: [1.25, -0.12, 0.72, 0.25, 0.0]
+
+  # --- Close bucket back to carry ---
+  - t: 14.0
+    q: [1.25, -0.12, 0.72, -0.72, 0.0]
+
+  # --- Return swing ---
+  - t: 15.5
+    q: [0.55, -0.12, 0.72, -0.72, 0.0]
+
+  # --- Back to home ---
+  - t: 18.0
+    q: [0.00, -0.10, 0.60, -0.20, 0.0]
