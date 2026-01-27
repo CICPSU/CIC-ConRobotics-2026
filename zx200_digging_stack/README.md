@@ -11,13 +11,26 @@ Files:
 
 Quick start:
 1) From this folder:
-   python3 scoop_trajectory_server.py
+```bash
+source /opt/ros/jazzy/setup.bash
+export ROS_DOMAIN_ID = 10
+python3 scoop_trajectory_server.py
+```
 
 2) In another terminal:
-   python3 scoop_trajectory_client.py --spec specs/scoop_cycle_v1.yaml
+
+```bash
+source /opt/ros/jazzy/setup.bash
+export ROS_DOMAIN_ID = 10
+python3 scoop_trajectory_client.py --spec specs/scoop_cycle_v5.yaml
+```
 
 Task-space (IK) version:
-   python3 scoop_trajectory_client.py --spec specs/scoop_cycle_task_v1.yaml
+```bash
+source /opt/ros/jazzy/setup.bash
+export ROS_DOMAIN_ID = 10
+python3 scoop_trajectory_client.py --spec specs/scoop_cycle_task_v3.yaml
+```
 
 Notes:
 - YAML requires PyYAML. If you don't want to install it, use the .json specs.
