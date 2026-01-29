@@ -1,0 +1,66 @@
+# Task-space digging cycle spec (planar approx IK)
+# Units:
+#   - x, y, z: meters
+#   - pitch: radians
+# Time:
+#   - t: seconds (monotonic increasing)
+#
+# Notes:
+#   - This spec is consumed by scoop_trajectory_client.py (type=task).
+#   - Keep targets conservative (reachable) until the link lengths are confirmed.
+
+type: task
+
+# Reference frame for (x,y,z,pitch) targets used by the IK approximation.
+# The current implementation assumes the base frame.
+frame: base_link
+
+# Which link we treat as end-effector in the approximate IK model
+end_effector: bucket_end_link
+
+# IK settings
+ik:
+  # Seed joint values (radians). This helps IK converge and keeps motion smooth.
+  # You can update these based on your current "home" pose.
+  seed:
+    boom_joint: 0.20
+    arm_joint: 0.80
+    bucket_joint: -0.40
+
+  # "fixed" uses the seed above every time.
+  # "previous" uses the previous IK solution as the next seed (usually smoother).
+  seed_mode: previous
+
+# Trajectory sampling (smaller = smoother, more points)
+densify_dt: 0.10
+
+# Key waypoints (the client will densify between them)
+# y is optional; keep 0.0 for now.
+waypoints:
+  # 0) approach above ground (pre-dig)
+  - t: 0.0
+    pose: { x: 2.20, y: 0.0, z: 1.10, pitch: -0.10 }
+
+  # 1) drop to contact
+  - t: 2.0
+    pose: { x: 2.10, y: 0.0, z: 0.55, pitch: -0.35 }
+
+  # 2) cutting forward/down a bit
+  - t: 4.0
+    pose: { x: 2.40, y: 0.0, z: 0.40, pitch: -0.55 }
+
+  # 3) start curling / lifting (feel like "scooping")
+  - t: 6.0
+    pose: { x: 2.30, y: 0.0, z: 0.75, pitch: -0.25 }
+
+  # 4) lift higher (make it look like carrying)
+  - t: 8.0
+    pose: { x: 2.10, y: 0.0, z: 1.25, pitch: -0.10 }
+
+  # 5) carry pose (hold)
+  - t: 10.0
+    pose: { x: 2.00, y: 0.0, z: 1.30, pitch: -0.05 }
+
+  # 6) settle back slightly (end)
+  - t: 12.0
+    pose: { x: 2.10, y: 0.0, z: 1.15, pitch: -0.10 }

@@ -1,0 +1,81 @@
+type: task
+frame: base_link
+end_effector: bucket_end_link
+
+# Densification for smoother joint trajectory
+densify_dt: 0.10
+
+# Optional: append a constant joint (if your controller expects it)
+append_joints:
+  bucket_end_joint: 0.0
+
+ik:
+  solver: planar_approx
+  seed_mode: previous
+  seed:
+    boom_joint: 0.20
+    arm_joint: 0.80
+    bucket_joint: -0.40
+
+# Swing is merged into the IK result by the client.
+# Side dump to LEFT: +70 deg (~1.22 rad)
+swing:
+  joint: swing_joint
+  unit: rad
+  keyframes:
+    - { t: 0.0,  q: 0.0 }
+    - { t: 7.5,  q: 0.0 }     # keep forward during digging
+    - { t: 9.5,  q: 1.22 }    # swing to dump
+    - { t: 12.5, q: 1.22 }    # hold while dumping
+    - { t: 14.0, q: 0.0 }     # return home
+
+# Task-space waypoints for bucket_end_link (X-Z plane dominant).
+# Keep within reach of planar approximation; tune X/Z if IK fails.
+waypoints:
+  # 0) home-ish (safe)
+  - t: 0.0
+    pose: { x: 2.10, y: 0.0, z: 1.10, pitch: -0.10 }
+
+  # 1) approach
+  - t: 2.0
+    pose: { x: 2.05, y: 0.0, z: 0.70, pitch: -0.25 }
+
+  # 2) contact / cut entry
+  - t: 3.5
+    pose: { x: 2.15, y: 0.0, z: 0.52, pitch: -0.40 }
+
+  # 3) cutting deeper forward a bit
+  - t: 5.0
+    pose: { x: 2.35, y: 0.0, z: 0.42, pitch: -0.50 }
+
+  # 4) scoop peak (curl deeper briefly to look like "cutting + scooping")
+  - t: 5.8
+    pose: { x: 2.30, y: 0.0, z: 0.48, pitch: -0.68 }
+
+  # 5) lift start (bring pitch back to "carry" while lifting)
+  - t: 7.0
+    pose: { x: 2.15, y: 0.0, z: 0.95, pitch: -0.20 }
+
+  # 6) lift high (make it look like loading onto truck bed)
+  - t: 8.5
+    pose: { x: 2.00, y: 0.0, z: 1.35, pitch: -0.10 }
+
+  # 7) carry hold (gives weight / anticipation before swing completes)
+  - t: 9.5
+    pose: { x: 1.95, y: 0.0, z: 1.38, pitch: -0.20 }
+
+  # 8) above dump (slightly forward / higher)
+  - t: 11.0
+    pose: { x: 2.05, y: 0.0, z: 1.45, pitch: -0.08 }
+
+  # 9) dump open (pitch positive to look like dumping)
+  - t: 12.0
+    pose: { x: 2.05, y: 0.0, z: 1.42, pitch: 0.45 }
+
+  # 10) dump close (return to carry)
+  - t: 12.7
+    pose: { x: 2.00, y: 0.0, z: 1.35, pitch: -0.12 }
+
+  # 11) return (home-ish)
+  - t: 14.0
+    pose: { x: 2.10, y: 0.0, z: 1.10, pitch: -0.10 }
