@@ -42,8 +42,7 @@ cd ws_conrobotics
 ```
 ### 3. Clone the repository
 ```bash
-gh auth login
-gh repo clone CICPSU/CIC-ConRobotics-2026
+git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
 ```
 After cloning, your directory structure should look like this:
 ~/ws_conrobotics/
