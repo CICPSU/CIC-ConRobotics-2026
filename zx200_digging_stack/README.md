@@ -17,7 +17,7 @@ Quick start:
 
 1) From this folder:
 ```bash
-cd zx200_digging_stack
+cd ~/ws_conrobotics/zx200_digging_stack
 source /opt/ros/jazzy/setup.bash
 export ROS_DOMAIN_ID = 10
 python3 scoop_trajectory_server.py
@@ -26,7 +26,7 @@ python3 scoop_trajectory_server.py
 2) In another terminal:
 
 ```bash
-cd zx200_digging_stack
+cd ~/ws_conrobotics/zx200_digging_stack
 source /opt/ros/jazzy/setup.bash
 export ROS_DOMAIN_ID=10
 python3 scoop_trajectory_client.py --spec specs/scoop_cycle_side_dump_v5.yaml
