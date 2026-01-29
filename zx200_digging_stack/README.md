@@ -11,9 +11,13 @@ Files:
 
 Quick start:
 0) Open Isaac SIM and .usd file in a different terminal
+	•	Load the excavator .usd
+	•	Ensure the ROS bridge is active
+	•	Isaac should be idle but running
 
 1) From this folder:
 ```bash
+cd zx200_digging_stack
 source /opt/ros/jazzy/setup.bash
 export ROS_DOMAIN_ID = 10
 python3 scoop_trajectory_server.py
@@ -22,15 +26,16 @@ python3 scoop_trajectory_server.py
 2) In another terminal:
 
 ```bash
+cd zx200_digging_stack
 source /opt/ros/jazzy/setup.bash
-export ROS_DOMAIN_ID = 10
-python3 scoop_trajectory_client.py --spec specs/scoop_cycle_v5.yaml
+export ROS_DOMAIN_ID=10
+python3 scoop_trajectory_client.py --spec specs/scoop_cycle_side_dump_v5.yaml
 ```
 
 Task-space (IK) version:
 ```bash
 source /opt/ros/jazzy/setup.bash
-export ROS_DOMAIN_ID = 10
+export ROS_DOMAIN_ID=10
 python3 scoop_trajectory_client.py --spec specs/scoop_cycle_task_v3.yaml
 ```
 
