@@ -10,6 +10,8 @@ Files:
 - specs/*.yaml / specs/*.json    Motion specs (edit these to iterate)
 
 Quick start:
+0) Open Isaac SIM and .usd file in a different terminal
+
 1) From this folder:
 ```bash
 source /opt/ros/jazzy/setup.bash
