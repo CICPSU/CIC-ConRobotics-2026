@@ -44,7 +44,8 @@ from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
 
-from robot_model import RobotModel
+from robot_model_v2 import RobotModel
+
 
 def seconds_to_duration(t: float) -> Duration:
     d = Duration()
@@ -214,7 +215,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--spec", required=True, help="Path to spec file (.yaml or .json)")
     parser.add_argument("--action", default="/upper_arm_controller/follow_joint_trajectory", help="Action name")
-    parser.add_argument("--urdf", default="robot/zx200.urdf", help="URDF path (used by IK task specs)")
+    parser.add_argument("--urdf", default="robot/modelexcavator.urdf", help="URDF path (used by IK task specs)")
     args = parser.parse_args()
 
     spec = load_spec(args.spec)
