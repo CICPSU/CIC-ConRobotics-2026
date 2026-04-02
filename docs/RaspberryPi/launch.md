@@ -6,10 +6,12 @@ These steps describe how to establish stable ROS 2 communication between a robot
 Set the ROS domain ID for the robot.
 Make sure this matches the ROS domain ID used by Isaac Sim and the desktop ROS terminal.
 
-Specify the IP addresses of the desktop computer and the Raspberry Pi using ROS_STATIC_PEERS.
+Specify the IP addresses of the desktop computer and the Raspberry Pi using ROS_STATIC_PEERS. 
 In the example below, the IP addresses correspond to the desktop computer and Dumptruck_03.
+NOTE: IP address should be registered in the main Linux desktop computer. Please be aware of this if this is a new Raspberry Pi you are trying to use. You will not be able to see ROS topics until you register.
 
 ```bash
+source /opt/ros/jazzy/setup.bash
 export ROS_DOMAIN_ID=10
 export ROS_AUTOMATIC_DISCOVERY=SUBNET
 export ROS_STATIC_PEERS="10.170.32.181;10.170.32.194"
