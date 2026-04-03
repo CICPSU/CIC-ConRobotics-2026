@@ -36,7 +36,7 @@ Open Isaac SIM and .usd file in a different terminal
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026/model_excavator/model_digging_stack
 source /opt/ros/jazzy/setup.bash
-export ROS_DOMAIN_ID = 10
+export ROS_DOMAIN_ID=10
 python3 scoop_trajectory_server_v2.py
 ```
 
