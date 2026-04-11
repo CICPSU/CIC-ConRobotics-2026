@@ -7,7 +7,7 @@ This version is aligned with the current working setup:
 - `specs/scoop_cycle_side_dump_v5.yaml` is the current working motion spec.
 - Isaac Sim has already been verified to run this stack successfully.
 
-## Files
+## Files in the folder
 
 - `robot_model_v2.py`
   Shared URDF parser for joints, limits, and chain information.
