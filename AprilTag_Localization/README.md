@@ -28,29 +28,39 @@ sudo apt install \
 ## 2. Start Camera
 Terminal 1
 ```bash
-ros2 run usb_cam usb_cam_node_exe \
-  --ros-args --params-file config/usb_cam_obsbot.yaml
+source /opt/ros/jazzy/setup.bash
+ros2 run usb_cam usb_cam_node_exe --ros-args --params-file ~/usb_cam_obsbot.yaml
 ```
 
 ## 3. Check image
 ```bash
-ros2 run usb_cam usb_cam_node_exe \
+source /opt/ros/jazzy/setup.bash
+ros2 run rqt_image_view rqt_image_view
 ```
 
 ## 4. Run AprilTag detection
 Terminal 2
 ```bash
+source /opt/ros/jazzy/setup.bash
 ros2 run apriltag_ros apriltag_node --ros-args \
   -r image_rect:=/image_raw \
   -r camera_info:=/camera_info \
-  --params-file config/tags.yaml
+  --params-file ./tags.yaml
 ```
 
 ## 5. Check output
 Terminal 3
 ```bash
-ros2 topic echo /tf | grep tag36h11_0
+source /opt/ros/jazzy/setup.bash
+ros2 topic echo /tf | grep -A 20 tag36h11_0
 ```
+Terminal 4
+```bash
+source /opt/ros/jazzy/setup.bash
+python3 ./read_tag_tf.py
+```
+
+
 
 Notes
 * Tag size must match real-world size in tags.yaml
