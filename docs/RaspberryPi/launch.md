@@ -48,4 +48,22 @@ export ROS_STATIC_PEERS="10.170.32.181;10.170.32.194"
 /opt/isaacsim/isaac-sim.sh
 ```
 
+### 4. ssh 
+Secure SHell (SSH) potocol is a cryptographic network protocol used to securely log into and execute commands on remote servers.
+You can connect to RaspberryPi from your laptop by below commands. Make sure you are connected to the University VPN.
+
+```bash
+ssh dumptruck_02@10.190.32.193
+# ssh user_name_of_the_RaspberryPi_you_are_trying_to_login@IPaddress
+```
+You will be prompt to enter password and you are connected!
+
+To activate ssh on the RaspberryPi you need to run the below commands.
+```bash
+sudo apt update
+sudo apt install openssh-server -y 
+sudo systemctl enable ssh
+sudo systemctl start ssh
+```
+
 
