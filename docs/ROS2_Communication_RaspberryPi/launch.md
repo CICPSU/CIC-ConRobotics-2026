@@ -70,7 +70,7 @@ sudo systemctl start ssh
 
 There is a strong extension in VSCode you can add called "RemoteSSH". This allows you to see, edit, and execute files on the RaspberryPi from your laptop. Once you download remote ssh, open settings on SSH. Then locate to /home/XXX/.ssh/config. Copy below.
 
-''' bash
+```bash
 Host dumptruck1
     HostName 10.170.32.192
     User besure
@@ -95,38 +95,38 @@ Host excavator2
     HostName 10.170.32.191
     User besure
     IdentityFile ~/.ssh/id_ed25519
-'''
+```
 
 You also need to create ssh key so that you don't need to type password everytime.
 On your laptop, create ssh key.
-''' bash
+```bash
 ssh-keygen -t ed25519
-'''
+```
 
 Then enable ssh key for each RapberryPi by running below commands, again on your laptop.
 For RaspberryPi Dumptruck 1:
-''' bash
+```bash
 ssh-copy-id besure@10.170.32.192
-'''
+```
 
 For RaspberryPi Dumptruck 2:
-''' bash
+```bash
 ssh-copy-id dumptruck_02@10.170.32.193
-'''
+```
 
 For RaspberryPi Dumptruck 3:
-''' bash
+```bash
 ssh-copy-id besure@10.170.32.194
-'''
+```
 
 For RaspberryPi Excavator 1:
-''' bash
+```bash
 ssh-copy-id besure@10.170.32.182
-'''
+```
 
 For RaspberryPi Excavator 2:
-''' bash
+```bash
 ssh-copy-id besure@10.170.32.191
-'''
+```
 
 Once you click the arrow besides the Host name, you are connected through SSH! You can now run commands on RaspberryPi from your laptop.
