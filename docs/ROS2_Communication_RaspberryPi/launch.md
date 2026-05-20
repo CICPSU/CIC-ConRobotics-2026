@@ -1,4 +1,4 @@
-## RaspberryPi
+## Establish ROS Communication with RaspberryPi
 
 These steps describe how to establish stable ROS 2 communication between a robot (Raspberry Pi) and a Linux desktop computer running Isaac Sim on the PSU IoT network.
 
@@ -66,4 +66,67 @@ sudo systemctl enable ssh
 sudo systemctl start ssh
 ```
 
+### 5. remote ssh 
 
+There is a strong extension in VSCode you can add called "RemoteSSH". This allows you to see, edit, and execute files on the RaspberryPi from your laptop. Once you download remote ssh, open settings on SSH. Then locate to /home/XXX/.ssh/config. Copy below.
+
+''' bash
+Host dumptruck1
+    HostName 10.170.32.192
+    User besure
+    IdentityFile ~/.ssh/id_ed25519
+
+Host dumptruck2
+    HostName 10.170.32.193
+    User dumptruck_02
+    IdentityFile ~/.ssh/id_ed25519
+
+Host dumptruck3
+    HostName 10.170.32.194
+    User besure
+    IdentityFile ~/.ssh/id_ed25519
+
+Host excavator1
+    HostName 10.170.32.182
+    User besure
+    IdentityFile ~/.ssh/id_ed25519
+
+Host excavator2
+    HostName 10.170.32.191
+    User besure
+    IdentityFile ~/.ssh/id_ed25519
+'''
+
+You also need to create ssh key so that you don't need to type password everytime.
+On your laptop, create ssh key.
+''' bash
+ssh-keygen -t ed25519
+'''
+
+Then enable ssh key for each RapberryPi by running below commands, again on your laptop.
+For RaspberryPi Dumptruck 1:
+''' bash
+ssh-copy-id besure@10.170.32.192
+'''
+
+For RaspberryPi Dumptruck 2:
+''' bash
+ssh-copy-id dumptruck_02@10.170.32.193
+'''
+
+For RaspberryPi Dumptruck 3:
+''' bash
+ssh-copy-id besure@10.170.32.194
+'''
+
+For RaspberryPi Excavator 1:
+''' bash
+ssh-copy-id besure@10.170.32.182
+'''
+
+For RaspberryPi Excavator 2:
+''' bash
+ssh-copy-id besure@10.170.32.191
+'''
+
+Once you click the arrow besides the Host name, you are connected through SSH! You can now run commands on RaspberryPi from your laptop.
