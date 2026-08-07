@@ -1,0 +1,23 @@
+# landmarks_example.yaml
+# Fixed floor AprilTags used to calibrate camera/map coordinates.
+# Put these x,y values in the SAME absolute map coordinate system as waypoints_with_actions.yaml.
+# frame should match the AprilTag TF child_frame_id from apriltag_ros, e.g., tag36h11_1.
+
+landmarks:
+  1:
+    frame: tag36h11_16
+    x: -1.6
+    y: 0.3
+    yaw: 0.0
+
+  2:
+    frame: tag36h11_17
+    x: 1.5
+    y: -1.0
+    yaw: 0.0
+
+  3:
+    frame: tag36h11_18
+    x: 1.2
+    y: 0.5
+    yaw: 0.0

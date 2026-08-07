@@ -1,0 +1,4 @@
+bucket_action_node:
+  ros__parameters:
+    servo_center: 900
+    servo_dump: 1300

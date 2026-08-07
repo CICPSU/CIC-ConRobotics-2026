@@ -11,13 +11,13 @@ folder = os.path.expanduser("~/Diffdrive")
 
 commands = [
     f"""source /opt/ros/jazzy/setup.bash && cd {folder} && python3 Motor_Drive_Node_multi.py --ros-args \
--p cmd_vel_topic:=/truck2/cmd_vel \
--p wheel_states_topic:=/truck2/wheel_states \
--p node_name_suffix:=truck2""",
+-p cmd_vel_topic:=/truck1/cmd_vel \
+-p wheel_states_topic:=/truck1/wheel_states \
+-p node_name_suffix:=truck1""",
 
-    f"""source /opt/ros/jazzy/setup.bash && cd {folder} && python3 bucket_action_node_multi_truck2.py --ros-args \
--p bucket_action_cmd_topic:=/truck2/bucket_action_cmd \
--p bucket_action_status_topic:=/truck2/bucket_action_status"""
+    f"""source /opt/ros/jazzy/setup.bash && cd {folder} && python3 bucket_action_node_multi_truck1.py --ros-args \
+-p bucket_action_cmd_topic:=/truck1/bucket_action_cmd \
+-p bucket_action_status_topic:=/truck1/bucket_action_status"""
 ]
 
 processes = []
@@ -32,6 +32,6 @@ try:
         p.wait()
 
 except KeyboardInterrupt:
-    print("\nStopping truck2 Pi nodes...")
+    print("\nStopping truck1 Pi nodes...")
     for p in processes:
         os.killpg(os.getpgid(p.pid), signal.SIGINT)
