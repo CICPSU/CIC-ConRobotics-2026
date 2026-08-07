@@ -1,0 +1,34 @@
+/**:
+  ros__parameters:
+    image_transport: raw
+
+    family: 36h11
+    max_hamming: 0
+
+    detector:
+      threads: 2
+      decimate: 1.0
+      blur: 0.0
+      refine: true
+      sharpening: 0.25
+      debug: false
+
+    pose_estimation_method: "pnp"
+
+    tag:
+      # 0,1,2 = trucks. 16,17,18 = fixed floor landmarks.
+      ids: [0, 1, 2,3, 16, 17, 18]
+
+      frames:
+        [
+          "tag36h11_0",
+          "tag36h11_1",
+          "tag36h11_2",
+          "tag36h11_3",
+          "tag36h11_16",
+          "tag36h11_17",
+          "tag36h11_18"
+        ]
+
+      # Truck tags are 8.0 cm. Landmark tags are 10.8 cm.
+      sizes: [0.080,0.080,0.080, 0.080, 0.108, 0.108, 0.108]
