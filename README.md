@@ -21,8 +21,9 @@ CIC-ConRobotics-2026/
 │   │   └── launch.md
 │   └── isaac_sim/
 │       └── launch.md
-├── zx200_digging_stack/  # ROS2 and Isaac Sim packages for the real size excavator(zx200) control
-├── model_digging_stack/  # ROS2 and Isaac Sim packages for the model excavator control   
+├── dumptruck_ros2_python_ based/  # Python based ROS2 packages for the model dump trucks
+├── zx200_digging_stack_IsaacSim/  # ROS2 and Isaac Sim packages for the real size excavator(zx200) control
+├── model_digging_stack_IsaacSim/  # ROS2 and Isaac Sim packages for the model excavator control   
 ├── .gitattributes
 ├── .gitignore
 └── README.md
@@ -60,7 +61,7 @@ You are now ready to continue with the next steps.
 
 ## Project status (important)
 
-These directories (`zx200_digging_stack` and 'model_excavator') is **NOT a ROS 2 package** at the moment.
+These directories are **NOT a ROS 2 package** at the moment.
 
 - There is **no `package.xml`**
 - There is **no `setup.py`**

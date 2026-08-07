@@ -27,14 +27,15 @@ export ROS_DOMAIN_ID=10
 export ROS_AUTOMATIC_DISCOVERY=SUBNET
 export ROS_STATIC_PEERS="10.170.32.181;10.170.32.194"
 ```
-If you want to control or monitor a second robot, open a separate terminal and assign a different ROS domain ID.
+If you want to control or monitor an additional robot, add it in the peers.
 ```bash
 source /opt/ros/jazzy/setup.bash
-export ROS_DOMAIN_ID=11
+export ROS_DOMAIN_ID=10
 export ROS_AUTOMATIC_DISCOVERY=SUBNET
-export ROS_STATIC_PEERS="10.170.32.181;10.170.32.194"
+export ROS_STATIC_PEERS="10.170.32.181;10.170.32.194;10.170.32.193"
 ```
-Each terminal operates in a single ROS domain, so multiple robots require separate terminals.
+You would only need to update ROS_ID if you prefer to have a separate set of network.
+
 
 ### 3. Desktop computer (IsaacSIM terminal)
 For the Isaac Sim launch terminal:
