@@ -1,6 +1,6 @@
 /**:
   ros__parameters:
-    video_device: "/dev/video4"
+    video_device: "/dev/video0"
     image_width: 1920
     image_height: 1080
     framerate: 30.0

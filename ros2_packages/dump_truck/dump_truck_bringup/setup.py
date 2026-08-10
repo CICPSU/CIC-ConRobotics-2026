@@ -3,7 +3,9 @@ from glob import glob
 
 from setuptools import find_packages, setup
 
+
 package_name = 'dump_truck_bringup'
+
 
 setup(
     name=package_name,
@@ -19,31 +21,51 @@ setup(
             ['package.xml'],
         ),
         (
-            os.path.join('share', package_name, 'launch'),
+            os.path.join(
+                'share',
+                package_name,
+                'launch',
+            ),
             glob('launch/*.launch.py'),
         ),
         (
-            os.path.join('share', package_name, 'config', 'trucks'),
+            os.path.join(
+                'share',
+                package_name,
+                'config',
+                'trucks',
+            ),
             glob('config/trucks/*.yaml'),
         ),
         (
-            os.path.join('share', package_name, 'config', 'waypoints'),
-            glob('config/waypoints/*.yaml'),
-        ),
-        (
-            os.path.join('share', package_name, 'config', 'localization'),
+            os.path.join(
+                'share',
+                package_name,
+                'config',
+                'localization',
+            ),
             glob('config/localization/*.yaml'),
         ),
         (
-            os.path.join('share', package_name, 'config', 'hardware'),
+            os.path.join(
+                'share',
+                package_name,
+                'config',
+                'hardware',
+            ),
             glob('config/hardware/*.yaml'),
         ),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+    ],
     zip_safe=True,
     maintainer='njh5734',
     maintainer_email='njh5734@psu.edu',
-    description='Launch and configuration package for the scaled dump truck system',
+    description=(
+        'Launch and configuration package '
+        'for the scaled dump truck system'
+    ),
     license='Apache-2.0',
     extras_require={
         'test': [
