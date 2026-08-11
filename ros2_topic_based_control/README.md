@@ -100,13 +100,78 @@ Each new terminal requires the network setup script to be sourced again.
 
 ---
 
-## 3. Initial Build
+## 3. Initial Setup and Build
+
+### If the Repository Has Not Been Cloned Yet
+
+Create the workspace directory:
+
+```bash
+mkdir -p ~/ws_conrobotics
+cd ~/ws_conrobotics
+```
+
+Clone the repository:
+
+```bash
+git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
+```
+
+Enter the repository:
+
+```bash
+cd CIC-ConRobotics-2026
+```
+
+Switch to the development branch:
+
+```bash
+git checkout dev
+```
+
+Verify the current branch:
+
+```bash
+git branch --show-current
+```
+
+Expected output:
+
+```text
+dev
+```
+
+---
+
+### If the Repository Already Exists
 
 From the repository root:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
+```
+
+Make sure the repository is on the `dev` branch:
+
+```bash
+git checkout dev
+```
+
+Pull the latest changes:
+
+```bash
 git pull origin dev
+```
+
+---
+
+### Build on the ROS PC
+
+From the repository root:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
 source /opt/ros/jazzy/setup.bash
 
 colcon build \
@@ -124,11 +189,18 @@ After building:
 source install/setup.bash
 ```
 
-On a Raspberry Pi, the following packages are required for the dump truck system:
+---
+
+### Build on a Raspberry Pi
+
+On a Raspberry Pi, the dump truck system requires the following ROS 2 packages:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+git checkout dev
 git pull origin dev
+
 source /opt/ros/jazzy/setup.bash
 
 colcon build \
@@ -139,11 +211,13 @@ colcon build \
     dump_truck_bringup
 ```
 
-Then:
+After building:
 
 ```bash
 source install/setup.bash
 ```
+
+For a newly configured Raspberry Pi, `git` and `colcon` must also be installed before cloning and building the repository.
 
 ---
 
