@@ -97,6 +97,71 @@ Tag/Odom Fusion
 
 ## 3. Initial Build
 
+
+### If the Repository Has Not Been Cloned Yet
+
+Create the workspace directory:
+
+```bash
+mkdir -p ~/ws_conrobotics
+cd ~/ws_conrobotics
+```
+
+Clone the repository:
+
+```bash
+git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
+```
+
+Enter the repository:
+
+```bash
+cd CIC-ConRobotics-2026
+```
+
+Switch to the development branch:
+
+```bash
+git checkout dev
+```
+
+Verify the current branch:
+
+```bash
+git branch --show-current
+```
+
+Expected output:
+
+```text
+dev
+```
+
+---
+
+### If the Repository Already Exists
+
+From the repository root:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+```
+
+Make sure the repository is on the `dev` branch:
+
+```bash
+git checkout dev
+```
+
+Pull the latest changes:
+
+```bash
+git pull origin dev
+```
+
+---
+
+
 From the repository root:
 
 ```bash
