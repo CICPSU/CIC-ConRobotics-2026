@@ -1,0 +1,13 @@
+scenario_name: truck1_then_truck3
+
+steps:
+
+  - id: truck1_route
+    robot: truck1
+    task_type: waypoint
+    task_file: truck1_waypoints.yaml
+
+  - id: truck3_route
+    robot: truck3
+    task_type: waypoint
+    task_file: truck3_waypoints.yaml

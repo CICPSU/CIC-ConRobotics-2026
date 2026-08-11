@@ -1,6 +1,13 @@
 from launch import LaunchDescription
-from launch.actions import TimerAction
-from launch.substitutions import PathJoinSubstitution
+from launch.actions import (
+    DeclareLaunchArgument,
+    TimerAction,
+)
+from launch.conditions import IfCondition
+from launch.substitutions import (
+    LaunchConfiguration,
+    PathJoinSubstitution,
+)
 
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -25,6 +32,22 @@ def generate_launch_description():
     ])
 
     # ---------------------------------------------------------
+    # Launch arguments
+    # ---------------------------------------------------------
+
+    start_camera_arg = DeclareLaunchArgument(
+        'start_camera',
+        default_value='true',
+        description='Start the overhead USB camera.',
+    )
+
+    start_apriltag_arg = DeclareLaunchArgument(
+        'start_apriltag',
+        default_value='true',
+        description='Start the AprilTag detector.',
+    )
+
+    # ---------------------------------------------------------
     # USB camera
     # ---------------------------------------------------------
 
@@ -36,6 +59,9 @@ def generate_launch_description():
         parameters=[
             camera_config,
         ],
+        condition=IfCondition(
+            LaunchConfiguration('start_camera')
+        ),
     )
 
     # ---------------------------------------------------------
@@ -46,7 +72,7 @@ def generate_launch_description():
     #   image_rect  -> /image_raw
     #   camera_info -> /camera_info
     #
-    # Start 2 seconds after the camera, matching the old runner.
+    # Start 2 seconds after launch.
     # ---------------------------------------------------------
 
     apriltag_node = Node(
@@ -61,6 +87,9 @@ def generate_launch_description():
             ('image_rect', '/image_raw'),
             ('camera_info', '/camera_info'),
         ],
+        condition=IfCondition(
+            LaunchConfiguration('start_apriltag')
+        ),
     )
 
     delayed_apriltag = TimerAction(
@@ -71,6 +100,8 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        start_camera_arg,
+        start_apriltag_arg,
         usb_cam_node,
         delayed_apriltag,
     ])
