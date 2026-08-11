@@ -1,6 +1,6 @@
 # ROS2 Dump Truck
 This repository contains ROS2 nodes for controlling a small differential-drive dump truck using Raspberry Pi, pigpio, wheel encoders, and waypoint-based navigation using pure-pursuit.
-This directory contains the verified standalone implementation. Scripts are executed directly with Python and are not installed as ROS 2 packages. The packaged implementation is being developed under: `ros2_packages/dump_truck/`
+This directory contains the verified standalone implementation. Scripts are executed directly with Python and are not installed as ROS 2 packages. The packaged implementation is being developed under: `ros2_topic_based_control/dump_truck/`
 
 ## System Architecture
 Raspberry Pi:
