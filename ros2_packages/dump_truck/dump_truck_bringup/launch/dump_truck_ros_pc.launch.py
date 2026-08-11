@@ -7,19 +7,55 @@ from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 import os
+import yaml
+
+
+def load_node_parameters(yaml_path, node_key):
+    """
+    Load ros__parameters for one node from the truck-specific YAML.
+
+    Example YAML:
+
+    tag_odom_fusion_landmarks_node:
+      ros__parameters:
+        robot_tag_child_frame: tag36h11_0
+        tag_yaw_offset: 1.57079632679
+    """
+
+    if not os.path.isfile(yaml_path):
+        raise RuntimeError(
+            f'Truck configuration file not found: {yaml_path}'
+        )
+
+    with open(yaml_path, 'r') as file:
+        data = yaml.safe_load(file) or {}
+
+    node_section = data.get(node_key, {})
+    parameters = node_section.get('ros__parameters', {})
+
+    if not parameters:
+        raise RuntimeError(
+            f'No ros__parameters found for "{node_key}" '
+            f'in {yaml_path}'
+        )
+
+    return parameters
 
 
 def launch_setup(context, *args, **kwargs):
+
     # ---------------------------------------------------------
-    # Resolve truck name
+    # Truck name
     #
     # Examples:
     #   truck1
-    #   truck2
-    #   dumptruck_03
+    #   truck3
+    #   truck4
     # ---------------------------------------------------------
 
-    truck_name = LaunchConfiguration('truck_name').perform(context)
+    truck_name = LaunchConfiguration(
+        'truck_name'
+    ).perform(context)
 
     # ---------------------------------------------------------
     # Package paths
@@ -44,7 +80,22 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ---------------------------------------------------------
-    # Truck-specific ROS topics
+    # Load truck-specific localization parameters
+    #
+    # We load them here as a Python dictionary instead of
+    # passing the YAML file directly to the node.
+    #
+    # This avoids parameter-file matching problems once the
+    # node is placed inside /truckX namespace.
+    # ---------------------------------------------------------
+
+    fusion_truck_parameters = load_node_parameters(
+        truck_hardware_yaml,
+        'tag_odom_fusion_landmarks_node',
+    )
+
+    # ---------------------------------------------------------
+    # Truck-specific topics
     # ---------------------------------------------------------
 
     wheel_states_topic = (
@@ -60,7 +111,7 @@ def launch_setup(context, *args, **kwargs):
     )
 
     # ---------------------------------------------------------
-    # Truck-specific TF frame names
+    # Truck-specific TF frames
     # ---------------------------------------------------------
 
     odom_frame = (
@@ -78,20 +129,25 @@ def launch_setup(context, *args, **kwargs):
     # ---------------------------------------------------------
     # 1. Wheel-state odometry
     #
+    # Node:
+    #   /truckX/odometry
+    #
     # Input:
-    #   /<truck_name>/wheel_states
+    #   /truckX/wheel_states
     #
     # Output:
-    #   /<truck_name>/odom
-    #
-    # TF:
-    #   Disabled here.
+    #   /truckX/odom
     # ---------------------------------------------------------
 
     odometry_node = Node(
         package='dump_truck_control',
         executable='odometry_node',
+
+        namespace=truck_name,
+        name='odometry',
+
         output='screen',
+
         parameters=[
             {
                 'wheel_states_topic':
@@ -115,42 +171,31 @@ def launch_setup(context, *args, **kwargs):
     # ---------------------------------------------------------
     # 2. AprilTag + odometry fusion
     #
-    # Common parameters stay here.
+    # Node:
+    #   /truckX/tag_odom_fusion
     #
-    # Truck-specific parameters such as:
+    # Truck-specific values are loaded from:
     #
-    #   robot_tag_child_frame
-    #   tag_yaw_offset
-    #   odom_x_scale
-    #   odom_y_scale
-    #   odom_yaw_scale
+    #   config/hardware/truckX.yaml
     #
-    # are loaded from:
-    #
-    #   config/hardware/<truck_name>.yaml
-    #
+    # Common camera/environment values remain here.
     # ---------------------------------------------------------
 
     tag_odom_fusion_node = Node(
         package='dump_truck_control',
         executable='tag_odom_fusion_node',
+
+        namespace=truck_name,
+        name='tag_odom_fusion',
+
         output='screen',
+
         parameters=[
-            truck_hardware_yaml,
+            # Truck-specific values
+            fusion_truck_parameters,
+
+            # Common environment/fusion values
             {
-                'odom_topic':
-                    odom_topic,
-
-                'fused_odom_topic':
-                    fused_odom_topic,
-
-                'fused_child_frame':
-                    fused_child_frame,
-
-                # ---------------------------------------------
-                # Common fusion settings
-                # ---------------------------------------------
-
                 'alpha':
                     0.03,
 
@@ -169,22 +214,32 @@ def launch_setup(context, *args, **kwargs):
                 'use_initial_yaw_alignment':
                     True,
 
-                # ---------------------------------------------
-                # Shared landmark map
-                # ---------------------------------------------
-
                 'landmarks_yaml':
                     landmarks_yaml,
+            },
+
+            # Dynamically generated Truck-specific ROS values
+            {
+                'odom_topic':
+                    odom_topic,
+
+                'fused_odom_topic':
+                    fused_odom_topic,
+
+                'fused_child_frame':
+                    fused_child_frame,
             },
         ],
     )
 
     # ---------------------------------------------------------
-    # Preserve startup timing
+    # Startup sequence
     #
-    #   0 sec -> odometry
-    #   1 sec -> AprilTag / odometry fusion
+    # 0 sec:
+    #   /truckX/odometry
     #
+    # 1 sec:
+    #   /truckX/tag_odom_fusion
     # ---------------------------------------------------------
 
     delayed_fusion = TimerAction(
@@ -202,22 +257,11 @@ def launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
 
-    # ---------------------------------------------------------
-    # Required robot identifier
-    #
-    # Examples:
-    #
-    #   truck1
-    #   dumptruck_03
-    #
-    # ---------------------------------------------------------
-
     truck_name_argument = DeclareLaunchArgument(
         'truck_name',
         description=(
-            'Unique dump-truck name used for ROS topics, '
-            'TF frames, and hardware configuration file. '
-            'Example: dumptruck_03'
+            'Unique dump truck name. '
+            'Examples: truck1, truck3, truck4'
         ),
     )
 
