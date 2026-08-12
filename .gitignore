@@ -238,3 +238,6 @@ Thumbs.db
 # *.fbx
 # *.glb
 # *.gltf
+
+# ---------------- Runtime logs ----------------
+runtime_logs/

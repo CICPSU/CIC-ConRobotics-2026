@@ -1,4 +1,4 @@
-scenario_name: truck1_then_truck3
+scenario_name: truck1_wait_truck3
 
 steps:
 
@@ -7,6 +7,10 @@ steps:
     robot: truck1
     task_type: waypoint
     task_file: truck1_waypoints.yaml
+
+  - id: wait_after_truck1
+    type: wait
+    duration: 3.0
 
   - id: truck3_route
     type: task

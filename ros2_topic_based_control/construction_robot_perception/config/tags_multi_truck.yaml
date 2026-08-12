@@ -17,7 +17,7 @@
 
     tag:
       # 0,1,2 = trucks. 16,17,18 = fixed floor landmarks.
-      ids: [0, 1, 2,3, 16, 17, 18]
+      ids: [0, 1, 2, 3, 4, 16, 17, 18]
 
       frames:
         [
@@ -25,6 +25,7 @@
           "tag36h11_1",
           "tag36h11_2",
           "tag36h11_3",
+          "tag36h11_4",
           "tag36h11_16",
           "tag36h11_17",
           "tag36h11_18"

@@ -11,6 +11,12 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -19,6 +25,7 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import String
 
 from construction_site_interfaces.action import ExecuteRobotTask
+from construction_site_interfaces.msg import RobotStatus
 
 
 def normalize_angle(angle):
@@ -74,8 +81,6 @@ def resolve_waypoints_yaml(task_file):
 
     # ---------------------------------------------------------
     # 2. Source tree
-    #
-    # Find repository root by walking upward from this file.
     # ---------------------------------------------------------
 
     current_path = os.path.realpath(__file__)
@@ -292,12 +297,16 @@ class DumpTruckWaypointActionServer(Node):
             f'/{self.truck_name}/bucket_action_status'
         )
 
+        self.status_topic = (
+            f'/{self.truck_name}/status'
+        )
+
         self.action_name = (
             f'/{self.truck_name}/execute_robot_task'
         )
 
         # -----------------------------------------------------
-        # ROS publishers / subscribers
+        # ROS publishers
         # -----------------------------------------------------
 
         self.cmd_pub = self.create_publisher(
@@ -311,6 +320,29 @@ class DumpTruckWaypointActionServer(Node):
             self.bucket_action_cmd_topic,
             10,
         )
+
+        # -----------------------------------------------------
+        # Robot status QoS
+        #
+        # Keep the latest status available for late subscribers.
+        # -----------------------------------------------------
+
+        status_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+
+        self.status_pub = self.create_publisher(
+            RobotStatus,
+            self.status_topic,
+            status_qos,
+        )
+
+        # -----------------------------------------------------
+        # ROS subscribers
+        # -----------------------------------------------------
 
         self.create_subscription(
             Odometry,
@@ -329,7 +361,7 @@ class DumpTruckWaypointActionServer(Node):
         )
 
         # -----------------------------------------------------
-        # Robot state
+        # Robot pose state
         # -----------------------------------------------------
 
         self.x = 0.0
@@ -353,6 +385,16 @@ class DumpTruckWaypointActionServer(Node):
         self.task_active = False
 
         # -----------------------------------------------------
+        # Current robot status
+        #
+        # This is republished periodically so monitoring nodes
+        # can always obtain the current state.
+        # -----------------------------------------------------
+
+        self.current_status_state = 'idle'
+        self.current_status_detail = 'Waiting for task'
+
+        # -----------------------------------------------------
         # ROS 2 Action Server
         # -----------------------------------------------------
 
@@ -371,7 +413,80 @@ class DumpTruckWaypointActionServer(Node):
             f'truck={self.truck_name}, '
             f'action={self.action_name}, '
             f'odom={self.odom_topic}, '
-            f'cmd_vel={self.cmd_vel_topic}'
+            f'cmd_vel={self.cmd_vel_topic}, '
+            f'status={self.status_topic}'
+        )
+
+        # -----------------------------------------------------
+        # Initial status
+        # -----------------------------------------------------
+
+        self.publish_status(
+            'idle',
+            'Waiting for task',
+        )
+
+        # -----------------------------------------------------
+        # Status heartbeat
+        #
+        # Republish current status every 1 second.
+        # -----------------------------------------------------
+
+        self.status_timer = self.create_timer(
+            1.0,
+            self.republish_status,
+            callback_group=self.callback_group,
+        )
+
+    # =========================================================
+    # Robot status
+    # =========================================================
+
+    def publish_status(
+        self,
+        state,
+        detail,
+    ):
+
+        self.current_status_state = (
+            str(state)
+            .strip()
+            .lower()
+        )
+
+        self.current_status_detail = str(
+            detail
+        )
+
+        msg = RobotStatus()
+
+        msg.robot_name = self.truck_name
+        msg.state = self.current_status_state
+        msg.detail = self.current_status_detail
+
+        self.status_pub.publish(
+            msg
+        )
+
+        self.get_logger().info(
+            f'STATUS: robot={msg.robot_name}, '
+            f'state={msg.state}, '
+            f'detail={msg.detail}'
+        )
+
+    def republish_status(self):
+
+        if not rclpy.ok():
+            return
+
+        msg = RobotStatus()
+
+        msg.robot_name = self.truck_name
+        msg.state = self.current_status_state
+        msg.detail = self.current_status_detail
+
+        self.status_pub.publish(
+            msg
         )
 
     # =========================================================
@@ -446,7 +561,7 @@ class DumpTruckWaypointActionServer(Node):
             return GoalResponse.REJECT
 
         # -----------------------------------------------------
-        # Only one task at a time
+        # Only one Action task at a time
         # -----------------------------------------------------
 
         if self.task_active:
@@ -485,9 +600,13 @@ class DumpTruckWaypointActionServer(Node):
             Twist()
         )
 
-    def publish_bucket_action(self, action_name):
+    def publish_bucket_action(
+        self,
+        action_name,
+    ):
 
         msg = String()
+
         msg.data = action_name
 
         self.bucket_action_pub.publish(
@@ -508,7 +627,9 @@ class DumpTruckWaypointActionServer(Node):
 
         feedback = ExecuteRobotTask.Feedback()
 
-        feedback.state = str(state)
+        feedback.state = str(
+            state
+        )
 
         feedback.progress = float(
             max(
@@ -520,7 +641,9 @@ class DumpTruckWaypointActionServer(Node):
             )
         )
 
-        feedback.detail = str(detail)
+        feedback.detail = str(
+            detail
+        )
 
         goal_handle.publish_feedback(
             feedback
@@ -530,20 +653,25 @@ class DumpTruckWaypointActionServer(Node):
     # Action execution
     # =========================================================
 
-    def execute_callback(self, goal_handle):
+    def execute_callback(
+        self,
+        goal_handle,
+    ):
 
         self.task_active = True
 
         request = goal_handle.request
 
-        task_file = request.task_file.strip()
+        task_file = (
+            request.task_file.strip()
+        )
 
         result = ExecuteRobotTask.Result()
 
         try:
 
             # -------------------------------------------------
-            # Resolve YAML
+            # Resolve waypoint YAML
             # -------------------------------------------------
 
             yaml_path = resolve_waypoints_yaml(
@@ -553,9 +681,15 @@ class DumpTruckWaypointActionServer(Node):
             if yaml_path is None:
 
                 result.success = False
+
                 result.message = (
                     'Waypoint YAML could not be found: '
                     f'{task_file}'
+                )
+
+                self.publish_status(
+                    'fault',
+                    result.message,
                 )
 
                 self.get_logger().error(
@@ -567,7 +701,7 @@ class DumpTruckWaypointActionServer(Node):
                 return result
 
             # -------------------------------------------------
-            # Load YAML
+            # Load waypoint YAML
             # -------------------------------------------------
 
             try:
@@ -579,9 +713,15 @@ class DumpTruckWaypointActionServer(Node):
             except Exception as exc:
 
                 result.success = False
+
                 result.message = (
                     'Failed to load waypoint YAML: '
                     f'{exc}'
+                )
+
+                self.publish_status(
+                    'fault',
+                    result.message,
                 )
 
                 self.get_logger().error(
@@ -595,9 +735,15 @@ class DumpTruckWaypointActionServer(Node):
             if not waypoints:
 
                 result.success = False
+
                 result.message = (
                     'Waypoint YAML contains no valid '
                     f'waypoints: {yaml_path}'
+                )
+
+                self.publish_status(
+                    'fault',
+                    result.message,
                 )
 
                 self.get_logger().error(
@@ -617,7 +763,17 @@ class DumpTruckWaypointActionServer(Node):
             # Wait for fused odometry
             # -------------------------------------------------
 
-            while rclpy.ok() and not self.pose_ready:
+            if not self.pose_ready:
+
+                self.publish_status(
+                    'waiting',
+                    'Waiting for fused odometry',
+                )
+
+            while (
+                rclpy.ok()
+                and not self.pose_ready
+            ):
 
                 if goal_handle.is_cancel_requested:
 
@@ -626,9 +782,15 @@ class DumpTruckWaypointActionServer(Node):
                     goal_handle.canceled()
 
                     result.success = False
+
                     result.message = (
                         'Task canceled while waiting '
                         'for fused odometry.'
+                    )
+
+                    self.publish_status(
+                        'idle',
+                        result.message,
                     )
 
                     return result
@@ -645,7 +807,7 @@ class DumpTruckWaypointActionServer(Node):
                 )
 
             # -------------------------------------------------
-            # Execute waypoints
+            # Begin navigation
             # -------------------------------------------------
 
             total_waypoints = len(
@@ -653,6 +815,14 @@ class DumpTruckWaypointActionServer(Node):
             )
 
             current_goal_index = 0
+
+            self.publish_status(
+                'navigating',
+                (
+                    f'Executing waypoint task: '
+                    f'{task_file}'
+                ),
+            )
 
             while (
                 rclpy.ok()
@@ -671,8 +841,15 @@ class DumpTruckWaypointActionServer(Node):
                     goal_handle.canceled()
 
                     result.success = False
+
                     result.message = (
-                        f'{self.truck_name} task canceled.'
+                        f'{self.truck_name} '
+                        'task canceled.'
+                    )
+
+                    self.publish_status(
+                        'idle',
+                        result.message,
                     )
 
                     self.get_logger().warn(
@@ -690,21 +867,29 @@ class DumpTruckWaypointActionServer(Node):
                 direction = goal['direction']
                 waypoint_action = goal['action']
 
-                dx = goal_x - self.x
-                dy = goal_y - self.y
-
-                distance = math.sqrt(
-                    dx * dx + dy * dy
+                dx = (
+                    goal_x
+                    - self.x
                 )
 
-                # ---------------------------------------------
-                # Feedback
-                # ---------------------------------------------
+                dy = (
+                    goal_y
+                    - self.y
+                )
+
+                distance = math.sqrt(
+                    dx * dx
+                    + dy * dy
+                )
 
                 progress = (
                     current_goal_index
                     / total_waypoints
                 )
+
+                # ---------------------------------------------
+                # Action feedback
+                # ---------------------------------------------
 
                 self.publish_feedback(
                     goal_handle,
@@ -722,7 +907,10 @@ class DumpTruckWaypointActionServer(Node):
                 # Waypoint reached
                 # ---------------------------------------------
 
-                if distance < self.goal_tolerance:
+                if (
+                    distance
+                    < self.goal_tolerance
+                ):
 
                     self.stop_robot()
 
@@ -740,10 +928,22 @@ class DumpTruckWaypointActionServer(Node):
                     if waypoint_action is not None:
 
                         self.bucket_status = ''
+
                         self.current_bucket_action = (
                             waypoint_action
                         )
-                        self.waiting_for_bucket_action = True
+
+                        self.waiting_for_bucket_action = (
+                            True
+                        )
+
+                        self.publish_status(
+                            'performing_action',
+                            (
+                                'Performing bucket action: '
+                                f'{waypoint_action}'
+                            ),
+                        )
 
                         self.publish_bucket_action(
                             waypoint_action
@@ -759,6 +959,10 @@ class DumpTruckWaypointActionServer(Node):
                             and self.waiting_for_bucket_action
                         ):
 
+                            # -----------------------------
+                            # Cancellation during action
+                            # -----------------------------
+
                             if goal_handle.is_cancel_requested:
 
                                 self.stop_robot()
@@ -766,12 +970,22 @@ class DumpTruckWaypointActionServer(Node):
                                 goal_handle.canceled()
 
                                 result.success = False
+
                                 result.message = (
                                     'Task canceled while '
                                     'waiting for bucket action.'
                                 )
 
+                                self.publish_status(
+                                    'idle',
+                                    result.message,
+                                )
+
                                 return result
+
+                            # -----------------------------
+                            # Action feedback
+                            # -----------------------------
 
                             self.publish_feedback(
                                 goal_handle,
@@ -783,28 +997,63 @@ class DumpTruckWaypointActionServer(Node):
                                 ),
                             )
 
-                            if self.bucket_status == 'done':
+                            # -----------------------------
+                            # Bucket action completed
+                            # -----------------------------
+
+                            if (
+                                self.bucket_status
+                                == 'done'
+                            ):
 
                                 self.get_logger().info(
                                     'Bucket action complete: '
                                     f'{waypoint_action}'
                                 )
 
-                                self.waiting_for_bucket_action = False
-                                self.current_bucket_action = None
+                                self.waiting_for_bucket_action = (
+                                    False
+                                )
+
+                                self.current_bucket_action = (
+                                    None
+                                )
+
+                                self.publish_status(
+                                    'navigating',
+                                    (
+                                        'Bucket action complete; '
+                                        'resuming navigation'
+                                    ),
+                                )
 
                                 break
 
-                            if self.bucket_status == 'failed':
+                            # -----------------------------
+                            # Bucket action failed
+                            # -----------------------------
+
+                            if (
+                                self.bucket_status
+                                == 'failed'
+                            ):
 
                                 self.stop_robot()
 
-                                self.waiting_for_bucket_action = False
+                                self.waiting_for_bucket_action = (
+                                    False
+                                )
 
                                 result.success = False
+
                                 result.message = (
                                     'Bucket action failed: '
                                     f'{waypoint_action}'
+                                )
+
+                                self.publish_status(
+                                    'fault',
+                                    result.message,
                                 )
 
                                 self.get_logger().error(
@@ -835,7 +1084,8 @@ class DumpTruckWaypointActionServer(Node):
                 if direction == -1:
 
                     effective_yaw = normalize_angle(
-                        self.yaw + math.pi
+                        self.yaw
+                        + math.pi
                     )
 
                 else:
@@ -849,7 +1099,9 @@ class DumpTruckWaypointActionServer(Node):
 
                 cmd = Twist()
 
-                if abs(heading_error) > 0.8:
+                if abs(
+                    heading_error
+                ) > 0.8:
 
                     speed = self.slow_speed
 
@@ -857,7 +1109,9 @@ class DumpTruckWaypointActionServer(Node):
 
                     speed = self.base_speed
 
-                if abs(heading_error) > 1.2:
+                if abs(
+                    heading_error
+                ) > 1.2:
 
                     speed = 0.12
 
@@ -914,9 +1168,16 @@ class DumpTruckWaypointActionServer(Node):
             goal_handle.succeed()
 
             result.success = True
+
             result.message = (
-                f'{self.truck_name} successfully completed '
+                f'{self.truck_name} '
+                'successfully completed '
                 f'task: {task_file}'
+            )
+
+            self.publish_status(
+                'completed',
+                result.message,
             )
 
             self.get_logger().info(
@@ -925,13 +1186,24 @@ class DumpTruckWaypointActionServer(Node):
 
             return result
 
+        # -----------------------------------------------------
+        # Unexpected exception
+        # -----------------------------------------------------
+
         except Exception as exc:
 
             self.stop_robot()
 
             result.success = False
+
             result.message = (
-                f'Unhandled task execution error: {exc}'
+                'Unhandled task execution error: '
+                f'{exc}'
+            )
+
+            self.publish_status(
+                'fault',
+                result.message,
             )
 
             self.get_logger().error(
@@ -942,12 +1214,18 @@ class DumpTruckWaypointActionServer(Node):
 
             return result
 
+        # -----------------------------------------------------
+        # Cleanup
+        # -----------------------------------------------------
+
         finally:
 
             self.stop_robot()
 
             self.task_active = False
+
             self.waiting_for_bucket_action = False
+
             self.current_bucket_action = None
 
 
@@ -977,7 +1255,8 @@ def main(args=None):
 
     finally:
 
-        node.stop_robot()
+        if rclpy.ok():
+            node.stop_robot()
 
         executor.shutdown()
 
@@ -988,5 +1267,4 @@ def main(args=None):
 
 
 if __name__ == '__main__':
-
     main()
