@@ -1,13 +1,19 @@
-motor_drive_node:
-  ros__parameters:
-    encoder_direction_mode: commanded
-    encoder_glitch_filter_us: 200
-
 
 bucket_action_node:
   ros__parameters:
     servo_center: 750
     servo_dump: 1200
+
+motor_drive_node:
+  ros__parameters:
+    encoder_direction_mode: commanded
+
+    encoder_glitch_filter_us: 200
+
+    left_encoder_invert: false
+    right_encoder_invert: false
+
+    swap_encoders: true
 
 
 tag_odom_fusion_landmarks_node:
