@@ -2,28 +2,28 @@
 """
 motor_drive_node.py
 
-PWM motor controller + encoder wheel state publisher for one dump truck.
+PWM motor controller + encoder wheel-state publisher for one dump truck.
 
-Two encoder direction modes are supported:
+Features
+--------
+- Truck-specific ROS topics.
+- Encoder direction can be assigned from commanded wheel direction.
+- pigpio glitch filtering.
+- Optional encoder left/right swap for trucks whose physical encoder
+  wiring / assembly is reversed.
 
-1. quadrature
-   - Original behavior.
-   - Direction is determined by reading encoder channel B
-     whenever channel A rises.
-   - Recommended for trucks whose A/B encoder signals are stable.
+The important distinction is:
 
-2. commanded
-   - Direction is inferred from the commanded wheel direction.
-   - Only encoder channel A is used for pulse counting.
-   - Useful when channel B is electrically unstable/noisy.
-   - Recommended for Truck 4 / Truck 5.
+    physical_left_ticks
+    physical_right_ticks
 
-Truck-specific behavior can be selected from the hardware YAML:
+are counted internally according to the GPIO assignments.
 
-motor_drive_node:
-  ros__parameters:
-    encoder_direction_mode: commanded
-    encoder_glitch_filter_us: 200
+When swap_encoders=True, they are exchanged ONLY when publishing
+JointState so downstream odometry receives:
+
+    msg.position[0] = actual robot LEFT wheel
+    msg.position[1] = actual robot RIGHT wheel
 """
 
 import time
@@ -36,20 +36,27 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
 
-# ============================================================
-# Motor PWM Pins
-# ============================================================
+# =============================================================
+# Motor PWM pins
+# BCM numbering
+# =============================================================
 
 LEFT_MOTOR_PIN = 25
 RIGHT_MOTOR_PIN = 5
+
+
+# =============================================================
+# Motor electrical inversion
+# =============================================================
 
 LEFT_MOTOR_INVERT = False
 RIGHT_MOTOR_INVERT = False
 
 
-# ============================================================
-# Encoder Pins
-# ============================================================
+# =============================================================
+# Encoder pins
+# BCM numbering
+# =============================================================
 
 RIGHT_ENC_A = 18
 RIGHT_ENC_B = 27
@@ -58,59 +65,71 @@ LEFT_ENC_A = 19
 LEFT_ENC_B = 20
 
 
-# ============================================================
-# Encoder Calibration
-# ============================================================
-
-LEFT_ENCODER_INVERT = False
-RIGHT_ENCODER_INVERT = False
-
-
-# ============================================================
-# ESC / Servo PWM
-# ============================================================
+# =============================================================
+# ESC PWM
+# =============================================================
 
 NEUTRAL = 1500
 MAX_FORWARD = 2000
 MAX_REVERSE = 1000
 
 
-# ============================================================
-# Drive Tuning
-# ============================================================
+# =============================================================
+# Drive tuning
+# =============================================================
 
 TURN_GAIN = 0.5
+
 MIN_EFFECTIVE_CMD = 0.18
+
 CMD_TIMEOUT_SEC = 0.5
 
-# When using encoder_direction_mode="commanded",
-# wheel commands smaller than this are ignored when changing
-# the remembered encoder direction.
 DIRECTION_CMD_THRESHOLD = 0.03
 
 
-# ============================================================
-# Helper Functions
-# ============================================================
+# =============================================================
+# Helper functions
+# =============================================================
 
-def clamp(value, min_value, max_value):
+def clamp(
+    value,
+    minimum,
+    maximum,
+):
     return max(
-        min(value, max_value),
-        min_value,
+        min(
+            value,
+            maximum,
+        ),
+        minimum,
     )
 
 
-def apply_deadband_boost(command):
-    if 0.0 < command < MIN_EFFECTIVE_CMD:
+def apply_deadband_boost(
+    command,
+):
+
+    if (
+        0.0
+        < command
+        < MIN_EFFECTIVE_CMD
+    ):
         return MIN_EFFECTIVE_CMD
 
-    if -MIN_EFFECTIVE_CMD < command < 0.0:
+    if (
+        -MIN_EFFECTIVE_CMD
+        < command
+        < 0.0
+    ):
         return -MIN_EFFECTIVE_CMD
 
     return command
 
 
-def command_to_pulse(command):
+def command_to_pulse(
+    command,
+):
+
     command = clamp(
         command,
         -1.0,
@@ -118,6 +137,7 @@ def command_to_pulse(command):
     )
 
     if abs(command) > 1e-6:
+
         command = apply_deadband_boost(
             command
         )
@@ -136,9 +156,9 @@ def command_to_pulse(command):
     )
 
 
-# ============================================================
-# Differential Drive Node
-# ============================================================
+# =============================================================
+# Motor Drive Node
+# =============================================================
 
 class DifferentialDriveNode(Node):
 
@@ -148,9 +168,9 @@ class DifferentialDriveNode(Node):
             'dumptruck_differential_drive'
         )
 
-        # ----------------------------------------------------
+        # =====================================================
         # ROS parameters
-        # ----------------------------------------------------
+        # =====================================================
 
         self.declare_parameter(
             'cmd_vel_topic',
@@ -162,35 +182,38 @@ class DifferentialDriveNode(Node):
             '/wheel_states',
         )
 
-        self.declare_parameter(
-            'node_name_suffix',
-            '',
-        )
+        # -----------------------------------------------------
+        # Encoder behavior
+        # -----------------------------------------------------
 
-        # Encoder direction mode:
-        #
-        #   quadrature
-        #       Use encoder B phase.
-        #
-        #   commanded
-        #       Use commanded wheel direction.
-        #
         self.declare_parameter(
             'encoder_direction_mode',
             'quadrature',
         )
 
-        # pigpio glitch filter in microseconds.
-        #
-        # 0 disables the filter.
-        #
-        # Truck 4 / 5:
-        #   recommended starting value = 200
-        #
         self.declare_parameter(
             'encoder_glitch_filter_us',
             0,
         )
+
+        self.declare_parameter(
+            'left_encoder_invert',
+            False,
+        )
+
+        self.declare_parameter(
+            'right_encoder_invert',
+            False,
+        )
+
+        self.declare_parameter(
+            'swap_encoders',
+            False,
+        )
+
+        # =====================================================
+        # Read parameters
+        # =====================================================
 
         self.cmd_vel_topic = str(
             self.get_parameter(
@@ -201,12 +224,6 @@ class DifferentialDriveNode(Node):
         self.wheel_states_topic = str(
             self.get_parameter(
                 'wheel_states_topic'
-            ).value
-        )
-
-        self.node_name_suffix = str(
-            self.get_parameter(
-                'node_name_suffix'
             ).value
         )
 
@@ -222,88 +239,103 @@ class DifferentialDriveNode(Node):
             ).value
         )
 
-        # ----------------------------------------------------
-        # Validate encoder mode
-        # ----------------------------------------------------
+        self.left_encoder_invert = bool(
+            self.get_parameter(
+                'left_encoder_invert'
+            ).value
+        )
 
-        valid_modes = [
+        self.right_encoder_invert = bool(
+            self.get_parameter(
+                'right_encoder_invert'
+            ).value
+        )
+
+        self.swap_encoders = bool(
+            self.get_parameter(
+                'swap_encoders'
+            ).value
+        )
+
+        if self.encoder_direction_mode not in [
             'quadrature',
             'commanded',
-        ]
+        ]:
 
-        if (
-            self.encoder_direction_mode
-            not in valid_modes
-        ):
-            raise RuntimeError(
-                'Invalid encoder_direction_mode: '
+            self.get_logger().warn(
+                'Unknown encoder_direction_mode='
                 f'{self.encoder_direction_mode}. '
-                'Use "quadrature" or "commanded".'
+                'Using quadrature.'
             )
 
-        if self.encoder_glitch_filter_us < 0:
-            raise RuntimeError(
-                'encoder_glitch_filter_us '
-                'must be >= 0.'
+            self.encoder_direction_mode = (
+                'quadrature'
             )
 
-        # ----------------------------------------------------
+        # =====================================================
         # pigpio
-        # ----------------------------------------------------
+        # =====================================================
 
         self.pi = pigpio.pi()
 
         if not self.pi.connected:
+
             self.get_logger().error(
                 'Could not connect to pigpio daemon. '
                 'Run: sudo pigpiod'
             )
+
             raise SystemExit(1)
 
-        # ----------------------------------------------------
+        # =====================================================
         # Encoder state
-        # ----------------------------------------------------
+        #
+        # These represent encoder counts according to the
+        # PHYSICAL GPIO channels.
+        #
+        # They may later be swapped before publishing.
+        # =====================================================
 
         self.left_ticks = 0
         self.right_ticks = 0
 
-        self.prev_left_ticks = 0
-        self.prev_right_ticks = 0
+        self.prev_published_left_ticks = 0
+        self.prev_published_right_ticks = 0
 
         self.prev_time = time.time()
 
-        # ----------------------------------------------------
+        # =====================================================
         # Motor command state
-        # ----------------------------------------------------
+        # =====================================================
 
         self.left_cmd = 0.0
         self.right_cmd = 0.0
 
         self.last_cmd_time = time.time()
 
-        # ----------------------------------------------------
-        # Command-based encoder direction
+        # =====================================================
+        # Commanded encoder direction
         #
         # Used only when:
         #
-        #   encoder_direction_mode == "commanded"
+        # encoder_direction_mode == commanded
         #
-        # Keep the last known direction while stopping or
-        # coasting.
-        # ----------------------------------------------------
+        # Direction is expressed in the ROBOT FRAME before
+        # electrical motor inversion.
+        # =====================================================
 
         self.left_encoder_direction = 1
         self.right_encoder_direction = 1
 
-        # ----------------------------------------------------
+        # =====================================================
         # GPIO setup
-        # ----------------------------------------------------
+        # =====================================================
 
         self.setup_encoder_gpio()
 
-        # ----------------------------------------------------
+        # =====================================================
         # ROS interfaces
-        # ----------------------------------------------------
+        # =====================================================
 
         self.subscription = (
             self.create_subscription(
@@ -322,9 +354,9 @@ class DifferentialDriveNode(Node):
             )
         )
 
-        # ----------------------------------------------------
+        # =====================================================
         # Encoder callbacks
-        # ----------------------------------------------------
+        # =====================================================
 
         self.left_cb = self.pi.callback(
             LEFT_ENC_A,
@@ -338,9 +370,9 @@ class DifferentialDriveNode(Node):
             self.right_encoder_callback,
         )
 
-        # ----------------------------------------------------
+        # =====================================================
         # Timers
-        # ----------------------------------------------------
+        # =====================================================
 
         self.create_timer(
             0.02,
@@ -352,15 +384,15 @@ class DifferentialDriveNode(Node):
             self.update_pwm,
         )
 
-        # ----------------------------------------------------
-        # Initial motor state
-        # ----------------------------------------------------
+        # =====================================================
+        # Start neutral
+        # =====================================================
 
         self.set_neutral()
 
-        # ----------------------------------------------------
+        # =====================================================
         # Startup log
-        # ----------------------------------------------------
+        # =====================================================
 
         self.get_logger().info(
             'Motor controller running. '
@@ -369,14 +401,22 @@ class DifferentialDriveNode(Node):
             f'encoder_direction_mode='
             f'{self.encoder_direction_mode}, '
             f'encoder_glitch_filter_us='
-            f'{self.encoder_glitch_filter_us}'
+            f'{self.encoder_glitch_filter_us}, '
+            f'left_encoder_invert='
+            f'{self.left_encoder_invert}, '
+            f'right_encoder_invert='
+            f'{self.right_encoder_invert}, '
+            f'swap_encoders='
+            f'{self.swap_encoders}'
         )
 
-    # ========================================================
-    # GPIO Setup
-    # ========================================================
+    # =========================================================
+    # GPIO
+    # =========================================================
 
-    def setup_encoder_gpio(self):
+    def setup_encoder_gpio(
+        self,
+    ):
 
         for pin in [
             LEFT_ENC_A,
@@ -384,6 +424,7 @@ class DifferentialDriveNode(Node):
             RIGHT_ENC_A,
             RIGHT_ENC_B,
         ]:
+
             self.pi.set_mode(
                 pin,
                 pigpio.INPUT,
@@ -394,28 +435,25 @@ class DifferentialDriveNode(Node):
                 pigpio.PUD_UP,
             )
 
-        # ----------------------------------------------------
-        # Optional glitch filtering
-        #
-        # Applied to channel A because A generates the
-        # callbacks/pulse counts.
-        # ----------------------------------------------------
+        if self.encoder_glitch_filter_us > 0:
 
-        self.pi.set_glitch_filter(
-            LEFT_ENC_A,
-            self.encoder_glitch_filter_us,
-        )
+            self.pi.set_glitch_filter(
+                LEFT_ENC_A,
+                self.encoder_glitch_filter_us,
+            )
 
-        self.pi.set_glitch_filter(
-            RIGHT_ENC_A,
-            self.encoder_glitch_filter_us,
-        )
+            self.pi.set_glitch_filter(
+                RIGHT_ENC_A,
+                self.encoder_glitch_filter_us,
+            )
 
-    # ========================================================
-    # Motor Neutral
-    # ========================================================
+    # =========================================================
+    # Motor neutral
+    # =========================================================
 
-    def set_neutral(self):
+    def set_neutral(
+        self,
+    ):
 
         self.pi.set_servo_pulsewidth(
             LEFT_MOTOR_PIN,
@@ -427,9 +465,9 @@ class DifferentialDriveNode(Node):
             NEUTRAL,
         )
 
-    # ========================================================
-    # Left Encoder
-    # ========================================================
+    # =========================================================
+    # Encoder callbacks
+    # =========================================================
 
     def left_encoder_callback(
         self,
@@ -441,49 +479,39 @@ class DifferentialDriveNode(Node):
         if level != 1:
             return
 
-        # ----------------------------------------------------
-        # Mode 1:
-        # Quadrature direction detection
-        # ----------------------------------------------------
+        # -----------------------------------------------------
+        # Command-derived encoder direction
+        # -----------------------------------------------------
 
         if (
             self.encoder_direction_mode
-            == 'quadrature'
+            == 'commanded'
         ):
-
-            b = self.pi.read(
-                LEFT_ENC_B
-            )
-
-            delta = (
-                1
-                if b == 0
-                else -1
-            )
-
-        # ----------------------------------------------------
-        # Mode 2:
-        # Commanded direction
-        # ----------------------------------------------------
-
-        else:
 
             delta = (
                 self.left_encoder_direction
             )
 
-        # ----------------------------------------------------
-        # Optional encoder inversion
-        # ----------------------------------------------------
+        # -----------------------------------------------------
+        # Quadrature-derived direction
+        # -----------------------------------------------------
 
-        if LEFT_ENCODER_INVERT:
+        else:
+
+            channel_b = self.pi.read(
+                LEFT_ENC_B
+            )
+
+            delta = (
+                1
+                if channel_b == 0
+                else -1
+            )
+
+        if self.left_encoder_invert:
             delta *= -1
 
         self.left_ticks += delta
-
-    # ========================================================
-    # Right Encoder
-    # ========================================================
 
     def right_encoder_callback(
         self,
@@ -495,49 +523,43 @@ class DifferentialDriveNode(Node):
         if level != 1:
             return
 
-        # ----------------------------------------------------
-        # Mode 1:
-        # Quadrature direction detection
-        # ----------------------------------------------------
+        # -----------------------------------------------------
+        # Command-derived encoder direction
+        # -----------------------------------------------------
 
         if (
             self.encoder_direction_mode
-            == 'quadrature'
+            == 'commanded'
         ):
-
-            b = self.pi.read(
-                RIGHT_ENC_B
-            )
-
-            delta = (
-                1
-                if b == 0
-                else -1
-            )
-
-        # ----------------------------------------------------
-        # Mode 2:
-        # Commanded direction
-        # ----------------------------------------------------
-
-        else:
 
             delta = (
                 self.right_encoder_direction
             )
 
-        # ----------------------------------------------------
-        # Optional encoder inversion
-        # ----------------------------------------------------
+        # -----------------------------------------------------
+        # Quadrature-derived direction
+        # -----------------------------------------------------
 
-        if RIGHT_ENCODER_INVERT:
+        else:
+
+            channel_b = self.pi.read(
+                RIGHT_ENC_B
+            )
+
+            delta = (
+                1
+                if channel_b == 0
+                else -1
+            )
+
+        if self.right_encoder_invert:
             delta *= -1
 
         self.right_ticks += delta
 
-    # ========================================================
-    # cmd_vel Callback
-    # ========================================================
+    # =========================================================
+    # cmd_vel
+    # =========================================================
 
     def cmd_vel_callback(
         self,
@@ -558,12 +580,18 @@ class DifferentialDriveNode(Node):
             1.0,
         )
 
-        # ----------------------------------------------------
-        # Robot-frame wheel commands
+        # -----------------------------------------------------
+        # Differential-drive mixing
         #
-        # These are calculated BEFORE any electrical motor
-        # inversion.
-        # ----------------------------------------------------
+        # ROS convention:
+        #
+        # angular > 0
+        #     turn left
+        #
+        # angular < 0
+        #     turn right
+        #
+        # -----------------------------------------------------
 
         left_robot_cmd = clamp(
             linear
@@ -579,49 +607,45 @@ class DifferentialDriveNode(Node):
             1.0,
         )
 
-        # ----------------------------------------------------
-        # Command-based encoder direction
+        # -----------------------------------------------------
+        # Encoder direction in robot frame
         #
-        # Only relevant when encoder_direction_mode is
-        # "commanded".
-        #
-        # Small near-zero commands do NOT change the stored
-        # direction. This prevents direction flipping while
-        # the truck is stopping/coasting.
-        # ----------------------------------------------------
+        # Keep previous sign close to zero so encoder coasting
+        # does not randomly change sign.
+        # -----------------------------------------------------
 
         if (
-            self.encoder_direction_mode
-            == 'commanded'
+            left_robot_cmd
+            > DIRECTION_CMD_THRESHOLD
         ):
 
-            if (
-                left_robot_cmd
-                > DIRECTION_CMD_THRESHOLD
-            ):
-                self.left_encoder_direction = 1
+            self.left_encoder_direction = 1
 
-            elif (
-                left_robot_cmd
-                < -DIRECTION_CMD_THRESHOLD
-            ):
-                self.left_encoder_direction = -1
+        elif (
+            left_robot_cmd
+            < -DIRECTION_CMD_THRESHOLD
+        ):
 
-            if (
-                right_robot_cmd
-                > DIRECTION_CMD_THRESHOLD
-            ):
-                self.right_encoder_direction = 1
+            self.left_encoder_direction = -1
 
-            elif (
-                right_robot_cmd
-                < -DIRECTION_CMD_THRESHOLD
-            ):
-                self.right_encoder_direction = -1
+        if (
+            right_robot_cmd
+            > DIRECTION_CMD_THRESHOLD
+        ):
 
-        # ----------------------------------------------------
-        # Electrical motor commands
-        # ----------------------------------------------------
+            self.right_encoder_direction = 1
+
+        elif (
+            right_robot_cmd
+            < -DIRECTION_CMD_THRESHOLD
+        ):
+
+            self.right_encoder_direction = -1
+
+        # -----------------------------------------------------
+        # Convert robot-frame commands to electrical motor
+        # commands.
+        # -----------------------------------------------------
 
         left_motor_cmd = (
             left_robot_cmd
@@ -645,17 +669,20 @@ class DifferentialDriveNode(Node):
             right_motor_cmd
         )
 
-    # ========================================================
-    # PWM Update
-    # ========================================================
+    # =========================================================
+    # PWM update
+    # =========================================================
 
-    def update_pwm(self):
+    def update_pwm(
+        self,
+    ):
 
         if (
             time.time()
             - self.last_cmd_time
             > CMD_TIMEOUT_SEC
         ):
+
             self.left_cmd = 0.0
             self.right_cmd = 0.0
 
@@ -673,11 +700,13 @@ class DifferentialDriveNode(Node):
             ),
         )
 
-    # ========================================================
-    # Wheel State Publisher
-    # ========================================================
+    # =========================================================
+    # Wheel state publisher
+    # =========================================================
 
-    def publish_wheel_states(self):
+    def publish_wheel_states(
+        self,
+    ):
 
         now = time.time()
 
@@ -689,25 +718,75 @@ class DifferentialDriveNode(Node):
         if dt <= 0.0:
             return
 
-        left_delta = (
+        # -----------------------------------------------------
+        # Physical encoder GPIO counts
+        # -----------------------------------------------------
+
+        physical_left_ticks = (
             self.left_ticks
-            - self.prev_left_ticks
+        )
+
+        physical_right_ticks = (
+            self.right_ticks
+        )
+
+        # -----------------------------------------------------
+        # Optional physical encoder swap
+        #
+        # This corrects trucks where the physical encoder
+        # channels are wired / assembled opposite to the
+        # logical robot LEFT / RIGHT wheel names.
+        # -----------------------------------------------------
+
+        if self.swap_encoders:
+
+            published_left_ticks = (
+                physical_right_ticks
+            )
+
+            published_right_ticks = (
+                physical_left_ticks
+            )
+
+        else:
+
+            published_left_ticks = (
+                physical_left_ticks
+            )
+
+            published_right_ticks = (
+                physical_right_ticks
+            )
+
+        # -----------------------------------------------------
+        # Published tick deltas
+        #
+        # Important:
+        # Calculate velocity AFTER the optional swap so
+        # position and velocity refer to the same logical wheel.
+        # -----------------------------------------------------
+
+        left_delta = (
+            published_left_ticks
+            - self.prev_published_left_ticks
         )
 
         right_delta = (
-            self.right_ticks
-            - self.prev_right_ticks
+            published_right_ticks
+            - self.prev_published_right_ticks
         )
 
         left_rate = (
-            left_delta
-            / dt
+            left_delta / dt
         )
 
         right_rate = (
-            right_delta
-            / dt
+            right_delta / dt
         )
+
+        # -----------------------------------------------------
+        # JointState
+        # -----------------------------------------------------
 
         msg = JointState()
 
@@ -724,10 +803,10 @@ class DifferentialDriveNode(Node):
 
         msg.position = [
             float(
-                self.left_ticks
+                published_left_ticks
             ),
             float(
-                self.right_ticks
+                published_right_ticks
             ),
         ]
 
@@ -744,21 +823,27 @@ class DifferentialDriveNode(Node):
             msg
         )
 
-        self.prev_left_ticks = (
-            self.left_ticks
+        # -----------------------------------------------------
+        # Save published state
+        # -----------------------------------------------------
+
+        self.prev_published_left_ticks = (
+            published_left_ticks
         )
 
-        self.prev_right_ticks = (
-            self.right_ticks
+        self.prev_published_right_ticks = (
+            published_right_ticks
         )
 
         self.prev_time = now
 
-    # ========================================================
-    # Shutdown
-    # ========================================================
+    # =========================================================
+    # Cleanup
+    # =========================================================
 
-    def destroy_node(self):
+    def destroy_node(
+        self,
+    ):
 
         try:
 
@@ -776,7 +861,6 @@ class DifferentialDriveNode(Node):
             ):
                 self.right_cb.cancel()
 
-            # Disable glitch filters before closing pigpio.
             self.pi.set_glitch_filter(
                 LEFT_ENC_A,
                 0,
@@ -795,19 +879,24 @@ class DifferentialDriveNode(Node):
         super().destroy_node()
 
 
-# ============================================================
+# =============================================================
 # Main
-# ============================================================
+# =============================================================
 
-def main(args=None):
+def main(
+    args=None,
+):
 
     rclpy.init(
         args=args
     )
 
-    node = DifferentialDriveNode()
+    node = (
+        DifferentialDriveNode()
+    )
 
     try:
+
         rclpy.spin(
             node
         )

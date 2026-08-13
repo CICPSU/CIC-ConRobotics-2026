@@ -18,36 +18,43 @@ import yaml
 def load_node_parameters(
     yaml_path,
     node_key,
-    required=True,
 ):
     """
     Load ros__parameters for one node from the
-    truck-specific YAML.
+    truck-specific hardware YAML.
 
-    If required=False and the node section does not exist,
-    return an empty dictionary.
+    Example:
 
-    This allows older truck YAML files to keep using the
-    default parameters defined inside the ROS node.
+    motor_drive_node:
+      ros__parameters:
+        encoder_direction_mode: commanded
+        encoder_glitch_filter_us: 200
+        left_encoder_invert: false
+        right_encoder_invert: false
+        swap_encoders: true
+
+    bucket_action_node:
+      ros__parameters:
+        servo_center: 1095
+        servo_dump: 1500
     """
 
     if not os.path.isfile(
         yaml_path
     ):
         raise RuntimeError(
-            f'Truck configuration file '
+            'Truck configuration file '
             f'not found: {yaml_path}'
         )
 
     with open(
         yaml_path,
         'r',
+        encoding='utf-8',
     ) as file:
 
         data = (
-            yaml.safe_load(
-                file
-            )
+            yaml.safe_load(file)
             or {}
         )
 
@@ -65,14 +72,10 @@ def load_node_parameters(
         )
     )
 
-    if (
-        required
-        and not parameters
-    ):
+    if not parameters:
         raise RuntimeError(
-            'No ros__parameters found '
-            f'for "{node_key}" '
-            f'in {yaml_path}'
+            'No ros__parameters found for '
+            f'"{node_key}" in {yaml_path}'
         )
 
     return parameters
@@ -84,15 +87,16 @@ def launch_setup(
     **kwargs,
 ):
 
-    # ---------------------------------------------------------
+    # =========================================================
     # Truck name
     #
     # Examples:
+    #
     #   truck1
     #   truck3
     #   truck4
     #   truck5
-    # ---------------------------------------------------------
+    # =========================================================
 
     truck_name = (
         LaunchConfiguration(
@@ -102,9 +106,9 @@ def launch_setup(
         )
     )
 
-    # ---------------------------------------------------------
+    # =========================================================
     # Package paths
-    # ---------------------------------------------------------
+    # =========================================================
 
     bringup_share = (
         get_package_share_directory(
@@ -121,42 +125,27 @@ def launch_setup(
         )
     )
 
-    # ---------------------------------------------------------
-    # Load truck-specific motor parameters
-    #
-    # This section is optional.
-    #
-    # Truck 1 / 3 can omit it and continue using:
-    #
-    #   encoder_direction_mode = quadrature
-    #   encoder_glitch_filter_us = 0
-    #
-    # Truck 4 / 5 can override them in YAML.
-    # ---------------------------------------------------------
+    # =========================================================
+    # Load truck-specific hardware parameters
+    # =========================================================
 
     motor_parameters = (
         load_node_parameters(
             truck_hardware_yaml,
             'motor_drive_node',
-            required=False,
         )
     )
-
-    # ---------------------------------------------------------
-    # Load truck-specific bucket calibration
-    # ---------------------------------------------------------
 
     bucket_parameters = (
         load_node_parameters(
             truck_hardware_yaml,
             'bucket_action_node',
-            required=True,
         )
     )
 
-    # ---------------------------------------------------------
+    # =========================================================
     # Truck-specific topics
-    # ---------------------------------------------------------
+    # =========================================================
 
     cmd_vel_topic = (
         f'/{truck_name}/cmd_vel'
@@ -174,18 +163,33 @@ def launch_setup(
         f'/{truck_name}/bucket_action_status'
     )
 
-    # ---------------------------------------------------------
+    # =========================================================
     # 1. Motor drive
     #
     # Node:
+    #
     #   /truckX/motor_drive
     #
     # Input:
+    #
     #   /truckX/cmd_vel
     #
     # Output:
+    #
     #   /truckX/wheel_states
-    # ---------------------------------------------------------
+    #
+    # Truck-specific hardware behavior comes from:
+    #
+    #   config/hardware/truckX.yaml
+    #
+    # Example parameters:
+    #
+    #   encoder_direction_mode
+    #   encoder_glitch_filter_us
+    #   left_encoder_invert
+    #   right_encoder_invert
+    #   swap_encoders
+    # =========================================================
 
     motor_drive_node = Node(
         package='dump_truck_hardware',
@@ -197,7 +201,10 @@ def launch_setup(
         output='screen',
 
         parameters=[
+            # Truck-specific hardware calibration
             motor_parameters,
+
+            # Truck-specific ROS topics
             {
                 'cmd_vel_topic':
                     cmd_vel_topic,
@@ -208,18 +215,21 @@ def launch_setup(
         ],
     )
 
-    # ---------------------------------------------------------
+    # =========================================================
     # 2. Bucket action
     #
     # Node:
+    #
     #   /truckX/bucket_action
     #
     # Input:
+    #
     #   /truckX/bucket_action_cmd
     #
     # Output:
+    #
     #   /truckX/bucket_action_status
-    # ---------------------------------------------------------
+    # =========================================================
 
     bucket_action_node = Node(
         package='dump_truck_hardware',
@@ -231,7 +241,10 @@ def launch_setup(
         output='screen',
 
         parameters=[
+            # Truck-specific bucket calibration
             bucket_parameters,
+
+            # Truck-specific ROS topics
             {
                 'bucket_action_cmd_topic':
                     bucket_action_cmd_topic,
@@ -242,6 +255,10 @@ def launch_setup(
         ],
     )
 
+    # =========================================================
+    # Launch nodes
+    # =========================================================
+
     return [
         motor_drive_node,
         bucket_action_node,
@@ -250,9 +267,14 @@ def launch_setup(
 
 def generate_launch_description():
 
+    # =========================================================
+    # Truck name argument
+    # =========================================================
+
     truck_name_argument = (
         DeclareLaunchArgument(
             'truck_name',
+
             description=(
                 'Unique dump truck name. '
                 'Examples: '
@@ -260,6 +282,10 @@ def generate_launch_description():
             ),
         )
     )
+
+    # =========================================================
+    # Launch description
+    # =========================================================
 
     return LaunchDescription([
         truck_name_argument,
