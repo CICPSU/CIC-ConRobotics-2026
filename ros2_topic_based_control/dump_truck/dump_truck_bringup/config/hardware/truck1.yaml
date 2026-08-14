@@ -3,6 +3,10 @@ bucket_action_node:
     servo_center: 900
     servo_dump: 1300
 
+motor_drive_node:
+  ros__parameters:
+    swap_encoders: false
+
 tag_odom_fusion_landmarks_node:
   ros__parameters:
     robot_tag_child_frame: tag36h11_0
