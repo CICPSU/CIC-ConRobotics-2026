@@ -2,9 +2,23 @@
 
 This directory contains the ROS 2 topic-based control implementation for individual construction robots.
 
-The purpose of this layer is to provide direct control, localization, hardware interfaces, and manual waypoint execution for each robot independently.
+The purpose of this layer is to provide direct control, localization, hardware interfaces, odometry, and manual waypoint execution for each robot independently.
 
-Higher-level multi-robot coordination and scenario execution will be implemented separately under the `command_center/` directory.
+Higher-level multi-robot coordination and scenario execution are implemented separately under the ROS 2 Action-based Command Center.
+
+The current dump truck implementation has been physically validated with:
+
+- Truck 1 (`truck1`)
+- Truck 3 (`truck3`)
+- Truck 4 (`truck4`)
+- Truck 5 (`truck5`)
+- shared ROS 2 hardware and control nodes
+- per-truck hardware configuration
+- wheel-encoder odometry
+- overhead AprilTag localization
+- Tag/Odom fusion
+- manual waypoint execution
+- simultaneous multi-truck ROS communication
 
 ---
 
@@ -33,14 +47,18 @@ ros2_topic_based_control/
     │   ├── waypoints/
     │   │   ├── truck1_waypoints.yaml
     │   │   ├── truck1_waypoints2.yaml
-    │   │   └── truck3_waypoints.yaml
+    │   │   ├── truck3_waypoints.yaml
+    │   │   ├── truck4_waypoints.yaml
+    │   │   └── truck5_waypoints.yaml
     │   └── ...
     │
     └── dump_truck_bringup/
         ├── config/
         │   ├── hardware/
         │   │   ├── truck1.yaml
-        │   │   └── truck3.yaml
+        │   │   ├── truck3.yaml
+        │   │   ├── truck4.yaml
+        │   │   └── truck5.yaml
         │   │
         │   └── localization/
         │       └── landmarks.yaml
@@ -62,13 +80,9 @@ network/setup_network.sh
 network/devices.sh
 ```
 
-The network setup script configures:
+The network setup script configures the ROS 2 communication environment for the selected computers.
 
-* `ROS_DOMAIN_ID`
-* `ROS_AUTOMATIC_DISCOVERY_RANGE`
-* `ROS_STATIC_PEERS`
-
-### FROM ROS PC
+### ROS PC
 
 For Truck 1 only:
 
@@ -82,18 +96,27 @@ For Truck 3 only:
 source network/setup_network.sh ros_pc dumptruck_03
 ```
 
-For simultaneous Truck 1 and Truck 3 operation:
+For Truck 4 only:
 
 ```bash
-source network/setup_network.sh ros_pc dumptruck_01 dumptruck_03
+source network/setup_network.sh ros_pc dumptruck_04
 ```
 
-### Dump Truck Raspberry Pi
-
-On Truck 1:
+For Truck 5 only:
 
 ```bash
-source network/setup_network.sh ros_pc dumptruck_01
+source network/setup_network.sh ros_pc dumptruck_05
+```
+
+For the current four-truck configuration:
+
+```bash
+source network/setup_network.sh \
+  ros_pc \
+  dumptruck_01 \
+  dumptruck_03 \
+  dumptruck_04 \
+  dumptruck_05
 ```
 
 Each new terminal requires the network setup script to be sourced again.
@@ -129,13 +152,13 @@ Switch to the development branch:
 git checkout dev
 ```
 
-Verify the current branch:
+Verify:
 
 ```bash
 git branch --show-current
 ```
 
-Expected output:
+Expected:
 
 ```text
 dev
@@ -145,29 +168,16 @@ dev
 
 ### If the Repository Already Exists
 
-From the repository root:
-
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
-```
 
-Make sure the repository is on the `dev` branch:
-
-```bash
 git checkout dev
-```
-
-Pull the latest changes:
-
-```bash
 git pull origin dev
 ```
 
 ---
 
 ### Build on the ROS PC
-
-From the repository root:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -193,7 +203,7 @@ source install/setup.bash
 
 ### Build on a Raspberry Pi
 
-On a Raspberry Pi, the dump truck system requires the following ROS 2 packages:
+After cloning or pulling updated dump-truck code:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -211,9 +221,23 @@ colcon build \
     dump_truck_bringup
 ```
 
-After building:
+Then:
 
 ```bash
+source install/setup.bash
+```
+
+When `motor_drive_node.py`, truck hardware YAML files, or bringup launch files are updated, rebuild the affected packages before restarting the robot.
+
+A typical dump-truck rebuild is:
+
+```bash
+colcon build \
+  --symlink-install \
+  --packages-select \
+    dump_truck_hardware \
+    dump_truck_bringup
+
 source install/setup.bash
 ```
 
@@ -229,29 +253,47 @@ Truck-specific parameters are stored in:
 dump_truck_bringup/config/hardware/
 ```
 
-Examples:
+Current files include:
 
 ```text
 truck1.yaml
 truck3.yaml
 truck4.yaml
-...
+truck5.yaml
 ```
 
-These files contain parameters such as:
+The same common ROS 2 hardware, control, and localization nodes are used across the trucks.
 
-* bucket servo calibration
-* robot AprilTag frame
-* tag yaw offset
-* odometry scale factors
+Physical differences between trucks are represented in YAML configuration rather than separate robot-specific source code.
 
-Example structure:
+Truck-specific parameters can include:
+
+- bucket servo calibration
+- robot AprilTag frame
+- tag yaw offset
+- odometry scale factors
+- encoder direction mode
+- encoder glitch filtering
+- encoder sign inversion
+- physical left/right encoder mapping
+
+Example:
 
 ```yaml
 bucket_action_node:
   ros__parameters:
     servo_center: 900
     servo_dump: 1300
+
+motor_drive_node:
+  ros__parameters:
+    encoder_direction_mode: commanded
+    encoder_glitch_filter_us: 200
+
+    left_encoder_invert: false
+    right_encoder_invert: false
+
+    swap_encoders: false
 
 tag_odom_fusion_landmarks_node:
   ros__parameters:
@@ -264,15 +306,86 @@ tag_odom_fusion_landmarks_node:
     odom_yaw_scale: 1.0
 ```
 
-For Truck 3, the robot tag currently used is:
+---
+
+## 5. Encoder Mapping and Physical Truck Differences
+
+Physical encoder installation is not identical across all four dump trucks.
+
+The common `motor_drive_node` therefore supports truck-specific encoder configuration.
+
+Important parameters include:
 
 ```text
-tag36h11_2
+encoder_direction_mode
+encoder_glitch_filter_us
+left_encoder_invert
+right_encoder_invert
+swap_encoders
 ```
+
+The `swap_encoders` parameter maps the physical encoder GPIO channels to the logical left and right robot wheels.
+
+The currently verified left/right mapping is:
+
+```text
+Truck 1: swap_encoders = false
+Truck 3: swap_encoders = false
+Truck 4: swap_encoders = true
+Truck 5: swap_encoders = true
+```
+
+For Trucks 4 and 5, the physical encoder left/right mapping is opposite to the logical robot wheel mapping used by the controller.
+
+When:
+
+```yaml
+swap_encoders: true
+```
+
+the motor-drive implementation corrects both:
+
+1. the encoder values published as logical `left_wheel` and `right_wheel`
+2. the commanded encoder-direction mapping used when encoder sign is derived from the commanded wheel direction
+
+Both corrections are necessary.
+
+Correcting only the published left/right wheel values may make basic forward motion or turning appear correct while still producing incorrect odometry during steering corrections.
+
+Incorrect encoder mapping can cause:
+
+- yaw to change in the wrong direction
+- continuous turning
+- waypoint tracking failure
+- left/right corrective oscillation
+- disagreement between physical motion and odometry
+
+The current configuration has been physically validated with Trucks 1, 3, 4, and 5.
 
 ---
 
-## 5. Shared AprilTag Landmarks
+## 6. Truck AprilTag Configuration
+
+Current robot AprilTags are:
+
+```text
+Truck 1: tag36h11_0
+Truck 3: tag36h11_2
+Truck 4: tag36h11_3
+Truck 5: tag36h11_4
+```
+
+These values are configured through the corresponding:
+
+```text
+config/hardware/truckX.yaml
+```
+
+files.
+
+---
+
+## 7. Shared AprilTag Landmarks
 
 Fixed overhead-camera calibration landmarks are stored in:
 
@@ -280,7 +393,7 @@ Fixed overhead-camera calibration landmarks are stored in:
 dump_truck_bringup/config/localization/landmarks.yaml
 ```
 
-Current fixed landmarks:
+Current fixed landmarks include:
 
 ```text
 tag36h11_16
@@ -292,87 +405,87 @@ These landmarks are shared by all dump trucks.
 
 ---
 
-## 6. Raspberry Pi Bringup
+## 8. Raspberry Pi Bringup
 
-Before starting the ROS nodes, start `pigpiod`:
+Before launching a truck, start `pigpiod` if necessary:
 
 ```bash
 sudo pigpiod
 ```
 
-### Truck 1
+Each truck Pi should enter the repository and source the ROS environment:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-source network/setup_network.sh ros_pc dumptruck_01
+```
 
+For the current four-truck network:
+
+```bash
+source network/setup_network.sh \
+  ros_pc \
+  dumptruck_01 \
+  dumptruck_03 \
+  dumptruck_04 \
+  dumptruck_05
+```
+
+### Truck 1
+
+```bash
 ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
   truck_name:=truck1
-```
-
-Expected topics include:
-
-```text
-/truck1/cmd_vel
-/truck1/wheel_states
-/truck1/bucket_action_cmd
-/truck1/bucket_action_status
-```
-
-Expected nodes include:
-
-```text
-/truck1/motor_drive
-/truck1/bucket_action
 ```
 
 ### Truck 3
 
 ```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_network.sh ros_pc dumptruck_03
-
 ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
   truck_name:=truck3
 ```
 
-Expected topics include:
+### Truck 4
 
-```text
-/truck3/cmd_vel
-/truck3/wheel_states
-/truck3/bucket_action_cmd
-/truck3/bucket_action_status
+```bash
+ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
+  truck_name:=truck4
 ```
 
-Expected nodes include:
+### Truck 5
+
+```bash
+ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
+  truck_name:=truck5
+```
+
+Expected topics follow the same namespace pattern:
 
 ```text
-/truck3/motor_drive
-/truck3/bucket_action
+/<truck_name>/cmd_vel
+/<truck_name>/wheel_states
+/<truck_name>/bucket_action_cmd
+/<truck_name>/bucket_action_status
+```
+
+Expected hardware nodes:
+
+```text
+/<truck_name>/motor_drive
+/<truck_name>/bucket_action
 ```
 
 ---
 
-## 7. ROS PC Bringup
+## 9. ROS PC Bringup
 
-The same launch file is used for all dump trucks.
+The same generalized ROS PC launch file is used for all dump trucks.
 
 ### Truck 1
 
 ```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_network.sh ros_pc dumptruck_01
-
 ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
   truck_name:=truck1
 ```
@@ -380,14 +493,22 @@ ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
 ### Truck 3
 
 ```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_network.sh ros_pc dumptruck_03
-
 ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
   truck_name:=truck3
+```
+
+### Truck 4
+
+```bash
+ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
+  truck_name:=truck4
+```
+
+### Truck 5
+
+```bash
+ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
+  truck_name:=truck5
 ```
 
 The launch starts:
@@ -406,11 +527,77 @@ and creates:
 
 ---
 
-## 8. Overhead Camera and AprilTag Detection
+## 10. Four-Truck ROS PC Bringup
+
+For manual topic-based operation of all four trucks, source the four-truck network configuration:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_network.sh \
+  ros_pc \
+  dumptruck_01 \
+  dumptruck_03 \
+  dumptruck_04 \
+  dumptruck_05
+```
+
+Then start one ROS PC bringup per truck.
+
+Terminal 1:
+
+```bash
+ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
+  truck_name:=truck1
+```
+
+Terminal 2:
+
+```bash
+ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
+  truck_name:=truck3
+```
+
+Terminal 3:
+
+```bash
+ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
+  truck_name:=truck4
+```
+
+Terminal 4:
+
+```bash
+ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
+  truck_name:=truck5
+```
+
+Expected localization topics:
+
+```text
+/truck1/odom
+/truck1/fused_odom
+
+/truck3/odom
+/truck3/fused_odom
+
+/truck4/odom
+/truck4/fused_odom
+
+/truck5/odom
+/truck5/fused_odom
+```
+
+---
+
+## 11. Overhead Camera and AprilTag Detection
 
 The overhead camera and AprilTag detector must be running before AprilTag-based fusion can initialize.
 
-The camera is provided by the `construction_robot_perception` package.
+Start:
 
 ```bash
 ros2 launch \
@@ -418,42 +605,101 @@ ros2 launch \
   overhead_camera.launch.py
 ```
 
-The AprilTag detector must publish TF frames including:
+Current robot tag frames include:
 
 ```text
 tag36h11_0
 tag36h11_2
+tag36h11_3
+tag36h11_4
+```
+
+Current fixed landmark frames include:
+
+```text
 tag36h11_16
 tag36h11_17
 tag36h11_18
 ```
 
-where:
+The mapping is:
 
 ```text
 tag36h11_0 = Truck 1
 tag36h11_2 = Truck 3
+tag36h11_3 = Truck 4
+tag36h11_4 = Truck 5
 
 tag36h11_16
 tag36h11_17
 tag36h11_18 = fixed landmarks
 ```
 
+TF can be checked directly, for example:
+
+```bash
+ros2 run tf2_ros tf2_echo default_cam tag36h11_4
+```
+
 ---
 
-## 9. Manual Waypoint Execution
+## 12. Manual `cmd_vel` Testing
+
+Direct `cmd_vel` is useful when validating motor direction, encoder mapping, and odometry before waypoint execution.
+
+### Straight Forward Motion
+
+Truck 1 example:
+
+```bash
+ros2 topic pub -r 10 \
+  /truck1/cmd_vel \
+  geometry_msgs/msg/Twist \
+  "{linear: {x: 0.20}, angular: {z: 0.0}}"
+```
+
+Truck 5 example:
+
+```bash
+ros2 topic pub -r 10 \
+  /truck5/cmd_vel \
+  geometry_msgs/msg/Twist \
+  "{linear: {x: 0.20}, angular: {z: 0.0}}"
+```
+
+### Forward + Right Turn
+
+```bash
+ros2 topic pub -r 10 \
+  /truck5/cmd_vel \
+  geometry_msgs/msg/Twist \
+  "{linear: {x: 0.20}, angular: {z: -0.35}}"
+```
+
+For a right turn, the logical left encoder should advance more than the logical right encoder.
+
+### In-Place Right Rotation
+
+```bash
+ros2 topic pub -r 10 \
+  /truck5/cmd_vel \
+  geometry_msgs/msg/Twist \
+  "{linear: {x: 0.0}, angular: {z: -0.70}}"
+```
+
+The physical robot should rotate clockwise.
+
+The odometry yaw should also change in the corresponding negative ROS yaw direction.
+
+---
+
+## 13. Manual Waypoint Execution
 
 The waypoint controller remains available as a topic-based individual robot control method.
 
 ### Truck 1
 
 ```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_network.sh ros_pc dumptruck_01
-
 ros2 run dump_truck_control waypoint_controller_node \
   truck1 \
   ros2_topic_based_control/dump_truck/dump_truck_control/waypoints/truck1_waypoints.yaml \
@@ -464,12 +710,6 @@ ros2 run dump_truck_control waypoint_controller_node \
 ### Truck 3
 
 ```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_network.sh ros_pc dumptruck_03
-
 ros2 run dump_truck_control waypoint_controller_node \
   truck3 \
   ros2_topic_based_control/dump_truck/dump_truck_control/waypoints/truck3_waypoints.yaml \
@@ -477,115 +717,31 @@ ros2 run dump_truck_control waypoint_controller_node \
   -r __ns:=/truck3
 ```
 
----
-
-## 10. Simultaneous Truck 1 and Truck 3 Operation
-
-### ROS PC Network Setup
+Truck 4 and Truck 5 follow the same convention:
 
 ```bash
-source network/setup_network.sh ros_pc dumptruck_01 dumptruck_03
-```
-
-### Truck 1 Pi
-
-```bash
-source network/setup_network.sh ros_pc dumptruck_01 dumptruck_03
-
-ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
-  truck_name:=truck1
-```
-
-### Truck 3 Pi
-
-```bash
-source network/setup_network.sh ros_pc dumptruck_01 dumptruck_03
-
-ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
-  truck_name:=truck3
-```
-
-### ROS PC: Truck 1
-
-```bash
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_network.sh ros_pc dumptruck_01 dumptruck_03
-ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
-  truck_name:=truck1
-```
-
-### ROS PC: Truck 3
-
-```bash
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_network.sh ros_pc dumptruck_01 dumptruck_03
-ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
-  truck_name:=truck3
-```
-
-### Truck 1 Waypoint Controller
-
-```bash
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_network.sh ros_pc dumptruck_01 dumptruck_03
 ros2 run dump_truck_control waypoint_controller_node \
-  truck1 \
-  ros2_topic_based_control/dump_truck/dump_truck_control/waypoints/truck1_waypoints.yaml \
+  truck4 \
+  ros2_topic_based_control/dump_truck/dump_truck_control/waypoints/truck4_waypoints.yaml \
   --ros-args \
-  -r __ns:=/truck1
+  -r __ns:=/truck4
 ```
 
-### Truck 3 Waypoint Controller
-
 ```bash
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_network.sh ros_pc dumptruck_01 dumptruck_03
 ros2 run dump_truck_control waypoint_controller_node \
-  truck3 \
-  ros2_topic_based_control/dump_truck/dump_truck_control/waypoints/truck3_waypoints.yaml \
+  truck5 \
+  ros2_topic_based_control/dump_truck/dump_truck_control/waypoints/truck5_waypoints.yaml \
   --ros-args \
-  -r __ns:=/truck3
-```
-
-Expected node separation:
-
-```text
-/truck1/bucket_action
-/truck1/motor_drive
-/truck1/odometry
-/truck1/tag_odom_fusion
-/truck1/waypoint_controller_node
-
-/truck3/bucket_action
-/truck3/motor_drive
-/truck3/odometry
-/truck3/tag_odom_fusion
-/truck3/waypoint_controller_node
-```
-
-Verify with:
-
-```bash
-ros2 node list | sort
-```
-
-Topics can be checked with:
-
-```bash
-ros2 topic list | grep -E 'truck1|truck3' | sort
+  -r __ns:=/truck5
 ```
 
 ---
 
-## 11. Adding a New Dump Truck
+## 14. Adding a New Dump Truck
 
-For a new truck, for example Truck 4:
+For a new truck, for example Truck 6:
 
-### 1. Add the device to the network configuration
+### 1. Add the Device to the Network Configuration
 
 Update:
 
@@ -593,121 +749,89 @@ Update:
 network/devices.sh
 ```
 
-and ensure `dumptruck_04` can be resolved by:
+Add the new Raspberry Pi device entry.
 
-```bash
-source network/setup_network.sh dumptruck_04
-```
+---
 
-### 2. Create the truck configuration
+### 2. Create the Hardware Configuration
 
-Copy an existing hardware configuration:
+Copy an existing configuration:
 
 ```bash
 cp \
-  ros2_topic_based_control/dump_truck/dump_truck_bringup/config/hardware/truck3.yaml \
-  ros2_topic_based_control/dump_truck/dump_truck_bringup/config/hardware/truck4.yaml
+  ros2_topic_based_control/dump_truck/dump_truck_bringup/config/hardware/truck5.yaml \
+  ros2_topic_based_control/dump_truck/dump_truck_bringup/config/hardware/truck6.yaml
 ```
 
 Update:
 
-* servo calibration
-* `robot_tag_child_frame`
-* tag yaw offset if required
-* odometry scale factors if required
+- servo calibration
+- `robot_tag_child_frame`
+- tag yaw offset if required
+- odometry scale factors if required
+- encoder direction configuration
+- encoder inversion if required
+- `swap_encoders` after physical validation
 
-### 3. Create a waypoint file
+Do not assume encoder left/right mapping is identical between trucks.
+
+Verify the new truck using manual `cmd_vel` and `wheel_states` tests before waypoint operation.
+
+---
+
+### 3. Create a Waypoint File
 
 For example:
 
 ```text
-dump_truck_control/waypoints/truck4_waypoints.yaml
+dump_truck_control/waypoints/truck6_waypoints.yaml
 ```
 
-### 4. Commit and Push the New Truck Configuration
+---
 
-After adding the new truck configuration and waypoint files on the ROS PC, verify the changes:
+### 4. Commit and Push
+
+From the ROS PC:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 git status
-```
-
-Add the new truck-specific files:
-
-```bash
-git add \
-  ros2_topic_based_control/dump_truck/dump_truck_bringup/config/hardware/truck4.yaml \
-  ros2_topic_based_control/dump_truck/dump_truck_control/waypoints/truck4_waypoints.yaml
-```
-
-If `network/devices.sh` was also updated for the new Raspberry Pi:
-
-```bash
-git add network/devices.sh
-```
-
-Commit the changes:
-
-```bash
-git commit -m "Add Truck 4 configuration and waypoint route"
-```
-
-Push to the development branch:
-
-```bash
+git add .
+git commit -m "Add Truck 6 configuration"
 git push origin dev
 ```
 
 ---
 
-### 5. Prepare the New Truck Raspberry Pi
+### 5. Prepare the New Raspberry Pi
 
-On the new Truck 4 Raspberry Pi, clone the repository if this is the first setup:
+For a new Pi:
 
 ```bash
 mkdir -p ~/ws_conrobotics
 cd ~/ws_conrobotics
 
-git clone <REPOSITORY_URL>
-cd CIC-ConRobotics-2026
+git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
 
+cd CIC-ConRobotics-2026
 git checkout dev
 ```
 
-If the repository is already installed on the Pi:
+For an existing clone:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
+git checkout dev
 git pull origin dev
-```
-
-Confirm that the Truck 4 configuration exists:
-
-```bash
-ls \
-  ros2_topic_based_control/dump_truck/dump_truck_bringup/config/hardware
-```
-
-The output should include:
-
-```text
-truck4.yaml
 ```
 
 ---
 
-### 6. Build the ROS 2 Packages on the New Truck Pi
-
-For a new Raspberry Pi, first ensure the ROS 2 workspace dependencies and `colcon` are installed.
-
-Build the dump-truck packages:
+### 6. Build on the New Pi
 
 ```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
 source /opt/ros/jazzy/setup.bash
 
 colcon build \
@@ -716,15 +840,11 @@ colcon build \
     dump_truck_control \
     dump_truck_hardware \
     dump_truck_bringup
-```
 
-After a successful build:
-
-```bash
 source install/setup.bash
 ```
 
-If the source directory structure has recently been renamed or moved, perform a clean build:
+If a clean rebuild is necessary:
 
 ```bash
 rm -rf build install log
@@ -743,57 +863,24 @@ source install/setup.bash
 
 ---
 
-### 7. Configure the ROS 2 Network on the New Truck Pi
-
-From the repository root:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-source network/setup_network.sh ros_pc
-```
-
-Start the GPIO daemon:
+### 7. Start the New Truck Pi
 
 ```bash
 sudo pigpiod
 ```
 
----
-
-### 8. Start the Pi
-
-Start the common dump-truck Pi launch file using the new robot name:
+Then:
 
 ```bash
 ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
-  truck_name:=truck4
-```
-
-Expected Truck 4 topics include:
-
-```text
-/truck4/cmd_vel
-/truck4/wheel_states
-/truck4/bucket_action_cmd
-/truck4/bucket_action_status
-```
-
-Expected Truck 4 nodes include:
-
-```text
-/truck4/motor_drive
-/truck4/bucket_action
+  truck_name:=truck6
 ```
 
 ---
 
-### 9. Build the Updated Workspace on the ROS PC
+### 8. Build the Updated ROS PC Workspace
 
-After adding the new configuration and waypoint files, rebuild the affected packages on the ROS PC:
+After adding a new hardware configuration or waypoint file:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -804,161 +891,121 @@ colcon build \
   --symlink-install \
   --packages-select \
     dump_truck_control \
+    dump_truck_hardware \
     dump_truck_bringup
 
 source install/setup.bash
 ```
 
-Because new trucks use the existing generalized launch and control code, a full workspace rebuild is normally unnecessary.
-
 ---
 
-### 10. Configure the ROS PC Network
-
-For Truck 4 only:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-source network/setup_network.sh ros_pc dumptruck_04
-```
-
-For multi-truck operation, include all required dump trucks:
-
-```bash
-source network/setup_network.sh \
-  dumptruck_01 \
-  dumptruck_03 \
-  dumptruck_04
-```
-
----
-
-### 11. Start the ROS PC Control Stack
-
-Start the same generalized ROS PC launch file:
+### 9. Start the ROS PC Stack
 
 ```bash
 ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \
-  truck_name:=truck4
+  truck_name:=truck6
 ```
 
-Expected nodes include:
+Expected:
 
 ```text
-/truck4/odometry
-/truck4/tag_odom_fusion
-```
-
-Expected topics include:
-
-```text
-/truck4/odom
-/truck4/fused_odom
+/truck6/odometry
+/truck6/tag_odom_fusion
+/truck6/odom
+/truck6/fused_odom
 ```
 
 ---
 
-### 12. Run the Truck 4 Waypoint Controller
+### 10. Validate Encoder Mapping
 
-Run the Truck 4 route using the Truck 4 namespace:
-
-```bash
-ros2 run dump_truck_control waypoint_controller_node \
-  truck4 \
-  ros2_topic_based_control/dump_truck/dump_truck_control/waypoints/truck4_waypoints.yaml \
-  --ros-args \
-  -r __ns:=/truck4
-```
-
-Verify the node namespace:
+Before waypoint operation, first check:
 
 ```bash
-ros2 node list | grep truck4
+ros2 topic echo /truck6/wheel_states
 ```
 
-Expected nodes:
+Then send:
+
+```bash
+ros2 topic pub -r 10 \
+  /truck6/cmd_vel \
+  geometry_msgs/msg/Twist \
+  "{linear: {x: 0.20}, angular: {z: -0.35}}"
+```
+
+For a correct right turn:
 
 ```text
-/truck4/bucket_action
-/truck4/motor_drive
-/truck4/odometry
-/truck4/tag_odom_fusion
-/truck4/waypoint_controller_node
+logical LEFT wheel  > logical RIGHT wheel
 ```
 
-No source-code modification should normally be required for additional dump trucks. Adding another truck should primarily require:
-
-* a new entry in `network/devices.sh`
-* a new `config/hardware/truckX.yaml`
-* a new waypoint YAML if a robot-specific route is needed
-* Git commit/push and Pi-side `git pull`
-* ROS 2 package build on a newly configured Pi
-* launching the common Pi and ROS PC bringup files with the appropriate `truck_name`
+If the opposite occurs, inspect the truck-specific encoder mapping before modifying downstream odometry logic.
 
 ---
 
-## 12. Topic-Based Control vs. Command Center
+## 15. Topic-Based Control vs. Action-Based Command Center
 
 This directory intentionally retains direct topic-based robot control.
 
+
 It is useful for:
 
-* hardware testing
-* calibration
-* debugging
-* individual robot experiments
-* localization testing
-* waypoint controller development
-* manual multi-robot testing
+- hardware testing
+- calibration
+- debugging
+- individual robot experiments
+- localization testing
+- encoder diagnostics
+- odometry diagnostics
+- waypoint controller development
+- manual multi-robot testing
 
-Higher-level coordinated execution will be implemented separately under:
 
-```text
-command_center/
-```
+For higher-level multi-robot coordination, task sequencing, and construction
+scenario execution, see the
+[ROS 2 Action-Based Command Center](../ros2_action_based_command_center/README.md).
+The Action-Based Command Center provides the higher-level coordination layer.
 
-The Command Center is intended to support higher-level scenarios such as:
 
-```text
-Truck 1 executes Route A
-        ↓
-Truck 1 completes
-        ↓
-Truck 3 executes Route B
-        ↓
-Truck 3 completes
-```
-
-and later:
+Conceptually:
 
 ```text
-Dump Truck
-    +
-Excavator
-    +
-other construction robots
-```
-
-using higher-level ROS 2 coordination mechanisms such as Actions.
+Topic-Based Layer
+│
+├── Hardware
+├── cmd_vel
+├── wheel_states
+├── odometry
+├── fused odometry
+└── individual robot control
+        │
+        ▼
+Action-Based Command Center
+│
+├── robot tasks
+├── sequencing
+├── synchronization
+├── conditions
+├── parallel execution
+└── construction scenarios
 
 ---
 
-## 13. Useful Diagnostics
+## 16. Useful Diagnostics
 
-List robot nodes:
+List all robot nodes:
 
 ```bash
 ros2 node list | sort
 ```
 
-List Truck 1 and Truck 3 topics:
+List all four truck topics:
 
 ```bash
-ros2 topic list | grep -E 'truck1|truck3' | sort
+ros2 topic list \
+  | grep -E 'truck1|truck3|truck4|truck5' \
+  | sort
 ```
 
 Check wheel states:
@@ -967,10 +1014,16 @@ Check wheel states:
 ros2 topic echo /truck1/wheel_states
 ```
 
-or:
-
 ```bash
 ros2 topic echo /truck3/wheel_states
+```
+
+```bash
+ros2 topic echo /truck4/wheel_states
+```
+
+```bash
+ros2 topic echo /truck5/wheel_states
 ```
 
 Check odometry:
@@ -985,24 +1038,92 @@ Check fused odometry:
 ros2 topic echo /truck1/fused_odom
 ```
 
-Check Truck 3 fused odometry:
+Check Truck 5 fused odometry:
 
 ```bash
-ros2 topic echo /truck3/fused_odom
+ros2 topic echo /truck5/fused_odom
+```
+
+Check `cmd_vel` connectivity:
+
+```bash
+ros2 topic info /truck1/cmd_vel -v
+```
+
+Check a truck's hardware parameters:
+
+```bash
+ros2 param dump /truck1/motor_drive
+```
+
+Check odometry angular velocity:
+
+```bash
+ros2 topic echo \
+  /truck5/odom \
+  --field twist.twist.angular.z
+```
+
+Check accumulated orientation:
+
+```bash
+ros2 topic echo \
+  /truck5/odom \
+  --field pose.pose.orientation
 ```
 
 ---
 
-## Current Verified Robots
+## 17. Current Verified Robots
 
 ```text
 Truck 1
 ROS namespace: /truck1
 Robot AprilTag: tag36h11_0
+Encoder swap: false
 
 Truck 3
 ROS namespace: /truck3
 Robot AprilTag: tag36h11_2
+Encoder swap: false
+
+Truck 4
+ROS namespace: /truck4
+Robot AprilTag: tag36h11_3
+Encoder swap: true
+
+Truck 5
+ROS namespace: /truck5
+Robot AprilTag: tag36h11_4
+Encoder swap: true
 ```
 
-Truck 1 and Truck 3 have been verified for simultaneous operation with isolated ROS namespaces.
+All four trucks have been verified with isolated ROS namespaces.
+
+The current common software architecture supports:
+
+```text
+Truck-specific hardware YAML
+          │
+          ▼
+Common Motor Drive Node
+          │
+          ▼
+/<truck>/wheel_states
+          │
+          ▼
+Common Odometry Node
+          │
+          ▼
+/<truck>/odom
+          │
+          ▼
+Common Tag/Odom Fusion
+          │
+          ▼
+/<truck>/fused_odom
+```
+
+Truck-specific hardware differences are handled primarily through configuration rather than duplicated source code.
+
+The current topic-based implementation provides the validated low-level foundation for the four-truck ROS 2 Action-based Command Center.

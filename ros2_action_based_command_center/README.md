@@ -8,9 +8,14 @@ The current implementation has been validated with:
 
 - Dump Truck 1 (`truck1`)
 - Dump Truck 3 (`truck3`)
+- Dump Truck 4 (`truck4`)
+- Dump Truck 5 (`truck5`)
 - Overhead camera localization using AprilTags
+- Wheel-encoder odometry
+- Tag/Odom fusion
 - ROS 2 Action-based task execution
 - Sequential multi-robot execution
+- Four-truck physical sequence execution
 - Timed wait steps
 - Parallel robot execution
 - Conditional execution based on ROS topics
@@ -18,6 +23,8 @@ The current implementation has been validated with:
 - Direct ROS topic publishing
 - Direct `cmd_vel` control
 - Runtime log recording and scenario review
+
+The current physical system has successfully executed a four-truck scenario involving Trucks 1, 3, 4, and 5 through a single ROS PC Command Center.
 
 ---
 
@@ -55,11 +62,12 @@ ros2_action_based_command_center/
     │   ├── truck1_then_truck3.yaml
     │   ├── truck1_wait_truck3.yaml
     │   ├── truck1_truck3_parallel.yaml
+    │   ├── truck1_complete_then_truck3.yaml
+    │   ├── truck1_3_4_5.yaml
     │   ├── test_condition.yaml
     │   ├── test_topic_publish.yaml
     │   ├── test_truck1_cmd_vel.yaml
-    │   ├── test_robot_status_condition.yaml
-    │   └── truck1_complete_then_truck3.yaml
+    │   └── test_robot_status_condition.yaml
     │
     └── construction_site_control/
         └── scenario_manager_node.py
@@ -120,7 +128,7 @@ Scenario Manager
        Direct ROS topic command
 ```
 
-For the dump trucks:
+For the four currently integrated dump trucks:
 
 ```text
 Scenario Manager
@@ -133,13 +141,29 @@ Scenario Manager
      │           ▼
      │    /truck1/cmd_vel
      │
-     └── /truck3/execute_robot_task
+     ├── /truck3/execute_robot_task
+     │           │
+     │           ▼
+     │    Truck 3 Action Server
+     │           │
+     │           ▼
+     │    /truck3/cmd_vel
+     │
+     ├── /truck4/execute_robot_task
+     │           │
+     │           ▼
+     │    Truck 4 Action Server
+     │           │
+     │           ▼
+     │    /truck4/cmd_vel
+     │
+     └── /truck5/execute_robot_task
                  │
                  ▼
-          Truck 3 Action Server
+          Truck 5 Action Server
                  │
                  ▼
-          /truck3/cmd_vel
+          /truck5/cmd_vel
 ```
 
 Localization is provided by:
@@ -154,12 +178,126 @@ AprilTag Detector
 Tag/Odom Fusion
       │
       ├── /truck1/fused_odom
-      └── /truck3/fused_odom
+      ├── /truck3/fused_odom
+      ├── /truck4/fused_odom
+      └── /truck5/fused_odom
+```
+
+Each truck independently publishes wheel-based odometry:
+
+```text
+Truck Encoder Hardware
+      │
+      ▼
+Wheel States
+      │
+      ▼
+Odometry Node
+      │
+      ├── /truck1/odom
+      ├── /truck3/odom
+      ├── /truck4/odom
+      └── /truck5/odom
 ```
 
 ---
 
-## 3. Initial Repository Setup
+## 3. Per-Truck Hardware Configuration
+
+The dump truck software uses common ROS 2 nodes across multiple physical trucks.
+
+Hardware-specific differences are handled through per-truck configuration files rather than separate source code for each robot.
+
+The hardware configuration files are organized by truck, for example:
+
+```text
+config/
+└── hardware/
+    ├── truck1.yaml
+    ├── truck3.yaml
+    ├── truck4.yaml
+    └── truck5.yaml
+```
+
+These configuration files can contain robot-specific parameters such as:
+
+- bucket servo center position
+- bucket servo dump position
+- AprilTag ID
+- Tag yaw offset
+- odometry scale parameters
+- encoder direction mode
+- encoder glitch filtering
+- encoder sign inversion
+- physical left/right encoder mapping
+
+Example structure:
+
+```yaml
+bucket_action_node:
+  ros__parameters:
+    servo_center: 900
+    servo_dump: 1300
+
+motor_drive_node:
+  ros__parameters:
+    encoder_direction_mode: commanded
+    encoder_glitch_filter_us: 200
+
+    left_encoder_invert: false
+    right_encoder_invert: false
+
+    swap_encoders: false
+
+tag_odom_fusion_landmarks_node:
+  ros__parameters:
+    robot_tag_child_frame: tag36h11_0
+
+    tag_yaw_offset: 1.57079632679
+
+    odom_x_scale: 1.0
+    odom_y_scale: 1.0
+    odom_yaw_scale: 1.0
+```
+
+Physical encoder installation can differ between trucks.
+
+The common `motor_drive_node` therefore supports truck-specific encoder configuration through the hardware YAML.
+
+Important encoder-related parameters include:
+
+- `encoder_direction_mode`
+- `encoder_glitch_filter_us`
+- `left_encoder_invert`
+- `right_encoder_invert`
+- `swap_encoders`
+
+The `swap_encoders` parameter maps the physical encoder GPIO channels to the logical left and right robot wheels.
+
+The currently verified configuration is:
+
+```text
+Truck 1: swap_encoders = false
+Truck 3: swap_encoders = false
+Truck 4: swap_encoders = true
+Truck 5: swap_encoders = true
+---
+
+For Trucks 4 and 5, the physical encoder left/right mapping is opposite to the logical robot wheel mapping used by the ROS controller.
+We will need to fix this later from the hardware.
+
+When swap_encoders: true, the motor-drive implementation corrects both:
+
+the left/right encoder values published in /truckX/wheel_states
+the commanded encoder direction mapping used when determining encoder sign
+
+This is necessary because correcting only the published left/right values can make basic turning appear correct while still causing unstable odometry during steering corrections.
+
+The final configuration allows all four trucks to use the same common ROS 2 hardware and odometry implementation while accounting for physical hardware differences through YAML configuration.
+
+
+
+## 4. Initial Repository Setup
 
 ### If the Repository Has Not Been Cloned Yet
 
@@ -213,7 +351,7 @@ git pull origin dev
 
 ---
 
-## 4. Initial Build
+## 5. Initial Build
 
 From the repository root:
 
@@ -240,19 +378,43 @@ Then:
 source install/setup.bash
 ```
 
+### Rebuild After Code or Configuration Updates
+
+When pulling updated ROS packages or modifying the truck hardware / bringup implementation, rebuild the relevant packages before launching the system.
+
+For dump truck Raspberry Pis:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+
+colcon build \
+  --symlink-install \
+  --packages-select \
+    dump_truck_hardware \
+    dump_truck_bringup
+
+source install/setup.bash
+```
+
+For the ROS PC, rebuild the affected packages as necessary before starting the Command Center.
+
 ---
 
-## 5. Network Setup
+## 6. Network Setup
 
 The network helper must be sourced before starting the ROS 2 system.
 
-For the current Truck 1 + Truck 3 configuration on the ROS PC:
+For the current four-truck configuration on the ROS PC:
 
 ```bash
 source network/setup_network.sh \
   ros_pc \
   dumptruck_01 \
-  dumptruck_03
+  dumptruck_03 \
+  dumptruck_04 \
+  dumptruck_05
 ```
 
 The ROS PC is intentionally specified explicitly.
@@ -265,22 +427,32 @@ ros_pc_backup
 
 to be introduced later without changing the overall network architecture.
 
+All computers participating in the experiment must use compatible ROS 2 network settings.
+
 ---
 
-## 6. Start Truck 1 Raspberry Pi
+## 7. Start the Raspberry Pi on Each Truck
 
-On the Truck 1 Raspberry Pi:
+Each truck independently runs its own hardware bringup.
+
+Before launching a truck, enter the repository and source ROS 2:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
+```
 
+Source the network configuration:
+
+```bash
 source network/setup_network.sh \
   ros_pc \
   dumptruck_01 \
-  dumptruck_03
+  dumptruck_03 \
+  dumptruck_04 \
+  dumptruck_05
 ```
 
 Start `pigpiod` if necessary:
@@ -289,47 +461,61 @@ Start `pigpiod` if necessary:
 sudo pigpiod
 ```
 
-Then:
+### Truck 1
+
+On the Truck 1 Raspberry Pi:
 
 ```bash
 ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
   truck_name:=truck1
 ```
 
----
-
-## 7. Start Truck 3 Raspberry Pi
+### Truck 3
 
 On the Truck 3 Raspberry Pi:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-source network/setup_network.sh \
-  ros_pc \
-  dumptruck_01 \
-  dumptruck_03
-```
-
-Start `pigpiod` if necessary:
-
-```bash
-sudo pigpiod
-```
-
-Then:
 
 ```bash
 ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
   truck_name:=truck3
 ```
 
+### Truck 4
+
+On the Truck 4 Raspberry Pi:
+
+```bash
+ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
+  truck_name:=truck4
+```
+
+### Truck 5
+
+On the Truck 5 Raspberry Pi:
+
+```bash
+ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
+  truck_name:=truck5
+```
+
+Each truck should publish its own namespaced hardware topics, including:
+
+```text
+/truck1/cmd_vel
+/truck1/wheel_states
+
+/truck3/cmd_vel
+/truck3/wheel_states
+
+/truck4/cmd_vel
+/truck4/wheel_states
+
+/truck5/cmd_vel
+/truck5/wheel_states
+```
+
 ---
 
-## 8. Start the Command Center
+## 8. Start the Four-Truck Command Center
 
 On the ROS PC:
 
@@ -342,25 +528,23 @@ source install/setup.bash
 source network/setup_network.sh \
   ros_pc \
   dumptruck_01 \
-  dumptruck_03
+  dumptruck_03 \
+  dumptruck_04 \
+  dumptruck_05
 ```
 
-Example:
+To launch the complete four-truck system and automatically execute the verified four-truck scenario:
 
 ```bash
 ros2 launch construction_site_control command_center.launch.py \
-  trucks:="truck1,truck3" \
+  trucks:="truck1,truck3,truck4,truck5" \
   start_camera:=true \
   start_apriltag:=true \
   start_localization:=true \
   start_action_servers:=true \
   start_scenario_manager:=true \
-  scenario:=truck1_complete_then_truck3.yaml
+  scenario:=truck1_3_4_5.yaml
 ```
-
-The launch command is intentionally parameterized.
-
-The scenario, robot list, perception configuration, localization, and Action Server configuration can therefore be changed for each experiment without modifying source code.
 
 This launch may start:
 
@@ -372,17 +556,56 @@ This launch may start:
 - Truck 3 odometry
 - Truck 3 Tag/Odom fusion
 - Truck 3 Action Server
+- Truck 4 odometry
+- Truck 4 Tag/Odom fusion
+- Truck 4 Action Server
+- Truck 5 odometry
+- Truck 5 Tag/Odom fusion
+- Truck 5 Action Server
 - Scenario Manager
+
+The four Raspberry Pis continue to independently handle their respective physical robot hardware.
 
 ---
 
-## 9. Command Center Launch Parameters
+## 9. Start the Command Center Without a Scenario
+
+For testing localization, Action Servers, or individual robots without automatically executing a scenario:
+
+```bash
+ros2 launch construction_site_control command_center.launch.py \
+  trucks:="truck1,truck3,truck4,truck5" \
+  start_camera:=true \
+  start_apriltag:=true \
+  start_localization:=true \
+  start_action_servers:=true \
+  start_scenario_manager:=false
+```
+
+This is particularly useful for:
+
+- checking AprilTag localization
+- checking odometry
+- manually testing Actions
+- testing `cmd_vel`
+- verifying newly added trucks
+- debugging individual robot behavior
+
+---
+
+## 10. Command Center Launch Parameters
 
 ### `trucks`
 
 Comma-separated list of dump trucks.
 
-Example:
+Four-truck example:
+
+```bash
+trucks:="truck1,truck3,truck4,truck5"
+```
+
+Two trucks:
 
 ```bash
 trucks:="truck1,truck3"
@@ -440,47 +663,23 @@ Set this to:
 start_scenario_manager:=false
 ```
 
-when testing Action Servers manually.
+when testing Action Servers or individual robots manually.
 
 ### `scenario`
 
 Scenario YAML file to execute.
 
-Example:
+Four-truck example:
+
+```bash
+scenario:=truck1_3_4_5.yaml
+```
+
+Two-truck example:
 
 ```bash
 scenario:=truck1_complete_then_truck3.yaml
 ```
-
----
-
-## 10. Example Launch Configurations
-
-### Truck 1 only without automatic scenario execution
-
-```bash
-ros2 launch construction_site_control command_center.launch.py \
-  trucks:=truck1 \
-  start_camera:=true \
-  start_apriltag:=true \
-  start_localization:=true \
-  start_action_servers:=true \
-  start_scenario_manager:=false
-```
-
-### Truck 1 and Truck 3 without scenario execution
-
-```bash
-ros2 launch construction_site_control command_center.launch.py \
-  trucks:="truck1,truck3" \
-  start_camera:=true \
-  start_apriltag:=true \
-  start_localization:=true \
-  start_action_servers:=true \
-  start_scenario_manager:=false
-```
-
-This configuration is useful for manually sending Action goals.
 
 ---
 
@@ -517,6 +716,8 @@ Currently:
 ```text
 /truck1/execute_robot_task
 /truck3/execute_robot_task
+/truck4/execute_robot_task
+/truck5/execute_robot_task
 ```
 
 Check available Actions with:
@@ -548,6 +749,8 @@ Current dump truck status topics include:
 ```text
 /truck1/status
 /truck3/status
+/truck4/status
+/truck5/status
 ```
 
 Future robots should follow the same convention:
@@ -568,7 +771,7 @@ Example message:
 ```yaml
 robot_name: truck1
 state: navigating
-detail: Executing waypoint task: truck1_waypoints.yaml
+detail: Executing waypoint task
 ```
 
 Common states currently include:
@@ -588,15 +791,15 @@ The status publisher periodically republishes the current state so that monitori
 
 ## 13. Manual Action Test
 
-With:
+Start the Command Center with:
 
 ```bash
 start_scenario_manager:=false
 ```
 
-a task can be sent manually.
+Then tasks can be sent manually.
 
-Truck 1:
+### Truck 1
 
 ```bash
 ros2 action send_goal \
@@ -606,7 +809,7 @@ ros2 action send_goal \
   --feedback
 ```
 
-Truck 3:
+### Truck 3
 
 ```bash
 ros2 action send_goal \
@@ -615,6 +818,8 @@ ros2 action send_goal \
   "{robot_name: truck3, task_type: waypoint, task_file: truck3_waypoints.yaml}" \
   --feedback
 ```
+
+Truck 4 and Truck 5 follow the same Action interface and naming convention.
 
 ---
 
@@ -636,6 +841,12 @@ wait
 parallel
 condition
 topic_publish
+```
+
+The current verified four-truck scenario is:
+
+```text
+truck1_3_4_5.yaml
 ```
 
 ---
@@ -808,7 +1019,7 @@ Example:
       duration: 2.0
 ```
 
-This mechanism is intended to support robot-to-robot synchronization.
+This mechanism supports robot-to-robot synchronization.
 
 Future examples include:
 
@@ -819,7 +1030,7 @@ Future examples include:
 followed by:
 
 ```text
-Truck 1 enters the loading area
+Truck enters the loading area
 ```
 
 or:
@@ -890,59 +1101,113 @@ Direct topic commands are rejected when the same robot already has an active Act
 
 ---
 
-## 20. Verified State-Based Multi-Robot Scenario
+## 20. Verified Four-Truck Physical Sequence
 
-The following scenario has been validated with physical robots:
+The current system has been physically validated with all four integrated dump trucks.
 
-```text
-Truck 1 Action
-      │
-      ▼
-Truck 1 navigating
-      │
-      ▼
-Truck 1 Action SUCCESS
-      │
-      ▼
-Check:
- /truck1/status.state
-      ==
-   completed
-      │
-      ▼
-CONDITION SATISFIED
-      │
-      ▼
-Truck 3 Action
-      │
-      ▼
-Truck 3 SUCCESS
-      │
-      ▼
-SCENARIO COMPLETE
-```
-
-The corresponding scenario is:
+The verified scenario file is:
 
 ```text
-truck1_complete_then_truck3.yaml
+truck1_3_4_5.yaml
 ```
 
-The runtime log confirmed:
+The scenario executes the trucks sequentially through the ROS 2 Action-based Command Center:
 
 ```text
 SCENARIO START
-truck1_run: Goal accepted.
-truck1_run: SUCCESS
-verify_truck1_completed: CONDITION SATISFIED
-truck3_run: Goal accepted.
-truck3_run: SUCCESS
+      │
+      ▼
+   Truck 1
+      │
+      ▼
+   SUCCESS
+      │
+      ▼
+   Truck 3
+      │
+      ▼
+   SUCCESS
+      │
+      ▼
+   Truck 4
+      │
+      ▼
+   SUCCESS
+      │
+      ▼
+   Truck 5
+      │
+      ▼
+   SUCCESS
+      │
+      ▼
 SCENARIO COMPLETE
 ```
 
+All four physical trucks were successfully integrated into the same Command Center architecture and executed their assigned sequence.
+
+This verifies:
+
+- communication between the ROS PC and four Raspberry Pis
+- namespaced robot hardware interfaces
+- per-truck hardware configuration
+- four independent wheel-encoder interfaces
+- wheel-based odometry
+- overhead AprilTag localization
+- Tag/Odom fusion
+- per-robot Action Servers
+- waypoint-based navigation
+- Scenario Manager execution across four physical robots
+
 ---
 
-## 21. Runtime Logging
+## 21. Encoder and Odometry Configuration
+
+During multi-truck integration, differences in physical encoder installation were identified between trucks.
+
+Trucks 4 and 5 required different left/right encoder mapping from Trucks 1 and 3.
+
+The software architecture therefore keeps the odometry implementation common while allowing physical hardware differences to be specified through per-truck configuration.
+
+The general data flow is:
+
+```text
+Physical Encoders
+      │
+      ▼
+Truck-Specific Hardware Mapping
+      │
+      ▼
+/<truck>/wheel_states
+      │
+      ▼
+Common Odometry Node
+      │
+      ▼
+/<truck>/odom
+      │
+      ▼
+Tag/Odom Fusion
+      │
+      ▼
+/<truck>/fused_odom
+```
+
+This approach avoids creating separate odometry implementations for each truck.
+
+Correct encoder mapping is important because incorrect left/right interpretation can cause:
+
+- incorrect yaw direction
+- continuous turning behavior
+- oscillation after turns
+- disagreement between wheel odometry and AprilTag localization
+- unstable waypoint tracking
+
+The current configuration has been physically tested on Trucks 1, 3, 4, and 5.
+
+---
+
+## 22. Runtime Logging
 
 Command Center output can be saved while still displaying normally in the terminal using `tee`.
 
@@ -960,35 +1225,29 @@ Create a timestamped log filename:
 LOG_FILE="runtime_logs/command_center_$(date +%Y%m%d_%H%M%S).log"
 ```
 
-Example:
-
-```text
-runtime_logs/command_center_20260812_141558.log
-```
-
-Launch the Command Center normally and append:
+Launch the four-truck Command Center and append:
 
 ```bash
 2>&1 | tee "$LOG_FILE"
 ```
 
-Example:
+Full example:
 
 ```bash
 ros2 launch construction_site_control command_center.launch.py \
-  trucks:="truck1,truck3" \
+  trucks:="truck1,truck3,truck4,truck5" \
   start_camera:=true \
   start_apriltag:=true \
   start_localization:=true \
   start_action_servers:=true \
   start_scenario_manager:=true \
-  scenario:=truck1_complete_then_truck3.yaml \
+  scenario:=truck1_3_4_5.yaml \
   2>&1 | tee "$LOG_FILE"
 ```
 
 The scenario configuration remains fully editable for each experiment.
 
-Only the terminal output is redirected into the log file.
+Only terminal output is redirected into the log file.
 
 The `runtime_logs/` directory should not be committed to Git.
 
@@ -1000,7 +1259,7 @@ runtime_logs/
 
 ---
 
-## 22. Review the Latest Runtime Log
+## 23. Review the Latest Runtime Log
 
 To find the latest Command Center log:
 
@@ -1022,7 +1281,7 @@ less "$LATEST_LOG"
 grep -F "[scenario_manager]" "$LATEST_LOG"
 ```
 
-### Show the Important Scenario Events
+### Show Important Scenario Events
 
 ```bash
 grep -F "[scenario_manager]" "$LATEST_LOG" \
@@ -1030,23 +1289,11 @@ grep -F "[scenario_manager]" "$LATEST_LOG" \
   "SCENARIO START|Goal accepted|: SUCCESS|CONDITION SATISFIED|CONDITION TIMEOUT|SCENARIO COMPLETE|SCENARIO ABORTED|SCENARIO ERROR"
 ```
 
-Example:
-
-```text
-SCENARIO START
-truck1_run: Goal accepted.
-truck1_run: SUCCESS
-verify_truck1_completed: CONDITION SATISFIED
-truck3_run: Goal accepted.
-truck3_run: SUCCESS
-SCENARIO COMPLETE
-```
-
 This provides a concise summary of scenario execution without requiring the full camera, AprilTag, odometry, localization, and Action feedback logs to be reviewed manually.
 
 ---
 
-## 23. Runtime Logs vs ROS Bag
+## 24. Runtime Logs vs ROS Bag
 
 Runtime text logs and ROS bags serve different purposes.
 
@@ -1067,17 +1314,11 @@ Scenario completion
 Errors
 ```
 
-Example:
-
-```text
-command_center_20260812_141558.log
-```
-
 ### ROS Bag
 
 ROS bag records ROS message data.
 
-This is useful for later analysis of topics such as:
+For the current four-truck system, useful topics include:
 
 ```text
 /truck1/cmd_vel
@@ -1090,11 +1331,21 @@ This is useful for later analysis of topics such as:
 /truck3/fused_odom
 /truck3/status
 
+/truck4/cmd_vel
+/truck4/odom
+/truck4/fused_odom
+/truck4/status
+
+/truck5/cmd_vel
+/truck5/odom
+/truck5/fused_odom
+/truck5/status
+
 /image_raw
 /camera_info
 ```
 
-The intended experiment logging architecture is therefore:
+The intended experiment logging architecture is:
 
 ```text
 Experiment
@@ -1110,7 +1361,7 @@ ROS bag recording can be added independently from the Command Center launch conf
 
 ---
 
-## 24. Verify the Running System
+## 25. Verify the Running Four-Truck System
 
 Check nodes:
 
@@ -1118,7 +1369,7 @@ Check nodes:
 ros2 node list | sort
 ```
 
-For Truck 1 + Truck 3, the ROS PC should include nodes similar to:
+The ROS PC should include nodes similar to:
 
 ```text
 /apriltag
@@ -1131,6 +1382,14 @@ For Truck 1 + Truck 3, the ROS PC should include nodes similar to:
 /truck3/odometry
 /truck3/tag_odom_fusion
 /truck3/waypoint_action_server
+
+/truck4/odometry
+/truck4/tag_odom_fusion
+/truck4/waypoint_action_server
+
+/truck5/odometry
+/truck5/tag_odom_fusion
+/truck5/waypoint_action_server
 ```
 
 Check Actions:
@@ -1144,6 +1403,23 @@ Expected:
 ```text
 /truck1/execute_robot_task
 /truck3/execute_robot_task
+/truck4/execute_robot_task
+/truck5/execute_robot_task
+```
+
+Check fused odometry:
+
+```bash
+ros2 topic list | grep fused_odom
+```
+
+Expected:
+
+```text
+/truck1/fused_odom
+/truck3/fused_odom
+/truck4/fused_odom
+/truck5/fused_odom
 ```
 
 Check robot status topics:
@@ -1152,32 +1428,89 @@ Check robot status topics:
 ros2 topic list | grep status
 ```
 
-Examples:
+Expected:
 
 ```text
 /truck1/status
 /truck3/status
+/truck4/status
+/truck5/status
 ```
 
-Inspect Truck 1 status:
+Check wheel-state topics:
 
 ```bash
-ros2 topic echo /truck1/status
+ros2 topic list | grep wheel_states
 ```
 
-Example:
+Expected:
 
-```yaml
-robot_name: truck1
-state: idle
-detail: Waiting for task
+```text
+/truck1/wheel_states
+/truck3/wheel_states
+/truck4/wheel_states
+/truck5/wheel_states
 ```
 
 ---
 
-## 25. Design Philosophy
+## 26. Basic Troubleshooting
 
-The command center should remain independent from robot-specific low-level implementation as much as possible.
+If a truck does not move even though ROS topics are visible, first verify that its `cmd_vel` topic has the correct subscriber.
+
+Example for Truck 1:
+
+```bash
+ros2 topic info /truck1/cmd_vel -v
+```
+
+Check the command:
+
+```bash
+ros2 topic echo /truck1/cmd_vel
+```
+
+Check wheel encoder output:
+
+```bash
+ros2 topic echo /truck1/wheel_states
+```
+
+Check odometry:
+
+```bash
+ros2 topic echo /truck1/odom
+```
+
+Check fused localization:
+
+```bash
+ros2 topic echo /truck1/fused_odom
+```
+
+For a quick manual forward-motion test:
+
+```bash
+ros2 topic pub -r 10 /truck1/cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 0.25}, angular: {z: 0.0}}"
+```
+
+For a rotation test:
+
+```bash
+ros2 topic pub -r 10 /truck1/cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 0.0}, angular: {z: 0.5}}"
+```
+
+When diagnosing odometry, verify that the reported yaw changes in the same direction as the physical robot.
+
+Incorrect left/right encoder mapping can produce physically plausible wheel counts while still causing incorrect odometry and unstable waypoint control.
+
+---
+
+## 27. Design Philosophy
+
+The Command Center should remain independent from robot-specific low-level implementation as much as possible.
 
 The intended hierarchy is:
 
@@ -1203,7 +1536,10 @@ Common Robot Interface
 Robot-Specific Controller
         │
         ▼
-Hardware
+Per-Robot Hardware Configuration
+        │
+        ▼
+Physical Hardware
 ```
 
 The intended robot status naming convention is:
@@ -1217,6 +1553,8 @@ For example:
 ```text
 /truck1/status
 /truck3/status
+/truck4/status
+/truck5/status
 /excavator1/status
 /excavator2/status
 ```
@@ -1225,9 +1563,11 @@ This allows future robot types to participate in construction scenarios using th
 
 The Command Center should not require detailed knowledge of the robot's internal low-level controller when a common Action and status interface is sufficient.
 
+Similarly, physical differences between robots of the same type should preferably be represented through configuration rather than duplicated controller implementations.
+
 ---
 
-## 26. Current Scenario Capabilities
+## 28. Current Scenario Capabilities
 
 The current Scenario Manager supports:
 
@@ -1245,6 +1585,10 @@ These enable sequential execution:
 Truck 1
 ↓
 Truck 3
+↓
+Truck 4
+↓
+Truck 5
 ```
 
 Timed coordination:
@@ -1298,7 +1642,7 @@ Truck 3 enters loading area
 
 ---
 
-## 27. Future Extensions
+## 29. Future Extensions
 
 Planned or possible extensions include:
 
@@ -1306,6 +1650,7 @@ Planned or possible extensions include:
 - `/excavator1/status`
 - `/excavator2/status`
 - Excavator / dump truck synchronization
+- heterogeneous multi-robot scenarios
 - robot event topics
 - service-call scenario steps
 - parameter-setting scenario steps
@@ -1319,36 +1664,79 @@ Planned or possible extensions include:
 - automatic experiment metadata recording
 - additional construction robot types
 
+The current four-dump-truck implementation provides the foundation for extending the same Command Center architecture to heterogeneous construction equipment.
+
 ---
 
-## 28. Current Verified Configuration
+## 30. Current Verified Configuration
 
-The following physical multi-robot sequence has been verified:
+The current physical system consists of:
 
 ```text
-Truck 1 executes truck1_waypoints.yaml
-              │
-              ▼
-           SUCCESS
-              │
-              ▼
- /truck1/status.state == completed
-              │
-              ▼
-     CONDITION SATISFIED
-              │
-              ▼
-Truck 3 executes truck3_waypoints.yaml
-              │
-              ▼
-           SUCCESS
-              │
-              ▼
-       SCENARIO COMPLETE
+ROS PC
+  │
+  ├── Overhead Camera
+  ├── AprilTag Detection
+  ├── Odometry / Tag Fusion
+  ├── Dump Truck Action Servers
+  └── Scenario Manager
+          │
+          ├── Truck 1 Raspberry Pi
+          ├── Truck 3 Raspberry Pi
+          ├── Truck 4 Raspberry Pi
+          └── Truck 5 Raspberry Pi
 ```
 
-The ROS PC side is launched through a single parameterized Command Center launch file.
+The following physical four-truck sequence has been successfully verified:
 
-Each Raspberry Pi independently runs its own robot hardware bringup.
+```text
+truck1_3_4_5.yaml
+
+SCENARIO START
+      │
+      ▼
+   TRUCK 1
+      │
+      ▼
+   SUCCESS
+      │
+      ▼
+   TRUCK 3
+      │
+      ▼
+   SUCCESS
+      │
+      ▼
+   TRUCK 4
+      │
+      ▼
+   SUCCESS
+      │
+      ▼
+   TRUCK 5
+      │
+      ▼
+   SUCCESS
+      │
+      ▼
+SCENARIO COMPLETE
+```
+
+The ROS PC side is launched through a single parameterized Command Center launch file:
+
+```bash
+ros2 launch construction_site_control command_center.launch.py \
+  trucks:="truck1,truck3,truck4,truck5" \
+  start_camera:=true \
+  start_apriltag:=true \
+  start_localization:=true \
+  start_action_servers:=true \
+  start_scenario_manager:=true \
+  scenario:=truck1_3_4_5.yaml
+```
+
+Each Raspberry Pi independently runs its own robot hardware bringup using the appropriate truck-specific configuration.
 
 The Command Center coordinates robot behavior at the task and construction-scenario level while maintaining compatibility with the existing topic-based robot control system.
+
+As of the current verified implementation, Trucks 1, 3, 4, and 5 can participate in a common ROS 2 Action-based multi-robot construction scenario using shared software architecture and per-robot hardware configuration.
