@@ -48,6 +48,10 @@ resolve_device_ip() {
             echo "${ROS_Laptop}"
             ;;
 
+        ros_laptop_backup)
+            echo "${ROS_Laptop_Backup}"
+            ;;
+
         dumptruck_01)
             echo "${DUMPTRUCK_01}"
             ;;
