@@ -95,7 +95,7 @@ You will now configure your laptop so that you can remotely access the ROS compu
 
 #### 1. Open a Terminal on YOUR Laptop
 
-Open a Terminal on your laptop.
+Open a Terminal **on your laptop**.
 
 - **macOS:** Open **Terminal**.
 - **Windows:** Open **PowerShell** or **Windows Terminal**.
@@ -104,7 +104,7 @@ Open a Terminal on your laptop.
 
 Before creating a new SSH key, check whether your laptop already has one.
 
-Copy and paste the following command into the Terminal:
+Copy and paste the following command into the Terminal of your laptop:
 
 ```bash
 ls ~/.ssh/id_ed25519.pub
@@ -152,12 +152,10 @@ Press **Enter** to use the default location.
 You will then be asked to enter a passphrase:
 
 ```text
-Enter passphrase (empty for no passphrase):
+Press Enter without typing anything
 ```
 
 <!-- SCREENSHOT: SSH key passphrase prompt -->
-
-[PASSHRASE INSTRUCTION TO BE CONFIRMED]
 
 After completing the prompts, you should see a message similar to:
 
@@ -186,17 +184,15 @@ This will allow you to connect to the ROS computer without entering your Penn St
 
 Make sure you know the IP address of the ROS computer you are using.
 
-For example:
-
 ```text
-10.170.32.181
+10.170.32.181 or 10.170.32.227
 ```
 
-> **Important:** Use the IP address of the ROS computer assigned to you.
+> **Important:** Use the IP address of the ROS computer assigned to you for the lab day.
 
 #### 2. Copy Your SSH Key
 
-On **your laptop**, run the following command:
+On **your laptop**, run the following command after opening the terminal:
 
 ```bash
 ssh-copy-id 'YOUR_PSU_ID@AD.PSU.EDU'@ROS_COMPUTER_IP
@@ -385,11 +381,6 @@ Host dumptruck1
     User besure
     IdentityFile ~/.ssh/id_ed25519
 
-Host dumptruck2
-    HostName 10.170.32.193
-    User dumptruck_02
-    IdentityFile ~/.ssh/id_ed25519
-
 Host dumptruck3
     HostName 10.170.32.194
     User besure
@@ -415,28 +406,23 @@ Host excavator2
     User besure
     IdentityFile ~/.ssh/id_ed25519
 
+Host excavator3
+    HostName 10.170.32.222
+    User besure
+    IdentityFile ~/.ssh/id_ed25519
+
 Host ROS-PC-1
     HostName 10.170.32.181
     User YOUR_PSU_ID@AD.PSU.EDU
     IdentityFile ~/.ssh/id_ed25519
-
 
 Host ROS-PC-2
     HostName 10.170.32.227
     User YOUR_PSU_ID@AD.PSU.EDU
     IdentityFile ~/.ssh/id_ed25519
-
 ```
 
 Replace **YOUR_PSU_ID** with your Penn State user ID.
-
-For example:
-
-```text
-Host ROS-PC-1
-    HostName 10.170.32.181
-    User abc123@AD.PSU.EDU
-```
 
 > **Important:** Do not change `HostName` unless instructed to do so. Only replace `YOUR_PSU_ID` with your own Penn State user ID.
 
@@ -529,9 +515,9 @@ You will now download the course GitHub repository to the ROS computer.
 
 From the top menu in VS Code, select:
 
-**Terminal → New Terminal**
+**Terminal → Split Terminal**
 
-<!-- SCREENSHOT: VS Code Terminal menu with New Terminal selected -->
+<!-- SCREENSHOT: VS Code Terminal menu with Split Terminal selected -->
 
 A Terminal should open at the bottom of the VS Code window.
 
@@ -707,19 +693,13 @@ Your Terminal prompt should look similar to:
 your_psu_id@AD.PSU.EDU@E5-AE-ROS-PC:~$
 ```
 
-#### 3. Connect to the Raspberry Pi
+#### 3. Open another VSCode window and SSH to the Raspberry Pi
+
+Open anouther VSCode window.
 
 Use SSH to connect to your assigned Raspberry Pi.
 
-```bash
-ssh USERNAME@RASPBERRY_PI_IP
-```
-
-For example:
-
-```bash
-ssh besure@10.170.32.XXX
-```
+Connect through the remote SSH window.
 
 > Your instructor will provide the correct Raspberry Pi username and IP address.
 
@@ -748,7 +728,7 @@ After connecting, your Terminal prompt should change.
 For example:
 
 ```text
-robot@dumptruck-1:~$
+besure@dumptruck1:~$
 ```
 
 <!-- SCREENSHOT: Successfully connected to Raspberry Pi -->
@@ -761,13 +741,15 @@ Your Laptop
 VS Code Remote SSH
     ↓
 ROS Computer
+
+Your Laptop
     ↓
 SSH
     ↓
 Raspberry Pi
 ```
 
-You are now controlling the Raspberry Pi through the ROS computer.
+You are now controlling the Raspberry Pi through your computer.
 
 ### Checkpoint — Raspberry Pi Connection
 
@@ -843,24 +825,15 @@ Keep this Terminal running.
 
 ---
 
-#### 3. Open Another Terminal
+#### 3. Open the other VSCode window
 
-Open another Terminal in VS Code:
+Open another VSCode window and in the Terminal in VS Code:
 
 **Terminal → New Terminal**
 
-This new Terminal should initially be connected to the **ROS computer**.
+This new Terminal should initially be connected to the **RaspberryPi**.
 
 Now connect to your assigned Raspberry Pi:
-
-```bash
-ssh USERNAME@RASPBERRY_PI_IP
-```
-
-For example:
-
-```bash
-ssh robot@10.170.32.XXX
 ```
 
 Confirm that the Terminal prompt changes to the Raspberry Pi.
@@ -868,7 +841,7 @@ Confirm that the Terminal prompt changes to the Raspberry Pi.
 For example:
 
 ```text
-robot@dumptruck-1:~$
+besure@dumptruck1:~$
 ```
 
 ---
@@ -946,7 +919,7 @@ Stop any running ROS 2 nodes by pressing:
 Ctrl + C
 ```
 
-If you are connected to the Raspberry Pi through SSH, return to the ROS computer using:
+If you are connected to the Raspberry Pi through SSH, return to your computer using:
 
 ```bash
 exit
@@ -970,4 +943,6 @@ You have now:
 - Tested ROS 2 communication between two computers.
 
 You are now ready to use the course robotics system remotely in future labs.
+
+
 

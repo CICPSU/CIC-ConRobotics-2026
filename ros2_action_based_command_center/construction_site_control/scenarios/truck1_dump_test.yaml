@@ -1,0 +1,10 @@
+scenario_name: truck1_dump_test
+
+steps:
+
+  - id: truck1_route
+    type: task
+    robot: truck1
+    task_type: waypoint
+    task_file: truck1_waypoints3.yaml
+
