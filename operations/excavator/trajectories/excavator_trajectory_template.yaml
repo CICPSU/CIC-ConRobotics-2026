@@ -1,0 +1,165 @@
+# ==============================================================================
+# CIC ConRobotics - Excavator Trajectory Template
+# ==============================================================================
+#
+# PURPOSE
+# -------
+# This file defines a sequence of target joint configurations for a model
+# excavator.
+#
+# Trajectory files describe WHAT motion the excavator should perform.
+#
+# Machine-specific information such as:
+#
+#   - sensor calibration
+#   - ADC channels
+#   - GPIO pins
+#   - physical joint limits
+#
+# does NOT belong in this file.
+#
+# That information belongs in:
+#
+#   robots/excavator/excavator_control/config/
+#
+#
+# ==============================================================================
+# JOINT ANGLE CONVENTION
+# ==============================================================================
+#
+# All joint targets are expressed in DEGREES.
+#
+# Current joints:
+#
+#   swing
+#   boom
+#   arm
+#   bucket
+#
+# The trajectory server is responsible for converting these target angles
+# into the appropriate machine-specific sensor/control representation.
+#
+#
+# ==============================================================================
+# TRAJECTORY EXECUTION
+# ==============================================================================
+#
+# Each waypoint represents a desired excavator joint configuration.
+#
+# Example:
+#
+#   - name: approach
+#     positions:
+#       swing: 0.0
+#       boom: -20.0
+#       arm: 80.0
+#       bucket: 30.0
+#
+# The exact execution behavior (simultaneous/sequential joint movement,
+# tolerance, timeout, etc.) is handled by the trajectory server.
+#
+# ==============================================================================
+
+
+trajectory_name: example_excavation_cycle
+
+description: >
+  Template trajectory for the CIC model excavator.
+  Replace the example target positions with validated joint targets.
+
+
+# ==============================================================================
+# WAYPOINTS
+# ==============================================================================
+
+waypoints:
+
+  # --------------------------------------------------------------------------
+  # HOME / START
+  # --------------------------------------------------------------------------
+
+  - name: home
+
+    positions:
+      swing: 0.0
+      boom: -10.0
+      arm: 70.0
+      bucket: 20.0
+
+
+  # --------------------------------------------------------------------------
+  # APPROACH
+  # --------------------------------------------------------------------------
+
+  - name: approach
+
+    positions:
+      swing: 0.0
+      boom: -30.0
+      arm: 90.0
+      bucket: 45.0
+
+
+  # --------------------------------------------------------------------------
+  # DIG
+  # --------------------------------------------------------------------------
+
+  - name: dig
+
+    positions:
+      swing: 0.0
+      boom: -45.0
+      arm: 105.0
+      bucket: 75.0
+
+
+  # --------------------------------------------------------------------------
+  # LIFT
+  # --------------------------------------------------------------------------
+
+  - name: lift
+
+    positions:
+      swing: 0.0
+      boom: -15.0
+      arm: 85.0
+      bucket: 75.0
+
+
+  # --------------------------------------------------------------------------
+  # SWING TO DUMP LOCATION
+  # --------------------------------------------------------------------------
+
+  - name: swing_to_dump
+
+    positions:
+      swing: 60.0
+      boom: -15.0
+      arm: 85.0
+      bucket: 75.0
+
+
+  # --------------------------------------------------------------------------
+  # DUMP
+  # --------------------------------------------------------------------------
+
+  - name: dump
+
+    positions:
+      swing: 60.0
+      boom: -10.0
+      arm: 75.0
+      bucket: 10.0
+
+
+  # --------------------------------------------------------------------------
+  # RETURN HOME
+  # --------------------------------------------------------------------------
+
+  - name: return_home
+
+    positions:
+      swing: 0.0
+      boom: -10.0
+      arm: 70.0
+      bucket: 20.0
