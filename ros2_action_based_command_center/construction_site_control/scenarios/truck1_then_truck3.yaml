@@ -6,10 +6,11 @@ steps:
     type: task
     robot: truck1
     task_type: waypoint
-    task_file: truck1_waypoints.yaml
+    task_file: truck1_waypoints3.yaml
 
   - id: truck3_route
     type: task
     robot: truck3
     task_type: waypoint
     task_file: truck3_waypoints.yaml
+  
