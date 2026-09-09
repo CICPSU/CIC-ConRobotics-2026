@@ -69,6 +69,9 @@ setup(
 
             'excavator_trajectory_server = '
             'excavator_control.excavator_trajectory_server:main',
+
+            'excavator_trajectory_client = '
+            'excavator_control.excavator_trajectory_client:main',
         ],
     },
 )
