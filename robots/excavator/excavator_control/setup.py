@@ -28,7 +28,11 @@ setup(
             ['package.xml'],
         ),
         (
-            os.path.join('share', package_name, 'config'),
+            os.path.join(
+                'share',
+                package_name,
+                'config',
+            ),
             glob('config/*.yaml'),
         ),
     ],
@@ -37,6 +41,12 @@ setup(
         'setuptools',
         'PyYAML',
     ],
+
+    tests_require=[
+        'pytest',
+    ],
+
+    test_suite='test',
 
     zip_safe=True,
 
