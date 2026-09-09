@@ -1,129 +1,428 @@
 # CIC-ConRobotics-2026
 
-## Overview
+ROS 2-based construction robotics platform for **AE 573: Robotics and Automation in Construction, Fall 2026** at Penn State.
 
-This repository contains the software, simulation environments, and documentation developed for the **CIC ConRobotics course (AE 573), Fall 2026**.
+This repository contains the software, configuration files, operational data, and lab materials used to control and coordinate physical construction robot models used in the course.
 
-The project focuses on the integration of construction robotics, ROS 2, robot simulation, localization, and multi-robot coordination using both physical scale-model construction robots and simulated construction equipment.
+The platform currently supports:
 
-The primary software environment is:
+- Multiple autonomous dump truck models
+- A robotic excavator model
+- Overhead camera-based AprilTag localization
+- ROS 2-based robot control
+- ROS 2 Actions for task execution
+- Multi-robot coordination through a Command Center
+- Waypoint- and scenario-based construction operations
 
-- **ROS 2 Jazzy**
-- **Ubuntu 24.04**
-- **NVIDIA Isaac Sim 5.1.0**
-
-The repository currently supports development and experimentation with:
-
-- Scale-model dump trucks
-- Scale-model excavators
-- Full-scale excavator simulation
-- AprilTag-based localization
-- Odometry and localization fusion
-- ROS 2 topic-based robot control
-- ROS 2 action-based multi-robot coordination
-- Multi-robot construction operation scenarios
-
+The repository is organized by **system responsibility** rather than ROS communication type. This makes it easier to understand where robot hardware, control logic, perception, operational data, and multi-robot coordination belong.
 
 ---
 
-# 1. System Architecture
+# 1. System Overview
 
-The repository is organized around several layers of the construction robotics system.
+The course platform represents a small-scale robotic construction site.
 
-Conceptually:
+At a high level:
 
 ```text
-                    Construction Robot System
+                 ┌─────────────────────────┐
+                 │     Command Center      │
+                 │                         │
+                 │  Tasks and Scenarios    │
+                 └────────────┬────────────┘
                               │
-              ┌───────────────┴───────────────┐
-              │                               │
-       Physical Robots                  Isaac Sim
-              │                               │
-              └───────────────┬───────────────┘
+                         ROS 2 Actions
                               │
-                            ROS 2
-                              │
-              ┌───────────────┴───────────────┐
-              │                               │
-      Topic-Based Control            Action-Based Control
-              │                               │
-      Low-Level Robot Control        Multi-Robot Coordination
-      Hardware Testing               Task Sequencing
-      Localization                   Synchronization
-      Odometry                       Construction Scenarios
+               ┌──────────────┴──────────────┐
+               │                             │
+        ┌──────▼──────┐               ┌──────▼──────┐
+        │ Dump Trucks │               │  Excavator  │
+        └──────┬──────┘               └──────┬──────┘
+               │                             │
+        Robot Control                 Robot Control
+               │                             │
+        Physical Robot                Physical Robot
+               │
+               │
+        ┌──────▼──────┐
+        │ Perception  │
+        │ AprilTags   │
+        │ Localization│
+        └─────────────┘
 ```
 
-The **topic-based control layer** provides direct access to individual robot functions and remains useful for development, testing, calibration, localization, and diagnostics.
-
-The **action-based command center** provides a higher-level coordination layer for executing construction tasks involving multiple robots.
-
+ROS 2 provides the communication infrastructure connecting perception, robot control, and higher-level task coordination.
 
 ---
 
 # 2. Repository Structure
 
-The repository currently contains the following major components:
-
 ```text
 CIC-ConRobotics-2026/
 │
-├── AprilTag_Localization/
+├── robots/
+│   ├── dump_truck/
+│   │   ├── dump_truck_hardware/
+│   │   ├── dump_truck_control/
+│   │   └── dump_truck_bringup/
+│   │
+│   └── excavator/
 │
-├── docs/
-│   ├── ROS2/
-│   └── isaac_sim/
+├── common/
+│   └── construction_site_interfaces/
 │
-├── dumptruck_ros2_python_based/
+├── perception/
+│   └── construction_robot_perception/
 │
-├── model_excavator_IsaacSim/
+├── command_center/
+│   ├── dump_truck_action_server/
+│   └── construction_site_control/
+│
+├── operations/
+│   ├── dump_truck/
+│   │   └── waypoints/
+│   ├── excavator/
+│   │   └── trajectories/
+│   └── scenarios/
 │
 ├── network/
 │
-├── ros2_action_based_command_center/
+├── labs/
 │
-├── ros2_topic_based_control/
+├── docs/
 │
-├── runtime_logs/
-│
-├── zx200_digging_stack_IsaacSim/
-│
-├── .gitattributes
-├── .gitignore
-└── README.md
+└── tools/
 ```
 
-> The repository structure may continue to evolve during development.
-
+The major directories are described below.
 
 ---
 
-# 3. Main Components
-
-## 3.1 ROS 2 Topic-Based Robot Control
-
-Directory:
+# 3. Robots
 
 ```text
-ros2_topic_based_control/
+robots/
 ```
 
-This directory contains the primary low-level ROS 2 control stack for the physical construction robots.
+This directory contains ROS 2 packages associated with individual robot platforms.
 
-It includes functionality for:
+Robot-specific hardware interfaces, control algorithms, and launch configurations belong here.
 
-- dump truck hardware control
-- motor control
-- bucket control
-- wheel encoder processing
-- odometry
-- AprilTag localization integration
-- fused odometry
-- waypoint control
-- individual robot testing
-- multi-robot testing
-- hardware diagnostics
+---
 
-The current physical dump truck fleet includes:
+## 3.1 Dump Truck
+
+```text
+robots/dump_truck/
+├── dump_truck_hardware/
+├── dump_truck_control/
+└── dump_truck_bringup/
+```
+
+The dump truck platform is divided into three ROS 2 packages.
+
+### `dump_truck_hardware`
+
+Low-level interface to the physical dump truck.
+
+This package contains nodes responsible for interacting directly with the Raspberry Pi and physical actuators.
+
+Examples include:
+
+- Motor control
+- Wheel commands
+- Dump bucket control
+- Hardware-level robot behavior
+
+Key nodes include:
+
+```text
+motor_drive_node.py
+bucket_action_node.py
+```
+
+This package normally runs on the **Raspberry Pi installed on the dump truck**.
+
+---
+
+### `dump_truck_control`
+
+Robot-level motion and localization logic.
+
+This package contains nodes for:
+
+- Odometry
+- AprilTag/odometry integration
+- Waypoint navigation
+- Robot motion control
+
+Key nodes include:
+
+```text
+odometry_node.py
+tag_odom_fusion_node.py
+waypoint_controller_node.py
+```
+
+This package normally runs on a **ROS PC** rather than directly on the Raspberry Pi.
+
+Operational waypoint files are intentionally stored separately from the ROS package under:
+
+```text
+operations/dump_truck/waypoints/
+```
+
+---
+
+### `dump_truck_bringup`
+
+Launch files and robot-specific configuration.
+
+This package provides launch configurations for starting the dump truck system on both:
+
+- Raspberry Pi
+- ROS PC
+
+Hardware configurations are stored under:
+
+```text
+robots/dump_truck/dump_truck_bringup/config/hardware/
+```
+
+Current truck configuration files include:
+
+```text
+truck1.yaml
+truck3.yaml
+truck4.yaml
+truck5.yaml
+```
+
+Localization configuration is stored under:
+
+```text
+robots/dump_truck/dump_truck_bringup/config/localization/
+```
+
+---
+
+## 3.2 Excavator
+
+```text
+robots/excavator/
+```
+
+This directory is reserved for the ROS 2 excavator control system.
+
+The excavator architecture is being integrated into the same repository structure used by the dump truck system.
+
+Excavator-specific code belongs under:
+
+```text
+robots/excavator/
+```
+
+while operational trajectory files belong under:
+
+```text
+operations/excavator/trajectories/
+```
+
+This separation keeps robot software independent from task-specific operational data.
+
+---
+
+# 4. Common ROS Interfaces
+
+```text
+common/
+└── construction_site_interfaces/
+```
+
+Shared ROS 2 interfaces used across the construction robotics platform are stored here.
+
+The `construction_site_interfaces` package currently contains custom ROS 2 message and action definitions.
+
+```text
+construction_site_interfaces/
+├── action/
+│   └── ExecuteRobotTask.action
+│
+└── msg/
+    └── RobotStatus.msg
+```
+
+These interfaces allow different robot systems and the Command Center to communicate using common task and status definitions.
+
+Because other packages depend on these interfaces, this package is built before packages that use the custom messages and actions.
+
+---
+
+# 5. Perception and Localization
+
+```text
+perception/
+└── construction_robot_perception/
+```
+
+Shared perception components belong here.
+
+The current system uses an overhead camera and AprilTags to estimate the positions of robots within the model construction site.
+
+The package includes configuration for:
+
+- Overhead USB camera
+- AprilTag detection
+- Multi-truck tag definitions
+
+Current configuration files include:
+
+```text
+config/
+├── tags_multi_truck.yaml
+├── usb_cam_obsbot.yaml
+└── legacy_obsbot/
+```
+
+Historical OBSBOT camera configuration files are retained under:
+
+```text
+config/legacy_obsbot/
+```
+
+Additional AprilTag calibration documentation is available under:
+
+```text
+docs/perception/apriltag/
+```
+
+Utility scripts related to perception are stored under:
+
+```text
+tools/perception/
+```
+
+---
+
+# 6. Command Center
+
+```text
+command_center/
+├── dump_truck_action_server/
+└── construction_site_control/
+```
+
+The Command Center provides higher-level coordination of robot tasks.
+
+Instead of directly controlling motors or publishing low-level velocity commands, the Command Center works with higher-level instructions such as:
+
+```text
+Execute this waypoint task.
+```
+
+or:
+
+```text
+Run this construction-site scenario.
+```
+
+---
+
+## 6.1 Dump Truck Action Server
+
+```text
+command_center/dump_truck_action_server/
+```
+
+The dump truck action server connects high-level task requests with the dump truck control system.
+
+The waypoint action server receives task requests and resolves the corresponding waypoint file from:
+
+```text
+operations/dump_truck/waypoints/
+```
+
+For example:
+
+```text
+truck1_waypoints.yaml
+truck3_waypoints.yaml
+truck4_waypoints.yaml
+truck5_waypoints.yaml
+```
+
+This allows the Command Center to request a task without embedding waypoint data directly in the action request.
+
+---
+
+## 6.2 Construction Site Control
+
+```text
+command_center/construction_site_control/
+```
+
+This package provides higher-level construction-site coordination.
+
+It includes the Scenario Manager, which can execute multi-step and multi-robot scenarios.
+
+Scenario definitions are stored under:
+
+```text
+operations/scenarios/
+```
+
+Example scenarios include:
+
+```text
+truck1_then_truck3.yaml
+truck1_truck3_parallel.yaml
+truck1_3_4_5.yaml
+truck5_then_truck4.yaml
+```
+
+Scenarios can represent operations such as:
+
+- Sequential robot execution
+- Parallel robot execution
+- Waiting for another robot
+- Robot status conditions
+- ROS topic-based conditions
+- Multi-robot task coordination
+
+The goal is to separate **what the construction operation should do** from **how each individual robot performs its task**.
+
+---
+
+# 7. Operations
+
+```text
+operations/
+├── dump_truck/
+│   └── waypoints/
+├── excavator/
+│   └── trajectories/
+└── scenarios/
+```
+
+Operational data is intentionally separated from ROS 2 source packages.
+
+This distinction is important.
+
+The ROS packages define **robot capabilities and system behavior**.
+
+The `operations/` directory defines **what we want the robots to do during a particular operation**.
+
+---
+
+## 7.1 Dump Truck Waypoints
+
+```text
+operations/dump_truck/waypoints/
+```
+
+Waypoint YAML files define navigation tasks for individual dump trucks.
+
+Current files include waypoint sets for:
 
 ```text
 Truck 1
@@ -132,735 +431,495 @@ Truck 4
 Truck 5
 ```
 
-Hardware-specific differences between trucks are handled through per-truck YAML configuration files.
-
-These parameters include, for example:
-
-- AprilTag IDs
-- bucket servo positions
-- localization parameters
-- odometry parameters
-- encoder mapping
-- left/right encoder swapping
-
-This allows the robots to share the same ROS 2 node implementations while compensating for differences in physical hardware configuration.
-
-For detailed setup, configuration, launch procedures, diagnostics, and testing:
-
-**[ROS 2 Topic-Based Control README](ros2_topic_based_control/README.md)**
-
+Multiple waypoint files may exist for a single truck to represent different tasks or routes.
 
 ---
 
-## 3.2 ROS 2 Action-Based Command Center
-
-Directory:
+## 7.2 Excavator Trajectories
 
 ```text
-ros2_action_based_command_center/
+operations/excavator/trajectories/
 ```
 
-The Action-Based Command Center provides the higher-level coordination layer for the construction robots.
+This directory is used for excavator task and trajectory definitions.
 
-Instead of directly publishing individual velocity commands, the command center coordinates robot tasks through ROS 2 actions.
-
-Current capabilities include:
-
-- robot task execution
-- multi-step task sequences
-- multi-robot coordination
-- synchronized operations
-- parallel task execution
-- waypoint-based robot movement
-- construction operation scenarios
-
-The command center is designed to sit above the topic-based control layer:
-
-```text
-Action-Based Command Center
-          │
-          ▼
-ROS 2 Actions / Task Logic
-          │
-          ▼
-Topic-Based Robot Control
-          │
-          ▼
-Physical Robot Hardware
-```
-
-The topic-based control stack therefore remains the primary low-level interface, while the command center provides task-level coordination.
-
-For architecture, launch instructions, available actions, scenario definitions, and examples:
-
-**[ROS 2 Action-Based Command Center README](ros2_action_based_command_center/README.md)**
-
+Excavator operational sequences should be stored here rather than inside the excavator ROS package.
 
 ---
 
-## 3.3 AprilTag Localization
-
-Directory:
+## 7.3 Construction Scenarios
 
 ```text
-AprilTag_Localization/
+operations/scenarios/
 ```
 
-AprilTag localization is used to provide external position and orientation information for the physical robots.
+Scenario YAML files define higher-level construction operations involving one or more robots.
 
-An overhead camera observes AprilTags mounted on the robots.
+A scenario may specify:
 
-The localization system is used together with wheel odometry to provide robot pose information in a global coordinate frame.
+- Which robot performs a task
+- Which task file should be executed
+- Sequential operations
+- Parallel operations
+- Conditions
+- Waiting behavior
 
-Conceptually:
-
-```text
-Overhead Camera
-      │
-      ▼
-AprilTag Detection
-      │
-      ▼
-Robot Global Pose
-      │
-      ├─────────────┐
-      │             │
-      ▼             ▼
-Tag Pose      Wheel Odometry
-      │             │
-      └──────┬──────┘
-             ▼
-        Fused Odometry
-             │
-             ▼
-     Waypoint / Task Control
-```
-
-Robot-specific AprilTag IDs and localization parameters are configured separately for each truck.
-
+This allows construction operations to be modified without rewriting robot-control code.
 
 ---
 
-## 3.4 Model Excavator Simulation
-
-Directory:
-
-```text
-model_excavator_IsaacSim/
-```
-
-This directory contains the Isaac Sim environment and ROS 2 control components for the scale-model excavator.
-
-
-
----
-
-## 3.5 Full-Scale Excavator Simulation
-
-Directory:
-
-```text
-zx200_digging_stack_IsaacSim/
-```
-
-This directory contains simulation and ROS 2 components associated with the full-scale **Hitachi ZX200 excavator**.
-
-
----
-
-## 3.6 Dump Truck Python Prototype
-
-Directory:
-
-```text
-dumptruck_ros2_python_based/
-```
-
-This directory contains earlier Python-based ROS 2 development for the model dump trucks.
-
-Some components in this directory represent earlier prototypes used during development of the current ROS 2 control architecture.
-
-For current multi-truck operation, refer primarily to:
-
-```text
-ros2_topic_based_control/
-```
-
-and:
-
-```text
-ros2_action_based_command_center/
-```
-
-
----
-
-## 3.7 Network Configuration
-
-Directory:
+# 8. Network Configuration
 
 ```text
 network/
 ```
 
-This directory contains network-related configuration and utilities used for ROS 2 communication between:
+The physical robots communicate with ROS PCs over a shared network.
 
-- ROS computers
-- Raspberry Pi controllers
-- physical robots
-- other networked devices
+This directory contains common network configuration utilities used by the course platform.
 
-Network configuration is particularly important when operating multiple robots simultaneously.
+Current scripts include:
 
+```text
+devices.sh
+setup_network.sh
+```
+
+Network configuration is treated as a shared system-level concern rather than belonging to a particular robot.
 
 ---
 
-# 4. Physical Dump Truck Architecture
-
-The current dump truck system uses a distributed ROS 2 architecture.
-
-Each physical truck contains a Raspberry Pi responsible for hardware-level operation.
-
-Conceptually:
+# 9. Labs
 
 ```text
-ROS Computer
-     │
-     │ ROS 2
-     ▼
-Raspberry Pi
-     │
-     ├── Motor Control
-     ├── Bucket Control
-     ├── Encoder Reading
-     └── Wheel State Publishing
+labs/
 ```
 
-The ROS computer performs higher-level processing such as:
-
-```text
-Wheel States
-     │
-     ▼
-Odometry
-     │
-     ├───────────────┐
-     │               │
-     ▼               ▼
-Wheel Odom      AprilTag Pose
-     │               │
-     └───────┬───────┘
-             ▼
-        Fused Odometry
-             │
-             ▼
-       Robot Controller
-             │
-             ▼
-           cmd_vel
-             │
-             ▼
-      Physical Truck
-```
-
-The current multi-truck configuration supports:
-
-```text
-Truck 1
-Truck 3
-Truck 4
-Truck 5
-```
-
-Each robot uses its own ROS 2 namespace:
-
-```text
-/truck1/
-/truck3/
-/truck4/
-/truck5/
-```
-
-This allows multiple robots to operate simultaneously while using common node implementations.
-
-
----
-
-# 5. Multi-Robot Control
-
-The repository supports coordinated operation of multiple construction robots.
-
-For the dump truck fleet, a typical architecture is:
-
-```text
-                  Command Center
-                       │
-       ┌───────────────┼───────────────┐
-       │               │               │
-       ▼               ▼               ▼
-    Truck 1         Truck 3         Truck 4       
-       │               │               │          
-       ▼               ▼               ▼          
-   Controller      Controller      Controller     
-       │               │               │               
-       ▼               ▼               ▼               
-    cmd_vel          cmd_vel          cmd_vel          
-       │               │               │               
-       ▼               ▼               ▼               
- Physical Truck   Physical Truck   Physical Truck  
-```
-
-Robot-specific hardware differences are handled through configuration rather than separate source-code implementations.
-
-This allows the same control architecture to be deployed across multiple physical robots.
-
-
----
-
-# 6. Branch Policy
-
-The repository uses the following branch structure:
-
-- `main` — stable branch intended primarily for students and course exercises
-- `dev` — active development and integration branch used by the development team
-
-Development changes should generally be tested on `dev` before being merged into `main`.
-
-
----
-
-# 7. Clone the Repository
-
-## 7.1 Go to Your Home Directory
-
-```bash
-cd ~
-```
-
-## 7.2 Create a Workspace Directory
-
-You can choose the workspace name.
+Course lab materials are stored here.
 
 For example:
 
-```bash
-mkdir -p ~/ws_conrobotics
-cd ~/ws_conrobotics
+```text
+labs/lab01_ros_network_setup/
 ```
 
-## 7.3 Clone the Repository
+Labs provide student-facing instructions for configuring and operating the robotics platform.
+
+Students should follow the instructions provided for the specific lab rather than attempting to launch the entire repository at once.
+
+---
+
+# 10. Documentation
+
+```text
+docs/
+```
+
+Supporting technical documentation is stored here.
+
+This includes materials that are useful for operating, calibrating, or understanding the system but are not themselves ROS packages.
+
+For example:
+
+```text
+docs/perception/apriltag/
+```
+
+contains documentation related to AprilTag and camera calibration.
+
+---
+
+# 11. Tools
+
+```text
+tools/
+```
+
+Utility and diagnostic scripts that do not belong to a specific ROS package are stored here.
+
+For example:
+
+```text
+tools/perception/read_tag_tf.py
+```
+
+can be used for AprilTag-related diagnostics.
+
+---
+
+# 12. Software Environment
+
+The Fall 2026 course environment is based on:
+
+```text
+Ubuntu 24.04
+ROS 2 Jazzy
+Python 3
+```
+
+Before using the repository, ROS 2 should be installed and configured on the computer.
+
+Source ROS 2 with:
 
 ```bash
+source /opt/ros/jazzy/setup.bash
+```
+
+---
+
+# 13. Clone the Repository
+
+Clone the repository:
+
+```bash
+cd ~
+mkdir -p ws_conrobotics
+cd ws_conrobotics
+
 git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
+cd CIC-ConRobotics-2026
 ```
 
-After cloning:
+During active course development, the `dev` branch may be used:
 
-```text
-~/ws_conrobotics/
-└── CIC-ConRobotics-2026/
+```bash
+git checkout dev
 ```
 
-Move into the repository:
+Pull the latest changes with:
+
+```bash
+git pull
+```
+
+---
+
+# 14. Build the ROS 2 Workspace
+
+From the repository root:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
-```
 
-### Important
-
-Each user or development group should clone the repository inside their own home directory.
-
-Do **not** clone the repository into shared system directories such as:
-
-```text
-/opt
-/usr
-```
-
-unless specifically required by the system configuration.
-
-
----
-# 8. Build the ROS 2 System
-
-Several components in this repository are implemented as ROS 2 packages and must be built before they can be used.
-
-For first-time setup, the recommended approach is to build the main ROS 2 packages together from the root of this repository.
-
-> **For new ROS 2 users:**  
-> Building and running are separate steps.
->
-> The basic workflow is:
->
-> ```text
-> Clone repository
->       ↓
-> Build ROS 2 packages
->       ↓
-> Source the workspace
->       ↓
-> Run the system
-> ```
->
-> You normally need to perform the full build only during the initial setup or after major updates to the repository.
-
----
-
-## 8.1 Initial Full Build
-
-First, source ROS 2 Jazzy:
-
-```bash
 source /opt/ros/jazzy/setup.bash
+
+colcon build --symlink-install
 ```
 
-Move to the repository:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-```
-
-Then build the main ROS 2 packages used by the current system:
-
-```bash
-colcon build \
-  --symlink-install \
-  --packages-select \
-  construction_robot_perception \
-  dump_truck_hardware \
-  dump_truck_control \
-  dump_truck_bringup \
-  construction_site_interfaces \
-  dump_truck_action_server \
-  construction_site_control
-```
-
-This build includes the packages used for:
-
-- overhead camera and AprilTag perception
-- dump truck hardware interfaces
-- motor and encoder handling
-- wheel odometry
-- AprilTag-based localization and odometry fusion
-- dump truck bringup
-- shared ROS 2 interfaces
-- dump truck Action Servers
-- multi-robot Command Center control
-
-Wait until the build finishes.
-
-A successful build should complete without any package reporting:
-
-```text
-Failed
-```
-
----
-
-## 8.2 Source the Built Workspace
-
-After the build completes, source the workspace:
+After the build completes:
 
 ```bash
 source install/setup.bash
 ```
 
-This step is important.
+The workspace currently contains the following ROS 2 packages:
 
-`colcon build` creates the ROS 2 packages inside the workspace, but the current terminal must still be told where to find them.
-
-You can verify that the main packages are available with:
-
-```bash
-ros2 pkg list | grep -E \
-'construction_robot_perception|dump_truck|construction_site'
+```text
+construction_robot_perception
+construction_site_control
+construction_site_interfaces
+dump_truck_action_server
+dump_truck_bringup
+dump_truck_control
+dump_truck_hardware
 ```
 
-If the expected packages appear, the ROS 2 workspace is ready.
+You can verify package discovery with:
+
+```bash
+colcon list
+```
 
 ---
 
-## 8.3 Complete First-Time Build Command
+# 15. Rebuilding After Changes
 
-For first-time users, the entire procedure can be copied and executed from start to finish:
-
-```bash
-# Source ROS 2 Jazzy
-source /opt/ros/jazzy/setup.bash
-
-# Move to the repository
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-# Build the main ROS 2 packages
-colcon build \
-  --symlink-install \
-  --packages-select \
-  construction_robot_perception \
-  dump_truck_hardware \
-  dump_truck_control \
-  dump_truck_bringup \
-  construction_site_interfaces \
-  dump_truck_action_server \
-  construction_site_control
-
-# Source the newly built workspace
-source install/setup.bash
-
-# Verify that the packages are available
-ros2 pkg list | grep -E \
-'construction_robot_perception|dump_truck|construction_site'
-```
-
-For a normal first-time setup, use this complete build rather than performing multiple separate builds from the subsystem READMEs.
-
----
-
-## 8.4 Opening a New Terminal
-
-You do **not** need to rebuild the ROS 2 packages every time you open a new terminal.
-
-However, every new terminal must source both ROS 2 and the built workspace.
-
-Run:
+For normal Python development:
 
 ```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
 source /opt/ros/jazzy/setup.bash
 
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
+colcon build --symlink-install
 
 source install/setup.bash
 ```
 
-After this, the terminal is ready to use the ROS 2 packages in this repository.
-
-> **Remember:**  
->
-> ```text
-> New terminal
->      ↓
-> source ROS 2
->      ↓
-> source this workspace
->      ↓
-> Ready to run
-> ```
->
-> Opening a new terminal does **not** require another build.
-
----
-
-## 8.5 When Is Another Build Required?
-
-You should rebuild when you modify files that are part of a ROS 2 package, such as:
-
-- Python ROS 2 nodes
-- launch files
-- ROS 2 package configuration
-- package definitions
-- ROS 2 interfaces
-- other files installed by the package
-
-You may also need to rebuild after pulling significant updates from GitHub.
-
-You normally do **not** need to rebuild simply because:
-
-- you opened a new terminal
-- you restarted a Raspberry Pi
-- you restarted the ROS computer
-- you stopped and restarted a ROS 2 node
-
-For normal operation, sourcing the existing workspace is sufficient.
-
----
-
-## 8.6 Development and Package-Specific Builds
-
-The full build above is intended primarily for initial setup.
-
-During development, rebuilding every package after every small change is unnecessary.
-
-The subsystem documentation therefore provides smaller, package-specific build commands when appropriate.
-
-For example, if you are working only on the dump truck control stack, you may rebuild only the affected dump truck packages rather than rebuilding the entire system.
-
-Follow the relevant subsystem README for these development workflows.
-
-### Topic-Based Robot Control
-
-See:
-
-**[ROS 2 Topic-Based Control](ros2_topic_based_control/README.md)**
-
-This documentation covers:
-
-- individual robot control
-- Raspberry Pi setup
-- per-truck hardware configuration
-- motor control
-- encoder configuration
-- odometry
-- AprilTag localization
-- fused odometry
-- waypoint control
-- hardware testing and diagnostics
-- multi-truck low-level testing
-
-### Action-Based Multi-Robot Control
-
-See:
-
-**[ROS 2 Action-Based Command Center](ros2_action_based_command_center/README.md)**
-
-This documentation covers:
-
-- ROS 2 Action Servers
-- robot task execution
-- task sequencing
-- synchronized operations
-- multi-robot coordination
-- construction operation scenarios
-
----
-
-## 8.7 Recommended Order for New Users
-
-If you are using this repository for the first time, follow this order:
+Because the workspace uses:
 
 ```text
-1. Clone the repository
-        ↓
-2. Perform the Initial Full Build
-        ↓
-3. Source the workspace
-        ↓
-4. Follow the Topic-Based Control README
-        ↓
-5. Verify individual robot operation
-        ↓
-6. Verify odometry and localization
-        ↓
-7. Follow the Action-Based Command Center README
-        ↓
-8. Run coordinated multi-robot operations
+--symlink-install
 ```
 
-Do not start with the Command Center before verifying that the individual robots can be controlled correctly.
+changes to Python source files can often be tested without repeatedly copying files into the install directory.
 
-The topic-based control layer serves as the primary low-level testing and diagnostic interface for the robots.
+If packages are moved or the workspace structure changes substantially, perform a clean build:
 
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+rm -rf build install log
+
+source /opt/ros/jazzy/setup.bash
+
+colcon build --symlink-install
+
+source install/setup.bash
+```
 
 ---
 
-# 9. Recommended Workflow
+# 16. Typical ROS 2 Terminal Setup
 
-For development and debugging of individual robots:
+Every new terminal used for the course should source ROS 2 and the workspace.
 
-```text
-Hardware
-   ↓
-Wheel States
-   ↓
-Odometry
-   ↓
-Localization
-   ↓
-Fused Odometry
-   ↓
-cmd_vel Test
-   ↓
-Waypoint Control
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/ws_conrobotics/CIC-ConRobotics-2026/install/setup.bash
 ```
 
-Use:
+Depending on the lab and network configuration, additional ROS networking environment variables may also be required.
 
-**[ros2_topic_based_control](ros2_topic_based_control/README.md)**
-
-for these low-level tests.
-
-Once individual robot operation has been validated, use:
-
-**[ros2_action_based_command_center](ros2_action_based_command_center/README.md)**
-
-for multi-robot task execution and coordinated construction scenarios.
-
-This separation makes it possible to diagnose individual hardware and localization problems without involving the higher-level command center.
-
+Follow the instructions provided for the specific lab or robot.
 
 ---
 
-# 10. Development Philosophy
+# 17. Working With Operational YAML Files
 
-This repository is intended as both a **research/development platform** and an **educational robotics environment**.
+Operational YAML files are stored outside the ROS packages.
 
-The software architecture therefore emphasizes:
+This is intentional.
 
-- modular ROS 2 nodes
-- reusable control logic
-- hardware-specific YAML configuration
-- simulation-to-physical robot workflows
-- direct access to low-level robot interfaces
-- higher-level multi-robot coordination
-- transparent and reproducible robot experiments
-
-The goal is to allow students and researchers to move between:
+For dump truck waypoint tasks:
 
 ```text
-(Simulation) optional
-    ↕
-ROS 2 Control
-    ↕
-Physical Construction Robots
+operations/dump_truck/waypoints/
 ```
 
-while maintaining a common control architecture.
+For excavator trajectories:
 
+```text
+operations/excavator/trajectories/
+```
+
+For multi-robot scenarios:
+
+```text
+operations/scenarios/
+```
+
+For example, a dump truck task may reference:
+
+```text
+truck1_waypoints.yaml
+```
+
+The dump truck action server resolves the task to:
+
+```text
+operations/dump_truck/waypoints/truck1_waypoints.yaml
+```
+
+Similarly, the Scenario Manager resolves scenario names from:
+
+```text
+operations/scenarios/
+```
+
+This keeps operational planning data separate from reusable ROS software.
 
 ---
 
-# 11. Documentation
+# 18. Development Workflow
 
-Additional documentation is available throughout the repository.
-
-### ROS 2
+Development should generally follow this workflow:
 
 ```text
-docs/ROS2/
+1. Pull the latest repository
+        ↓
+2. Make changes on the appropriate branch
+        ↓
+3. Build the ROS 2 workspace
+        ↓
+4. Test the relevant robot/system
+        ↓
+5. Review the changes
+        ↓
+6. Commit
+        ↓
+7. Push
 ```
 
-### Isaac Sim
+Before making changes:
+
+```bash
+git status
+git pull
+```
+
+After making changes:
+
+```bash
+git status
+git diff
+```
+
+Then commit:
+
+```bash
+git add .
+git commit -m "Describe the change"
+git push
+```
+
+Do not commit generated ROS 2 workspace directories such as:
 
 ```text
-docs/isaac_sim/
+build/
+install/
+log/
 ```
-
-### Topic-Based Robot Control
-
-**[ros2_topic_based_control/README.md](ros2_topic_based_control/README.md)**
-
-### Action-Based Multi-Robot Control
-
-**[ros2_action_based_command_center/README.md](ros2_action_based_command_center/README.md)**
-
 
 ---
 
-# 12. Current Development Status
+# 19. Branches
 
-The repository is under active development for the **Fall 2026 CIC ConRobotics course**.
+The repository uses Git branches to separate stable course material from active development.
 
-Current major capabilities include:
+### `main`
 
-- ROS 2 control of physical scale-model construction robots
-- Four-truck ROS 2 operation
-- Per-truck hardware configuration
-- Wheel encoder-based odometry
-- AprilTag-based global localization
-- Fused robot odometry
-- Waypoint-based navigation
-- ROS 2 action-based robot tasks
-- Multi-robot task sequencing
-- Coordinated construction operation scenarios
-- Isaac Sim integration for construction robot simulation
+Intended for stable, student-facing material.
 
-Additional components and documentation will continue to be added as the project develops.
+### `dev`
+
+Used for active development, integration, and testing before changes are promoted to `main`.
+
+Students should use the branch specified by the instructor for each lab or activity.
+
+---
+
+# 20. Design Philosophy
+
+The repository is organized around several layers of responsibility.
+
+```text
+OPERATIONS
+What should happen?
+        │
+        ▼
+COMMAND CENTER
+Which robot should perform which task?
+        │
+        ▼
+ROBOT CONTROL
+How should the robot move?
+        │
+        ▼
+HARDWARE
+How do we command the physical actuators?
+```
+
+Perception provides information about the physical environment and robot state across these layers.
+
+```text
+                 OPERATIONS
+                     │
+                     ▼
+              COMMAND CENTER
+                     │
+                     ▼
+PERCEPTION ───► ROBOT CONTROL
+                     │
+                     ▼
+                  HARDWARE
+```
+
+This separation allows the platform to grow beyond a single robot.
+
+For example, the same Command Center can coordinate multiple dump trucks and, as the platform develops, additional construction robots such as the excavator.
+
+---
+
+# 21. For Students
+
+You do **not** need to understand every package in this repository before using the robots.
+
+When working on a lab, focus on the part of the system relevant to that activity.
+
+A useful mental model is:
+
+```text
+Need to change the physical robot?
+    → robots/
+
+Need localization or camera information?
+    → perception/
+
+Need shared ROS messages or actions?
+    → common/
+
+Need to coordinate robot tasks?
+    → command_center/
+
+Need to change a route or construction operation?
+    → operations/
+
+Need network configuration?
+    → network/
+
+Need lab instructions?
+    → labs/
+
+Need supporting documentation?
+    → docs/
+```
+
+When in doubt, start with the README or instructions for the specific lab.
+
+---
+
+# 22. Project Status
+
+This repository is under active development for **Fall 2026**.
+
+The dump truck platform currently provides the most complete ROS 2 implementation, including:
+
+- Hardware control
+- Odometry
+- Localization
+- Waypoint navigation
+- ROS 2 Action-based task execution
+- Multi-robot scenario coordination
+
+The excavator ROS 2 system is being integrated into the same architecture.
+
+Additional robot capabilities, labs, documentation, and construction-site scenarios will continue to be added during development.
+
+---
+
+# 23. Course and Research Context
+
+This platform is developed through the **Computer Integrated Construction (CIC) Research Program at Penn State** as part of educational and research activities in construction robotics.
+
+The system is designed to provide students with hands-on experience integrating:
+
+- Physical robots
+- Sensors
+- ROS 2
+- Localization
+- Robot control
+- Task planning
+- Multi-robot coordination
+
+Rather than treating these topics independently, the model construction site provides a common physical environment in which students can see how individual robotics concepts connect to a complete robotic system.
+
+---
+
+# 24. Repository
+
+CIC-ConRobotics-2026  
+Penn State  
+Computer Integrated Construction (CIC) Research Program  
+AE 573 — Robotics and Automation in Construction  
+Fall 2026
