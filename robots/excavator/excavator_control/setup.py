@@ -66,6 +66,9 @@ setup(
 
             'validate_excavator_trajectory = '
             'excavator_control.validate_trajectory:main',
+
+            'excavator_trajectory_server = '
+            'excavator_control.excavator_trajectory_server:main',
         ],
     },
 )

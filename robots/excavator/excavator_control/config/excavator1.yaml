@@ -1,485 +1,164 @@
-# ==============================================================================
-# CIC ConRobotics - Model Excavator Configuration Template
-# ==============================================================================
+# ================================================================
+# Excavator 1 Configuration
+# ================================================================
+# Physical machine configuration for Excavator 1.
 #
-# PURPOSE
-# -------
-# This file defines machine-specific configuration and sensor calibration
-# for one physical model excavator.
+# Calibration convention:
+#   raw_at_min_angle = ADC raw value at min_angle_deg
+#   raw_at_max_angle = ADC raw value at max_angle_deg
 #
-# Create ONE configuration file for EACH physical excavator.
-#
-# Example:
-#
-#   excavator1.yaml
-#   excavator2.yaml
-#   excavator3.yaml
-#
-# The ROS 2 control code should remain common across all excavators.
-# Differences between physical machines should be handled here whenever
-# possible.
-#
-#
-# ==============================================================================
-# HOW TO CREATE A NEW EXCAVATOR CONFIGURATION
-# ==============================================================================
-#
-# 1. Copy this template:
-#
-#      cp excavator_template.yaml excavator2.yaml
-#
-# 2. Change:
-#
-#      excavator_name
-#
-# 3. Measure the sensor values at known joint angles.
-#
-# 4. Enter the measured raw sensor values below.
-#
-# 5. Verify GPIO assignments against the physical wiring.
-#
-# 6. Validate the configuration BEFORE operating the excavator:
-#
-#      ros2 run excavator_control validate_excavator_config \
-#        robots/excavator/excavator_control/config/excavator2.yaml
-#
-#
-# ==============================================================================
-# IMPORTANT SAFETY / CALIBRATION NOTES
-# ==============================================================================
-#
-# - Joint angles in this file are expressed in DEGREES.
-#
-# - Raw sensor values are machine-specific and MUST be measured on the
-#   actual excavator.
-#
-# - DO NOT copy calibration values from another excavator unless the
-#   sensors have actually been verified to produce the same readings.
-#
-# - The physical GPIO wiring may be shared between machines, but it must
-#   still be verified before operating a new excavator.
-#
-# - The values in this TEMPLATE are NOT valid calibration values.
-#
-# - The validator intentionally rejects incomplete linear calibration.
-#
-# ==============================================================================
-
-
-# ==============================================================================
-# EXCAVATOR IDENTIFICATION
-# ==============================================================================
-
-# ROS / configuration name of this physical excavator.
-#
-# Example:
-#
-#   excavator1
-#   excavator2
+# Raw ADC values may increase OR decrease as joint angle increases.
+# ================================================================
 
 excavator_name: excavator1
 
-
-# ==============================================================================
-# JOINT SENSOR CALIBRATION
-# ==============================================================================
-#
-# Four excavator motions are currently considered:
-#
-#   boom
-#   arm
-#   bucket
-#   swing
-#
-#
-# BOOM / ARM / BUCKET
-# -------------------
-#
-# These joints use two-point calibration.
-#
-# For each joint:
-#
-#   raw_at_min_angle
-#
-#       Raw sensor reading measured when the joint is physically positioned
-#       at min_angle_deg.
-#
-#   raw_at_max_angle
-#
-#       Raw sensor reading measured when the joint is physically positioned
-#       at max_angle_deg.
-#
-#
-# The raw value is NOT required to increase with angle.
-#
-# Both of these are valid:
-#
-#   angle increases -> raw increases
-#
-# and
-#
-#   angle increases -> raw decreases
-#
-# The software determines the relationship from the calibration values.
-#
-#
-# SWING
-# -----
-#
-# Swing uses multiple calibration points instead of only two endpoints.
-#
-# This is useful when the relationship between sensor reading and swing
-# angle cannot be represented accurately enough by a single linear mapping.
-#
-# ==============================================================================
-
 joints:
 
-  # ============================================================================
-  # BOOM
-  # ============================================================================
-  #
-  # Intended joint-angle range:
-  #
-  #      -60 deg  ------------------------------  +5 deg
-  #       MIN                                      MAX
-  #
-  #
-  # Calibration procedure:
-  #
-  #   1. Move the boom carefully to -60 degrees.
-  #   2. Read the raw boom sensor value.
-  #   3. Enter that value as raw_at_min_angle.
-  #
-  #   4. Move the boom carefully to +5 degrees.
-  #   5. Read the raw boom sensor value.
-  #   6. Enter that value as raw_at_max_angle.
-  #
-  #
-  # Example ONLY:
-  #
-  #   raw_at_min_angle: 1250
-  #   raw_at_max_angle: 2870
-  #
-  # Actual values must come from the physical excavator.
-  #
-  # DO NOT operate the excavator while both raw values are 0.
-  # The configuration validator will reject identical endpoint values.
-  # ============================================================================
-
   boom:
-    adc_channel: 0
-
+    adc_channel: 2
     min_angle_deg: -60.0
     max_angle_deg: 5.0
-
-    # TODO: Replace with measured sensor value at -60 deg.
-    raw_at_min_angle: 0
-
-    # TODO: Replace with measured sensor value at +5 deg.
-    raw_at_max_angle: 0
-
-
-  # ============================================================================
-  # ARM
-  # ============================================================================
-  #
-  # Intended joint-angle range:
-  #
-  #       52 deg  ------------------------------  112 deg
-  #        MIN                                      MAX
-  #
-  #
-  # Calibration procedure:
-  #
-  #   1. Move the arm carefully to 52 degrees.
-  #   2. Record the raw arm sensor value.
-  #   3. Enter it as raw_at_min_angle.
-  #
-  #   4. Move the arm carefully to 112 degrees.
-  #   5. Record the raw arm sensor value.
-  #   6. Enter it as raw_at_max_angle.
-  #
-  #
-  # IMPORTANT:
-  #
-  # The raw reading may increase OR decrease as the arm angle increases.
-  # Do not reverse the values just to make them numerically increasing.
-  # Enter the values exactly as measured.
-  # ============================================================================
+    raw_at_min_angle: 17880
+    raw_at_max_angle: 12050
 
   arm:
     adc_channel: 1
-
     min_angle_deg: 52.0
     max_angle_deg: 112.0
-
-    # TODO: Replace with measured sensor value at 52 deg.
-    raw_at_min_angle: 0
-
-    # TODO: Replace with measured sensor value at 112 deg.
-    raw_at_max_angle: 0
-
-
-  # ============================================================================
-  # BUCKET
-  # ============================================================================
-  #
-  # Intended joint-angle range:
-  #
-  #        0 deg  ------------------------------  90 deg
-  #        MIN                                      MAX
-  #
-  #
-  # Calibration procedure:
-  #
-  #   1. Move the bucket carefully to 0 degrees.
-  #   2. Record the raw bucket sensor value.
-  #   3. Enter it as raw_at_min_angle.
-  #
-  #   4. Move the bucket carefully to 90 degrees.
-  #   5. Record the raw bucket sensor value.
-  #   6. Enter it as raw_at_max_angle.
-  #
-  #
-  # Again, the raw sensor value may increase OR decrease with angle.
-  # Enter the measured values without changing their order.
-  # ============================================================================
+    raw_at_min_angle: 17000
+    raw_at_max_angle: 11730
 
   bucket:
-    adc_channel: 2
-
+    adc_channel: 0
     min_angle_deg: 0.0
     max_angle_deg: 90.0
-
-    # TODO: Replace with measured sensor value at 0 deg.
-    raw_at_min_angle: 0
-
-    # TODO: Replace with measured sensor value at 90 deg.
-    raw_at_max_angle: 0
-
-
-  # ============================================================================
-  # SWING
-  # ============================================================================
-  #
-  # Swing uses a calibration TABLE.
-  #
-  # Each angle in:
-  #
-  #     angle_deg_table
-  #
-  # corresponds to the raw sensor reading at the SAME position in:
-  #
-  #     raw_table
-  #
-  #
-  # Example:
-  #
-  #   angle_deg_table:
-  #     - -90.0
-  #     - -45.0
-  #     -   0.0
-  #     -  45.0
-  #     -  90.0
-  #
-  #   raw_table:
-  #     - 1100
-  #     - 1500
-  #     - 1900
-  #     - 2300
-  #     - 2700
-  #
-  # means:
-  #
-  #     -90 deg -> raw 1100
-  #     -45 deg -> raw 1500
-  #       0 deg -> raw 1900
-  #      45 deg -> raw 2300
-  #      90 deg -> raw 2700
-  #
-  #
-  # CALIBRATION PROCEDURE
-  # ---------------------
-  #
-  # 1. Position the excavator at each known swing angle.
-  #
-  # 2. Record the raw sensor reading.
-  #
-  # 3. Enter the angles in STRICTLY INCREASING order.
-  #
-  # 4. Enter the corresponding raw readings in the same order.
-  #
-  #
-  # IMPORTANT:
-  #
-  # angle_deg_table MUST increase from left/right minimum toward maximum.
-  #
-  # raw_table may be either:
-  #
-  #     strictly increasing
-  #
-  # OR
-  #
-  #     strictly decreasing
-  #
-  # depending on sensor orientation.
-  #
-  # Do NOT reorder the raw values independently from the angles.
-  #
-  #
-  # NOTE:
-  #
-  # The actual usable swing-angle range and calibration points are still
-  # being verified. Update min_angle_deg, max_angle_deg, and both tables
-  # after physical calibration is confirmed.
-  # ============================================================================
+    raw_at_min_angle: 14270
+    raw_at_max_angle: 12800
 
   swing:
     adc_channel: 3
-
-    # TODO: Confirm actual physical swing limits.
     min_angle_deg: -90.0
     max_angle_deg: 90.0
 
-    # TODO: Replace/adjust these angles based on the calibration procedure.
     angle_deg_table:
       - -90.0
       - -45.0
+      - -30.0
       - 0.0
+      - 30.0
       - 45.0
+      - 60.0
+      - 75.0
       - 90.0
 
-    # PLACEHOLDER VALUES ONLY.
-    #
-    # Replace ALL of these with actual measured sensor readings.
     raw_table:
-      - 100
-      - 200
-      - 300
-      - 400
-      - 500
+      - 1600
+      - 1800
+      - 3955
+      - 6968
+      - 9943
+      - 11410
+      - 14282
+      - 17497
+      - 21447
 
-
-# ==============================================================================
-# GPIO CONFIGURATION
-# ==============================================================================
-#
-# GPIO assignments define the physical Raspberry Pi connections used to
-# command each excavator motion.
-#
-# These pin assignments should ultimately be copied from the VERIFIED
-# working excavator server / wiring configuration.
-#
-# Do not guess these values.
-#
-# If all excavators use identical wiring, these values may remain identical
-# between excavator configuration files.
-#
-# If machines differ physically, each machine can define its own pins here.
-#
-# null means that the pin has NOT yet been assigned in this template.
-#
-# ==============================================================================
+# ================================================================
+# GPIO
+# ================================================================
 
 gpio:
-
-  boom:
-
-    # TODO: Confirm from verified working excavator code/wiring.
-    forward_pin: null
-
-    # TODO: Confirm from verified working excavator code/wiring.
-    reverse_pin: null
-
-
-  arm:
-
-    # TODO: Confirm from verified working excavator code/wiring.
-    forward_pin: null
-
-    # TODO: Confirm from verified working excavator code/wiring.
-    reverse_pin: null
-
-
-  bucket:
-
-    # TODO: Confirm from verified working excavator code/wiring.
-    forward_pin: null
-
-    # TODO: Confirm from verified working excavator code/wiring.
-    reverse_pin: null
-
+  standby_pin: 21
+  shared_pwm_pin: 7
 
   swing:
+    in1_pin: 16
+    in2_pin: 20
+    invert_motor: false
 
-    # TODO: Confirm from verified working excavator code/wiring.
-    forward_pin: null
+  boom:
+    in1_pin: 8
+    in2_pin: 25
+    invert_motor: false
 
-    # TODO: Confirm from verified working excavator code/wiring.
-    reverse_pin: null
+  arm:
+    in1_pin: 15
+    in2_pin: 14
+    invert_motor: true
 
+  bucket:
+    in1_pin: 23
+    in2_pin: 24
+    invert_motor: false
 
-# ==============================================================================
-# CONTROL PARAMETERS
-# ==============================================================================
-#
-# These parameters define general closed-loop joint-control behavior.
-#
-# IMPORTANT:
-#
-# The values below are initial placeholders until the values from the
-# verified physical excavator server have been reviewed.
-#
-# Do not tune these values simply to compensate for incorrect sensor
-# calibration.
-#
-# Calibration should be verified FIRST.
-#
-# ==============================================================================
+# ================================================================
+# GLOBAL CONTROL PARAMETERS
+# ================================================================
 
 control:
+  publish_hz: 10.0
+  control_hz: 50.0
+  feedback_hz: 10.0
 
-  # Main joint-control update frequency.
-  control_rate_hz: 20.0
+  goal_tolerance_rad: 0.12
+  stop_on_goal_finish: true
 
+  ads1115_address: 72
+  pwm_frequency_hz: 1000
+  pwm_arbitration: exclusive
 
-  # --------------------------------------------------------------------------
-  # Goal tolerance
-  # --------------------------------------------------------------------------
-  #
-  # A joint is considered to have reached its target when:
-  #
-  #     abs(target_angle - measured_angle) <= goal_tolerance_deg
-  #
-  # Values are in degrees.
-  #
-  # These values may be tuned later based on physical performance.
-  # --------------------------------------------------------------------------
+# ================================================================
+# HOME POSITION
+# ================================================================
+# Human-readable degrees.
+# Boom home intentionally set to -20 deg.
 
-  goal_tolerance_deg:
+home:
+  boom_deg: -20.0
+  arm_deg: 105.020
+  bucket_deg: 12.245
 
-    boom: 2.0
-    arm: 2.0
-    bucket: 2.0
-    swing: 2.0
+# ================================================================
+# PER-JOINT CONTROL PARAMETERS
+# ================================================================
 
+joint_control:
 
-  # --------------------------------------------------------------------------
-  # Motion timeout
-  # --------------------------------------------------------------------------
-  #
-  # Maximum allowed execution time for a joint motion.
-  #
-  # A timeout should be treated as a FAILURE rather than reporting the
-  # requested target as successfully reached.
-  #
-  # Values are in seconds.
-  # --------------------------------------------------------------------------
+  swing:
+    kp: 120.0
+    min_pwm: 220
+    max_pwm: 255
+    kick_pwm: 255
 
-  timeout_sec:
+    tolerance_rad: 0.04
+    stop_tolerance_rad: 0.05
 
-    boom: 20.0
-    arm: 20.0
-    bucket: 20.0
-    swing: 20.0
+    pulse_err_deg: 5.0
+    pulse_on_cycles: 1
+    pulse_off_cycles: 2
+
+  boom:
+    kp: 120.0
+    min_pwm: 130
+    max_pwm: 255
+    kick_pwm: 180
+
+    tolerance_rad: 0.035
+    stop_tolerance_rad: 0.015
+
+  arm:
+    kp: 120.0
+    min_pwm: 130
+    max_pwm: 220
+    kick_pwm: 180
+
+    tolerance_rad: 0.035
+    stop_tolerance_rad: 0.015
+
+  bucket:
+    kp: 70.0
+    min_pwm: 75
+    max_pwm: 255
+    kick_pwm: 80
+
+    tolerance_rad: 0.08
+    stop_tolerance_rad: 0.06
