@@ -84,6 +84,9 @@ Check that SSH is running:
 systemctl is-enabled ssh
 ```
 
+You should do this from your ROS computer so that you can access RaspberryPi from the ROS computer.
+
+
 
 ## Part B — Remote Development Setup
 
@@ -91,7 +94,8 @@ systemctl is-enabled ssh
 
 You will now configure your laptop so that you can remotely access the ROS computer without entering your Penn State password every time.
 
-> **Important:** From this step forward, use **your own laptop**, not the physical ROS computer.
+> **Important:** From this step forward, use **your own laptop** first, not the physical ROS computer. You should do this from your ROS computer later so that you can access RaspberryPi from the ROS computer.
+
 
 #### 1. Open a Terminal on YOUR Laptop
 
