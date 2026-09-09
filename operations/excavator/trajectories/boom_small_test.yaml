@@ -1,0 +1,34 @@
+trajectory_name: boom_small_test
+
+description: >
+  Initial physical hardware test for the excavator boom.
+  Holds swing, arm, and bucket near their measured starting positions
+  while moving the boom approximately 2 degrees and returning.
+
+joints:
+  - swing
+  - boom
+  - arm
+  - bucket
+
+waypoints:
+  - name: start
+    positions:
+      swing: 0.0
+      boom: -14.3
+      arm: 104.6
+      bucket: 14.1
+
+  - name: boom_down_2deg
+    positions:
+      swing: 0.0
+      boom: -16.3
+      arm: 104.6
+      bucket: 14.1
+
+  - name: return
+    positions:
+      swing: 0.0
+      boom: -14.3
+      arm: 104.6
+      bucket: 14.1
