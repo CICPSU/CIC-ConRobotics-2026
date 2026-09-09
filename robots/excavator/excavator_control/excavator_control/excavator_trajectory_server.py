@@ -1331,6 +1331,10 @@ class PiExcavatorTrajectoryServer(Node):
             bool(control.get("stop_on_goal_finish", True)),
         )
         self.declare_parameter(
+            "auto_home_on_startup",
+            False,
+        )
+        self.declare_parameter(
             "ads1115_address",
             int(control.get("ads1115_address", 0x48)),
         )
@@ -1368,6 +1372,9 @@ class PiExcavatorTrajectoryServer(Node):
         )
         self.stop_on_goal_finish = bool(
             self.get_parameter("stop_on_goal_finish").value
+        )
+        self.auto_home_on_startup = bool(
+            self.get_parameter("auto_home_on_startup").value
         )
         ads_addr = int(self.get_parameter("ads1115_address").value)
         self.pwm_arbitration = str(
@@ -1668,7 +1675,16 @@ class PiExcavatorTrajectoryServer(Node):
         self.get_logger().warn(
             "  swing trajectory goals must use THIS convention - check degrees.yaml and the URDF"
         )
-        self.move_to_home()
+
+        if self.auto_home_on_startup:
+            self.get_logger().warn(
+                "  auto_home_on_startup=true: the excavator will move to the configured home pose now."
+            )
+            self.move_to_home()
+        else:
+            self.get_logger().info(
+                "  auto_home_on_startup=false: startup homing is disabled; hardware will remain stationary."
+            )
     # ── Action callbacks ─────────────────────────────────────────
     def move_to_home(self):
         self.get_logger().info("[HOME] Moving excavator to starting position...")
