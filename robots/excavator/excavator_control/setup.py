@@ -4,74 +4,108 @@ import os
 from setuptools import find_packages, setup
 
 
-package_name = 'excavator_control'
+package_name = "excavator_control"
 
 
 setup(
     name=package_name,
-    version='0.1.0',
+    version="0.1.0",
 
     packages=find_packages(
         exclude=[
-            'test',
-            'tests',
+            "test",
+            "tests",
         ]
     ),
 
     data_files=[
         (
-            'share/ament_index/resource_index/packages',
-            ['resource/' + package_name],
+            "share/ament_index/resource_index/packages",
+            [
+                "resource/"
+                + package_name
+            ],
         ),
+
         (
-            'share/' + package_name,
-            ['package.xml'],
+            "share/"
+            + package_name,
+            [
+                "package.xml"
+            ],
         ),
+
         (
             os.path.join(
-                'share',
+                "share",
                 package_name,
-                'config',
+                "config",
             ),
-            glob('config/*.yaml'),
+            glob(
+                "config/*.yaml"
+            ),
+        ),
+
+        (
+            os.path.join(
+                "share",
+                package_name,
+                "launch",
+            ),
+            glob(
+                "launch/*.launch.py"
+            ),
         ),
     ],
 
     install_requires=[
-        'setuptools',
-        'PyYAML',
+        "setuptools",
+        "PyYAML",
     ],
 
     tests_require=[
-        'pytest',
+        "pytest",
     ],
 
-    test_suite='test',
+    test_suite="test",
 
     zip_safe=True,
 
-    maintainer='CIC ConRobotics',
-    maintainer_email='njh5734@psu.edu',
+    maintainer="CIC ConRobotics",
+    maintainer_email="njh5734@psu.edu",
 
     description=(
-        'ROS 2 control package for the CIC physical model excavator.'
+        "ROS 2 control package for the CIC "
+        "physical model excavator."
     ),
 
-    license='MIT',
+    license="MIT",
 
     entry_points={
-        'console_scripts': [
-            'validate_excavator_config = '
-            'excavator_control.validate_config:main',
+        "console_scripts": [
+            (
+                "validate_excavator_config = "
+                "excavator_control."
+                "validate_config:main"
+            ),
 
-            'validate_excavator_trajectory = '
-            'excavator_control.validate_trajectory:main',
+            (
+                "validate_excavator_trajectory = "
+                "excavator_control."
+                "validate_trajectory:main"
+            ),
 
-            'excavator_trajectory_server = '
-            'excavator_control.excavator_trajectory_server:main',
+            (
+                "excavator_trajectory_server = "
+                "excavator_control."
+                "excavator_trajectory_server:main"
+            ),
 
-            'excavator_trajectory_client = '
-            'excavator_control.excavator_trajectory_client:main',
+            (
+                "excavator_trajectory_client = "
+                "excavator_control."
+                "excavator_trajectory_client:main"
+            ),
         ],
     },
 )
