@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import math
 import os
 import threading
 import time
@@ -18,11 +19,26 @@ from rclpy.qos import (
 
 from ament_index_python.packages import get_package_share_directory
 
+from action_msgs.msg import GoalStatus
 from construction_site_interfaces.action import ExecuteRobotTask
 from construction_site_interfaces.msg import RobotStatus
-
+from control_msgs.action import FollowJointTrajectory
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
+from trajectory_msgs.msg import JointTrajectoryPoint
+
+
+EXCAVATOR_JOINT_NAMES = {
+    'swing': 'swing_joint',
+    'boom': 'boom_joint',
+    'arm': 'arm_joint',
+    'bucket': 'bucket_joint',
+}
+
+DEFAULT_EXCAVATOR_ACTION = (
+    '/upper_arm_controller/'
+    'follow_joint_trajectory'
+)
 
 
 def resolve_scenario_yaml(scenario_name):
@@ -32,7 +48,8 @@ def resolve_scenario_yaml(scenario_name):
     Search order:
     1. Explicit filesystem path.
     2. Repository operations/scenarios directory.
-    3. Installed construction_site_control share/scenarios directory (legacy fallback).
+    3. Installed construction_site_control
+       share/scenarios directory (legacy fallback).
     """
 
     if not scenario_name:
@@ -60,14 +77,20 @@ def resolve_scenario_yaml(scenario_name):
         if os.path.isfile(candidate):
             return candidate
 
-        parent = os.path.dirname(search_dir)
+        parent = os.path.dirname(
+            search_dir
+        )
+
         if parent == search_dir:
             break
+
         search_dir = parent
 
     try:
-        package_share = get_package_share_directory(
-            'construction_site_control'
+        package_share = (
+            get_package_share_directory(
+                'construction_site_control'
+            )
         )
 
         installed_path = os.path.join(
@@ -83,6 +106,340 @@ def resolve_scenario_yaml(scenario_name):
         pass
 
     return None
+
+
+def resolve_excavator_trajectory_yaml(
+    trajectory_name,
+):
+    """
+    Resolve excavator trajectory YAML.
+
+    Search order:
+    1. Explicit filesystem path.
+    2. Repository operations/excavator/trajectories.
+    """
+
+    if not trajectory_name:
+        return None
+
+    explicit_path = os.path.abspath(
+        os.path.expanduser(
+            trajectory_name
+        )
+    )
+
+    if os.path.isfile(
+        explicit_path
+    ):
+        return explicit_path
+
+    search_dir = os.path.dirname(
+        os.path.realpath(__file__)
+    )
+
+    while True:
+        candidate = os.path.join(
+            search_dir,
+            'operations',
+            'excavator',
+            'trajectories',
+            trajectory_name,
+        )
+
+        if os.path.isfile(
+            candidate
+        ):
+            return candidate
+
+        parent = os.path.dirname(
+            search_dir
+        )
+
+        if parent == search_dir:
+            break
+
+        search_dir = parent
+
+    return None
+
+
+def load_excavator_trajectory(
+    trajectory_path,
+):
+    """
+    Load and validate the structural content of an
+    excavator trajectory YAML.
+
+    Machine-specific joint-limit validation remains
+    the responsibility of the excavator Action server.
+    """
+
+    with open(
+        trajectory_path,
+        'r',
+        encoding='utf-8',
+    ) as stream:
+        data = yaml.safe_load(
+            stream
+        ) or {}
+
+    trajectory_name = str(
+        data.get(
+            'trajectory_name',
+            os.path.basename(
+                trajectory_path
+            ),
+        )
+    ).strip()
+
+    joints = data.get(
+        'joints',
+        [],
+    )
+
+    waypoints = data.get(
+        'waypoints',
+        [],
+    )
+
+    if not isinstance(
+        joints,
+        list,
+    ):
+
+        raise RuntimeError(
+            'Excavator trajectory "joints" '
+            'must be a list.'
+        )
+
+    if not joints:
+
+        raise RuntimeError(
+            'Excavator trajectory contains '
+            'no joints.'
+        )
+
+    normalized_joints = []
+
+    for joint in joints:
+
+        joint_name = str(
+            joint
+        ).strip()
+
+        if (
+            joint_name
+            not in EXCAVATOR_JOINT_NAMES
+        ):
+
+            raise RuntimeError(
+                'Unknown excavator joint '
+                f'"{joint_name}".'
+            )
+
+        if (
+            joint_name
+            in normalized_joints
+        ):
+
+            raise RuntimeError(
+                'Duplicate excavator joint '
+                f'"{joint_name}".'
+            )
+
+        normalized_joints.append(
+            joint_name
+        )
+
+    if not isinstance(
+        waypoints,
+        list,
+    ):
+
+        raise RuntimeError(
+            'Excavator trajectory "waypoints" '
+            'must be a list.'
+        )
+
+    if not waypoints:
+
+        raise RuntimeError(
+            'Excavator trajectory contains '
+            'no waypoints.'
+        )
+
+    normalized_waypoints = []
+    waypoint_names = set()
+
+    for (
+        index,
+        waypoint,
+    ) in enumerate(
+        waypoints
+    ):
+
+        if not isinstance(
+            waypoint,
+            dict,
+        ):
+
+            raise RuntimeError(
+                f'Excavator waypoint {index + 1} '
+                'must be a mapping.'
+            )
+
+        waypoint_name = str(
+            waypoint.get(
+                'name',
+                f'waypoint_{index + 1}',
+            )
+        ).strip()
+
+        if not waypoint_name:
+
+            raise RuntimeError(
+                f'Excavator waypoint {index + 1} '
+                'has an empty name.'
+            )
+
+        if (
+            waypoint_name
+            in waypoint_names
+        ):
+
+            raise RuntimeError(
+                'Duplicate excavator waypoint '
+                f'name "{waypoint_name}".'
+            )
+
+        waypoint_names.add(
+            waypoint_name
+        )
+
+        positions = waypoint.get(
+            'positions',
+            {},
+        )
+
+        if not isinstance(
+            positions,
+            dict,
+        ):
+
+            raise RuntimeError(
+                f'Waypoint "{waypoint_name}" '
+                '"positions" must be a mapping.'
+            )
+
+        missing = (
+            set(normalized_joints)
+            - set(positions.keys())
+        )
+
+        if missing:
+
+            raise RuntimeError(
+                f'Waypoint "{waypoint_name}" '
+                'is missing positions for '
+                f'{sorted(missing)}.'
+            )
+
+        extra = (
+            set(positions.keys())
+            - set(normalized_joints)
+        )
+
+        if extra:
+
+            raise RuntimeError(
+                f'Waypoint "{waypoint_name}" '
+                'contains positions for joints '
+                'not listed in "joints": '
+                f'{sorted(extra)}.'
+            )
+
+        position_values = []
+
+        for joint_name in (
+            normalized_joints
+        ):
+
+            try:
+                value = float(
+                    positions[
+                        joint_name
+                    ]
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ) as exc:
+
+                raise RuntimeError(
+                    f'Waypoint "{waypoint_name}" '
+                    f'joint "{joint_name}" '
+                    'must be numeric.'
+                ) from exc
+
+            if not math.isfinite(
+                value
+            ):
+
+                raise RuntimeError(
+                    f'Waypoint "{waypoint_name}" '
+                    f'joint "{joint_name}" '
+                    'must be finite.'
+                )
+
+            position_values.append(
+                value
+            )
+
+        normalized_waypoints.append(
+            {
+                'name': waypoint_name,
+                'positions_deg': (
+                    position_values
+                ),
+            }
+        )
+
+    return {
+        'trajectory_name': (
+            trajectory_name
+        ),
+        'joints': normalized_joints,
+        'waypoints': (
+            normalized_waypoints
+        ),
+    }
+
+
+def seconds_to_duration(
+    seconds,
+):
+
+    sec = int(
+        seconds
+    )
+
+    nanosec = int(
+        round(
+            (
+                seconds
+                - sec
+            )
+            * 1_000_000_000
+        )
+    )
+
+    if nanosec >= 1_000_000_000:
+        sec += 1
+        nanosec -= 1_000_000_000
+
+    return sec, nanosec
+
 
 class ScenarioManager(Node):
 
@@ -128,8 +485,10 @@ class ScenarioManager(Node):
         # Load scenario
         # -----------------------------------------------------
 
-        self.scenario_path = resolve_scenario_yaml(
-            self.scenario_name
+        self.scenario_path = (
+            resolve_scenario_yaml(
+                self.scenario_name
+            )
         )
 
         if self.scenario_path is None:
@@ -177,12 +536,22 @@ class ScenarioManager(Node):
             )
 
         # -----------------------------------------------------
-        # Action clients
+        # Dump truck Action clients
         # -----------------------------------------------------
 
         self.action_clients = {}
 
         self.action_clients_lock = (
+            threading.Lock()
+        )
+
+        # -----------------------------------------------------
+        # Excavator Action clients
+        # -----------------------------------------------------
+
+        self.excavator_action_clients = {}
+
+        self.excavator_action_clients_lock = (
             threading.Lock()
         )
 
@@ -237,9 +606,11 @@ class ScenarioManager(Node):
         # Start scenario
         # -----------------------------------------------------
 
-        self.start_timer = self.create_timer(
-            1.0,
-            self.start_once,
+        self.start_timer = (
+            self.create_timer(
+                1.0,
+                self.start_once,
+            )
         )
 
         self.get_logger().info(
@@ -263,9 +634,11 @@ class ScenarioManager(Node):
 
         self.start_timer.cancel()
 
-        self.execution_thread = threading.Thread(
-            target=self.execute_scenario,
-            daemon=True,
+        self.execution_thread = (
+            threading.Thread(
+                target=self.execute_scenario,
+                daemon=True,
+            )
         )
 
         self.execution_thread.start()
@@ -297,7 +670,7 @@ class ScenarioManager(Node):
         return False
 
     # =========================================================
-    # Action client
+    # Dump truck Action client
     # =========================================================
 
     def get_action_client(
@@ -307,7 +680,10 @@ class ScenarioManager(Node):
 
         with self.action_clients_lock:
 
-            if robot_name not in self.action_clients:
+            if (
+                robot_name
+                not in self.action_clients
+            ):
 
                 action_name = (
                     f'/{robot_name}/'
@@ -327,7 +703,39 @@ class ScenarioManager(Node):
             ]
 
     # =========================================================
-    # Feedback
+    # Excavator Action client
+    # =========================================================
+
+    def get_excavator_action_client(
+        self,
+        action_name,
+    ):
+
+        with (
+            self.excavator_action_clients_lock
+        ):
+
+            if (
+                action_name
+                not in self.excavator_action_clients
+            ):
+
+                self.excavator_action_clients[
+                    action_name
+                ] = ActionClient(
+                    self,
+                    FollowJointTrajectory,
+                    action_name,
+                )
+
+            return (
+                self.excavator_action_clients[
+                    action_name
+                ]
+            )
+
+    # =========================================================
+    # Dump truck feedback
     # =========================================================
 
     def feedback_callback(
@@ -337,7 +745,9 @@ class ScenarioManager(Node):
         feedback_msg,
     ):
 
-        feedback = feedback_msg.feedback
+        feedback = (
+            feedback_msg.feedback
+        )
 
         self.get_logger().info(
             f'[{step_id}] '
@@ -348,7 +758,80 @@ class ScenarioManager(Node):
         )
 
     # =========================================================
-    # TASK
+    # Excavator feedback
+    # =========================================================
+
+    def excavator_feedback_callback(
+        self,
+        robot_name,
+        step_id,
+        joint_names,
+        feedback_msg,
+    ):
+
+        feedback = (
+            feedback_msg.feedback
+        )
+
+        desired_deg = [
+            round(
+                math.degrees(
+                    value
+                ),
+                1,
+            )
+            for value in (
+                feedback.desired.positions
+            )
+        ]
+
+        actual_deg = [
+            round(
+                math.degrees(
+                    value
+                ),
+                1,
+            )
+            for value in (
+                feedback.actual.positions
+            )
+        ]
+
+        desired_text = ', '.join(
+            (
+                f'{joint}={value:+.1f}'
+            )
+            for (
+                joint,
+                value,
+            ) in zip(
+                joint_names,
+                desired_deg,
+            )
+        )
+
+        actual_text = ', '.join(
+            (
+                f'{joint}={value:+.1f}'
+            )
+            for (
+                joint,
+                value,
+            ) in zip(
+                joint_names,
+                actual_deg,
+            )
+        )
+
+        self.get_logger().info(
+            f'[{step_id}] '
+            f'{robot_name}: '
+            f'desired=[{desired_text}] deg, '
+            f'actual=[{actual_text}] deg'
+        )
+
+    # =========================================================
+    # TASK - ExecuteRobotTask
     # =========================================================
 
     def execute_task_step(
@@ -461,7 +944,7 @@ class ScenarioManager(Node):
         # -----------------------------------------------------
 
         self.get_logger().info(
-            f'Waiting for Action Server: '
+            'Waiting for Action Server: '
             f'{action_name}'
         )
 
@@ -473,7 +956,7 @@ class ScenarioManager(Node):
                 break
 
             self.get_logger().warn(
-                f'Action Server not ready yet: '
+                'Action Server not ready yet: '
                 f'{action_name}'
             )
 
@@ -484,11 +967,21 @@ class ScenarioManager(Node):
         # Goal
         # -----------------------------------------------------
 
-        goal = ExecuteRobotTask.Goal()
+        goal = (
+            ExecuteRobotTask.Goal()
+        )
 
-        goal.robot_name = robot_name
-        goal.task_type = task_type
-        goal.task_file = task_file
+        goal.robot_name = (
+            robot_name
+        )
+
+        goal.task_type = (
+            task_type
+        )
+
+        goal.task_file = (
+            task_file
+        )
 
         # -----------------------------------------------------
         # Send Goal
@@ -555,8 +1048,12 @@ class ScenarioManager(Node):
             self.active_goal_handles[
                 step_id
             ] = {
-                'robot_name': robot_name,
-                'goal_handle': goal_handle,
+                'robot_name': (
+                    robot_name
+                ),
+                'goal_handle': (
+                    goal_handle
+                ),
             }
 
         self.get_logger().info(
@@ -638,6 +1135,447 @@ class ScenarioManager(Node):
         return False
 
     # =========================================================
+    # EXCAVATOR TRAJECTORY
+    # =========================================================
+
+    def execute_excavator_trajectory_step(
+        self,
+        step,
+        step_number,
+        total_steps,
+        context_label='STEP',
+    ):
+
+        step_id = str(
+            step.get(
+                'id',
+                f'excavator_{step_number}',
+            )
+        )
+
+        robot_name = str(
+            step.get(
+                'robot',
+                'excavator1',
+            )
+        ).strip().strip('/')
+
+        task_file = str(
+            step.get(
+                'task_file',
+                '',
+            )
+        ).strip()
+
+        action_name = str(
+            step.get(
+                'action_name',
+                DEFAULT_EXCAVATOR_ACTION,
+            )
+        ).strip()
+
+        try:
+
+            seconds_per_waypoint = float(
+                step.get(
+                    'seconds_per_waypoint',
+                    3.0,
+                )
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+
+            raise RuntimeError(
+                f'{step_id}: '
+                'seconds_per_waypoint '
+                'must be numeric.'
+            )
+
+        # -----------------------------------------------------
+        # Validation
+        # -----------------------------------------------------
+
+        if not robot_name:
+
+            raise RuntimeError(
+                f'{step_id}: robot is missing.'
+            )
+
+        if not task_file:
+
+            raise RuntimeError(
+                f'{step_id}: task_file is missing.'
+            )
+
+        if not action_name:
+
+            raise RuntimeError(
+                f'{step_id}: action_name is empty.'
+            )
+
+        if seconds_per_waypoint <= 0.0:
+
+            raise RuntimeError(
+                f'{step_id}: '
+                'seconds_per_waypoint must '
+                'be greater than zero.'
+            )
+
+        if self.is_robot_busy(
+            robot_name
+        ):
+
+            raise RuntimeError(
+                f'{step_id}: robot "{robot_name}" '
+                'already has an active task.'
+            )
+
+        # -----------------------------------------------------
+        # Resolve and load trajectory
+        # -----------------------------------------------------
+
+        trajectory_path = (
+            resolve_excavator_trajectory_yaml(
+                task_file
+            )
+        )
+
+        if trajectory_path is None:
+
+            raise RuntimeError(
+                f'{step_id}: excavator trajectory '
+                f'could not be found: '
+                f'{task_file}'
+            )
+
+        trajectory = (
+            load_excavator_trajectory(
+                trajectory_path
+            )
+        )
+
+        ros_joint_names = [
+            EXCAVATOR_JOINT_NAMES[
+                joint_name
+            ]
+            for joint_name in (
+                trajectory['joints']
+            )
+        ]
+
+        # -----------------------------------------------------
+        # Logging
+        # -----------------------------------------------------
+
+        self.get_logger().info(
+            '----------------------------------------'
+        )
+
+        self.get_logger().info(
+            f'{context_label}: '
+            'EXCAVATOR_TRAJECTORY'
+        )
+
+        self.get_logger().info(
+            f'id={step_id}'
+        )
+
+        self.get_logger().info(
+            f'robot={robot_name}'
+        )
+
+        self.get_logger().info(
+            f'task_file={task_file}'
+        )
+
+        self.get_logger().info(
+            f'trajectory='
+            f'{trajectory["trajectory_name"]}'
+        )
+
+        self.get_logger().info(
+            'joints='
+            + ', '.join(
+                trajectory['joints']
+            )
+        )
+
+        self.get_logger().info(
+            f'waypoints='
+            f'{len(trajectory["waypoints"])}'
+        )
+
+        self.get_logger().info(
+            'seconds_per_waypoint='
+            f'{seconds_per_waypoint:.2f}'
+        )
+
+        self.get_logger().info(
+            f'action={action_name}'
+        )
+
+        # -----------------------------------------------------
+        # Create Action goal
+        # -----------------------------------------------------
+
+        goal = (
+            FollowJointTrajectory.Goal()
+        )
+
+        goal.trajectory.joint_names = (
+            ros_joint_names
+        )
+
+        for (
+            index,
+            waypoint,
+        ) in enumerate(
+            trajectory['waypoints']
+        ):
+
+            point = (
+                JointTrajectoryPoint()
+            )
+
+            point.positions = [
+                math.radians(
+                    position_deg
+                )
+                for position_deg in (
+                    waypoint[
+                        'positions_deg'
+                    ]
+                )
+            ]
+
+            waypoint_time = (
+                (index + 1)
+                * seconds_per_waypoint
+            )
+
+            sec, nanosec = (
+                seconds_to_duration(
+                    waypoint_time
+                )
+            )
+
+            point.time_from_start.sec = (
+                sec
+            )
+
+            point.time_from_start.nanosec = (
+                nanosec
+            )
+
+            goal.trajectory.points.append(
+                point
+            )
+
+        # -----------------------------------------------------
+        # Action client
+        # -----------------------------------------------------
+
+        client = (
+            self.get_excavator_action_client(
+                action_name
+            )
+        )
+
+        self.get_logger().info(
+            'Waiting for Excavator '
+            'Action Server: '
+            f'{action_name}'
+        )
+
+        while rclpy.ok():
+
+            if client.wait_for_server(
+                timeout_sec=1.0
+            ):
+
+                break
+
+            self.get_logger().warn(
+                'Excavator Action Server '
+                'not ready yet: '
+                f'{action_name}'
+            )
+
+        if not rclpy.ok():
+            return False
+
+        # -----------------------------------------------------
+        # Send goal
+        # -----------------------------------------------------
+
+        self.get_logger().info(
+            f'{step_id}: '
+            'Sending excavator trajectory.'
+        )
+
+        send_goal_future = (
+            client.send_goal_async(
+                goal,
+                feedback_callback=lambda msg: (
+                    self.excavator_feedback_callback(
+                        robot_name,
+                        step_id,
+                        trajectory['joints'],
+                        msg,
+                    )
+                ),
+            )
+        )
+
+        while (
+            rclpy.ok()
+            and not send_goal_future.done()
+        ):
+
+            time.sleep(
+                0.05
+            )
+
+        if not rclpy.ok():
+            return False
+
+        goal_handle = (
+            send_goal_future.result()
+        )
+
+        if goal_handle is None:
+
+            self.get_logger().error(
+                f'{step_id}: '
+                'No excavator goal handle '
+                'returned.'
+            )
+
+            return False
+
+        if not goal_handle.accepted:
+
+            self.get_logger().error(
+                f'{step_id}: '
+                'Excavator trajectory '
+                'REJECTED.'
+            )
+
+            return False
+
+        # -----------------------------------------------------
+        # Register active goal
+        # -----------------------------------------------------
+
+        with self.active_goal_handles_lock:
+
+            self.active_goal_handles[
+                step_id
+            ] = {
+                'robot_name': (
+                    robot_name
+                ),
+                'goal_handle': (
+                    goal_handle
+                ),
+            }
+
+        self.get_logger().info(
+            f'{step_id}: '
+            'Excavator trajectory ACCEPTED.'
+        )
+
+        # -----------------------------------------------------
+        # Wait for result
+        # -----------------------------------------------------
+
+        result_future = (
+            goal_handle.get_result_async()
+        )
+
+        while (
+            rclpy.ok()
+            and not result_future.done()
+        ):
+
+            time.sleep(
+                0.05
+            )
+
+        if not rclpy.ok():
+            return False
+
+        wrapped_result = (
+            result_future.result()
+        )
+
+        # -----------------------------------------------------
+        # Remove active goal
+        # -----------------------------------------------------
+
+        with self.active_goal_handles_lock:
+
+            self.active_goal_handles.pop(
+                step_id,
+                None,
+            )
+
+        if wrapped_result is None:
+
+            self.get_logger().error(
+                f'{step_id}: '
+                'No excavator Action result '
+                'returned.'
+            )
+
+            return False
+
+        result = (
+            wrapped_result.result
+        )
+
+        # -----------------------------------------------------
+        # Evaluate result
+        # -----------------------------------------------------
+
+        if (
+            wrapped_result.status
+            == GoalStatus.STATUS_SUCCEEDED
+        ):
+
+            self.get_logger().info(
+                f'{step_id}: '
+                'EXCAVATOR SUCCESS'
+            )
+
+            if result.error_string:
+
+                self.get_logger().info(
+                    result.error_string
+                )
+
+            return True
+
+        self.get_logger().error(
+            f'{step_id}: '
+            'EXCAVATOR FAILED'
+        )
+
+        self.get_logger().error(
+            f'status='
+            f'{wrapped_result.status}, '
+            f'error_code='
+            f'{result.error_code}, '
+            f'message='
+            f'{result.error_string}'
+        )
+
+        return False
+
+    # =========================================================
     # WAIT
     # =========================================================
 
@@ -698,7 +1636,9 @@ class ScenarioManager(Node):
             f'duration={duration:.2f} sec'
         )
 
-        start_time = time.monotonic()
+        start_time = (
+            time.monotonic()
+        )
 
         while rclpy.ok():
 
@@ -749,7 +1689,10 @@ class ScenarioManager(Node):
 
         with self.topic_publishers_lock:
 
-            if key not in self.topic_publishers:
+            if (
+                key
+                not in self.topic_publishers
+            ):
 
                 self.topic_publishers[
                     key
@@ -759,9 +1702,11 @@ class ScenarioManager(Node):
                     10,
                 )
 
-            return self.topic_publishers[
-                key
-            ]
+            return (
+                self.topic_publishers[
+                    key
+                ]
+            )
 
     # =========================================================
     # Extract robot name from topic
@@ -777,7 +1722,9 @@ class ScenarioManager(Node):
 
         parts = [
             part
-            for part in topic_name.split('/')
+            for part in (
+                topic_name.split('/')
+            )
             if part
         ]
 
@@ -862,10 +1809,6 @@ class ScenarioManager(Node):
                 'rate_hz must be numeric.'
             )
 
-        # -----------------------------------------------------
-        # Validation
-        # -----------------------------------------------------
-
         if not topic_name:
 
             raise RuntimeError(
@@ -883,7 +1826,8 @@ class ScenarioManager(Node):
 
             raise RuntimeError(
                 f'{step_id}: '
-                'rate_hz must be greater than zero.'
+                'rate_hz must be greater '
+                'than zero.'
             )
 
         if not isinstance(
@@ -902,13 +1846,6 @@ class ScenarioManager(Node):
             )
         )
 
-        # -----------------------------------------------------
-        # Safety:
-        #
-        # Do not directly command a robot while its Action
-        # Server already has an active task.
-        # -----------------------------------------------------
-
         if (
             robot_name is not None
             and self.is_robot_busy(
@@ -917,8 +1854,9 @@ class ScenarioManager(Node):
         ):
 
             raise RuntimeError(
-                f'{step_id}: robot "{robot_name}" '
-                'currently has an active Action task. '
+                f'{step_id}: robot '
+                f'"{robot_name}" currently has '
+                'an active Action task. '
                 'Direct topic command rejected.'
             )
 
@@ -992,14 +1930,18 @@ class ScenarioManager(Node):
             'geometry_msgs/msg/Twist',
         ):
 
-            linear = message_data.get(
-                'linear',
-                {},
+            linear = (
+                message_data.get(
+                    'linear',
+                    {},
+                )
             )
 
-            angular = message_data.get(
-                'angular',
-                {},
+            angular = (
+                message_data.get(
+                    'angular',
+                    {},
+                )
             )
 
             if not isinstance(
@@ -1009,7 +1951,8 @@ class ScenarioManager(Node):
 
                 raise RuntimeError(
                     f'{step_id}: '
-                    'message.linear must be a mapping.'
+                    'message.linear must '
+                    'be a mapping.'
                 )
 
             if not isinstance(
@@ -1019,7 +1962,8 @@ class ScenarioManager(Node):
 
                 raise RuntimeError(
                     f'{step_id}: '
-                    'message.angular must be a mapping.'
+                    'message.angular must '
+                    'be a mapping.'
                 )
 
             msg = Twist()
@@ -1074,10 +2018,6 @@ class ScenarioManager(Node):
                 )
             )
 
-            # -------------------------------------------------
-            # Single publish
-            # -------------------------------------------------
-
             if duration <= 0.0:
 
                 publisher.publish(
@@ -1090,10 +2030,6 @@ class ScenarioManager(Node):
                 )
 
                 return True
-
-            # -------------------------------------------------
-            # Timed publish
-            # -------------------------------------------------
 
             period = (
                 1.0
@@ -1126,10 +2062,6 @@ class ScenarioManager(Node):
 
             finally:
 
-                # ---------------------------------------------
-                # Safety stop for timed Twist commands
-                # ---------------------------------------------
-
                 publisher.publish(
                     Twist()
                 )
@@ -1149,15 +2081,12 @@ class ScenarioManager(Node):
 
             return True
 
-        # =====================================================
-        # Unsupported message
-        # =====================================================
-
         raise RuntimeError(
-            f'{step_id}: unsupported msg_type '
-            f'"{msg_type}". '
+            f'{step_id}: unsupported '
+            f'msg_type "{msg_type}". '
             'Supported types are currently '
-            'std_msgs/String and geometry_msgs/Twist.'
+            'std_msgs/String and '
+            'geometry_msgs/Twist.'
         )
 
     # =========================================================
@@ -1177,28 +2106,34 @@ class ScenarioManager(Node):
         child_id = str(
             child_step.get(
                 'id',
-                f'{parent_id}_child_{child_number}',
+                (
+                    f'{parent_id}_child_'
+                    f'{child_number}'
+                ),
             )
         )
 
         try:
 
-            success = self.execute_step(
-                child_step,
-                child_number,
-                total_children,
-                context_prefix=(
-                    f'PARALLEL '
-                    f'{child_number}/'
-                    f'{total_children} '
-                ),
+            success = (
+                self.execute_step(
+                    child_step,
+                    child_number,
+                    total_children,
+                    context_prefix=(
+                        f'PARALLEL '
+                        f'{child_number}/'
+                        f'{total_children} '
+                    ),
+                )
             )
 
         except Exception as exc:
 
             self.get_logger().error(
                 f'{child_id}: '
-                f'PARALLEL CHILD ERROR: {exc}'
+                'PARALLEL CHILD ERROR: '
+                f'{exc}'
             )
 
             success = False
@@ -1253,11 +2188,12 @@ class ScenarioManager(Node):
 
             raise RuntimeError(
                 f'{parent_id}: '
-                'parallel block contains no tasks.'
+                'parallel block contains '
+                'no tasks.'
             )
 
         # -----------------------------------------------------
-        # Prevent two task Actions from using same robot
+        # Prevent two Action tasks from using same robot
         # -----------------------------------------------------
 
         robots_in_parallel = []
@@ -1277,7 +2213,10 @@ class ScenarioManager(Node):
                 )
             ).strip().lower()
 
-            if child_type != 'task':
+            if child_type not in (
+                'task',
+                'excavator_trajectory',
+            ):
                 continue
 
             robot_name = str(
@@ -1290,22 +2229,22 @@ class ScenarioManager(Node):
             if not robot_name:
                 continue
 
-            if robot_name in robots_in_parallel:
+            if (
+                robot_name
+                in robots_in_parallel
+            ):
 
                 raise RuntimeError(
                     f'{parent_id}: robot '
-                    f'"{robot_name}" appears more '
-                    'than once as a task in the '
-                    'same parallel block.'
+                    f'"{robot_name}" appears '
+                    'more than once as an '
+                    'Action task in the same '
+                    'parallel block.'
                 )
 
             robots_in_parallel.append(
                 robot_name
             )
-
-        # -----------------------------------------------------
-        # Start
-        # -----------------------------------------------------
 
         self.get_logger().info(
             '========================================'
@@ -1344,7 +2283,10 @@ class ScenarioManager(Node):
             children
         )
 
-        for index, child_step in enumerate(
+        for (
+            index,
+            child_step,
+        ) in enumerate(
             children
         ):
 
@@ -1366,7 +2308,6 @@ class ScenarioManager(Node):
             )
 
         for thread in threads:
-
             thread.start()
 
         for thread in threads:
@@ -1384,7 +2325,8 @@ class ScenarioManager(Node):
             return False
 
         all_success = (
-            len(results) == total_children
+            len(results)
+            == total_children
             and all(
                 results.values()
             )
@@ -1418,8 +2360,7 @@ class ScenarioManager(Node):
             return True
 
         self.get_logger().error(
-            f'{parent_id}: '
-            'PARALLEL FAILED'
+            f'{parent_id}: PARALLEL FAILED'
         )
 
         for (
@@ -1447,10 +2388,6 @@ class ScenarioManager(Node):
         value,
         condition_state,
     ):
-        """
-        Store the newest condition value and set the match
-        event when it equals the expected value.
-        """
 
         value_string = str(
             value
@@ -1590,13 +2527,15 @@ class ScenarioManager(Node):
             if not rclpy.ok():
                 return False
 
-            success = self.execute_step(
-                branch_step,
-                index + 1,
-                total_branch_steps,
-                context_prefix=(
-                    f'{branch_name.upper()} '
-                ),
+            success = (
+                self.execute_step(
+                    branch_step,
+                    index + 1,
+                    total_branch_steps,
+                    context_prefix=(
+                        f'{branch_name.upper()} '
+                    ),
+                )
             )
 
             if not success:
@@ -1643,10 +2582,6 @@ class ScenarioManager(Node):
                 f'{step_id}: '
                 'condition must be a mapping.'
             )
-
-        # -----------------------------------------------------
-        # Condition configuration
-        # -----------------------------------------------------
 
         source = str(
             condition.get(
@@ -1699,18 +2634,15 @@ class ScenarioManager(Node):
 
             raise RuntimeError(
                 f'{step_id}: '
-                'condition timeout must be numeric.'
+                'condition timeout '
+                'must be numeric.'
             )
-
-        # -----------------------------------------------------
-        # Basic validation
-        # -----------------------------------------------------
 
         if source != 'topic':
 
             raise RuntimeError(
-                f'{step_id}: unsupported condition '
-                f'source "{source}". '
+                f'{step_id}: unsupported '
+                f'condition source "{source}". '
                 'Currently supported: topic.'
             )
 
@@ -1728,10 +2660,6 @@ class ScenarioManager(Node):
                 'timeout cannot be negative.'
             )
 
-        # -----------------------------------------------------
-        # Normalize known message types
-        # -----------------------------------------------------
-
         is_string_condition = (
             msg_type in (
                 'std_msgs/String',
@@ -1741,7 +2669,10 @@ class ScenarioManager(Node):
 
         is_robot_status_condition = (
             msg_type in (
-                'construction_site_interfaces/RobotStatus',
+                (
+                    'construction_site_interfaces/'
+                    'RobotStatus'
+                ),
                 (
                     'construction_site_interfaces/'
                     'msg/RobotStatus'
@@ -1756,16 +2687,13 @@ class ScenarioManager(Node):
 
             raise RuntimeError(
                 f'{step_id}: unsupported '
-                f'condition msg_type "{msg_type}". '
-                'Supported condition types are '
-                'std_msgs/String and '
+                'condition msg_type '
+                f'"{msg_type}". '
+                'Supported condition types '
+                'are std_msgs/String and '
                 'construction_site_interfaces/'
                 'msg/RobotStatus.'
             )
-
-        # -----------------------------------------------------
-        # RobotStatus requires a field
-        # -----------------------------------------------------
 
         if is_robot_status_condition:
 
@@ -1773,9 +2701,8 @@ class ScenarioManager(Node):
 
                 raise RuntimeError(
                     f'{step_id}: '
-                    'RobotStatus condition requires '
-                    '"field". '
-                    'Example: field: state'
+                    'RobotStatus condition '
+                    'requires "field".'
                 )
 
             valid_fields = (
@@ -1784,40 +2711,33 @@ class ScenarioManager(Node):
                 'detail',
             )
 
-            if field_name not in valid_fields:
+            if (
+                field_name
+                not in valid_fields
+            ):
 
                 raise RuntimeError(
                     f'{step_id}: invalid '
-                    f'RobotStatus field '
+                    'RobotStatus field '
                     f'"{field_name}". '
                     'Supported fields: '
                     'robot_name, state, detail.'
                 )
 
-        # -----------------------------------------------------
-        # String condition implicitly uses data
-        # -----------------------------------------------------
-
         if is_string_condition:
 
             field_name = 'data'
 
-        # -----------------------------------------------------
-        # Condition state
-        # -----------------------------------------------------
-
         condition_state = {
-            'expected_value': expected_value,
+            'expected_value': (
+                expected_value
+            ),
             'last_value': None,
             'matched': threading.Event(),
             'lock': threading.Lock(),
             'field': field_name,
             'field_error_logged': False,
         }
-
-        # -----------------------------------------------------
-        # Create subscription
-        # -----------------------------------------------------
 
         if is_string_condition:
 
@@ -1837,20 +2757,17 @@ class ScenarioManager(Node):
 
         else:
 
-            # -------------------------------------------------
-            # RobotStatus is a current-state topic.
-            #
-            # TRANSIENT_LOCAL allows the Scenario Manager to
-            # receive the most recently published status even
-            # if it subscribes after the robot status publisher
-            # has already started.
-            # -------------------------------------------------
-
             status_qos = QoSProfile(
-                history=HistoryPolicy.KEEP_LAST,
+                history=(
+                    HistoryPolicy.KEEP_LAST
+                ),
                 depth=1,
-                reliability=ReliabilityPolicy.RELIABLE,
-                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                reliability=(
+                    ReliabilityPolicy.RELIABLE
+                ),
+                durability=(
+                    DurabilityPolicy.TRANSIENT_LOCAL
+                ),
             )
 
             subscription = (
@@ -1867,19 +2784,11 @@ class ScenarioManager(Node):
                 )
             )
 
-        # -----------------------------------------------------
-        # Keep subscription alive
-        # -----------------------------------------------------
-
         with self.condition_subscriptions_lock:
 
             self.condition_subscriptions.append(
                 subscription
             )
-
-        # -----------------------------------------------------
-        # Logging
-        # -----------------------------------------------------
 
         self.get_logger().info(
             '========================================'
@@ -1926,10 +2835,6 @@ class ScenarioManager(Node):
             '========================================'
         )
 
-        # -----------------------------------------------------
-        # Wait for condition
-        # -----------------------------------------------------
-
         start_time = (
             time.monotonic()
         )
@@ -1957,10 +2862,6 @@ class ScenarioManager(Node):
                 0.05
             )
 
-        # -----------------------------------------------------
-        # Destroy condition subscription
-        # -----------------------------------------------------
-
         try:
 
             self.destroy_subscription(
@@ -1969,7 +2870,9 @@ class ScenarioManager(Node):
 
         finally:
 
-            with self.condition_subscriptions_lock:
+            with (
+                self.condition_subscriptions_lock
+            ):
 
                 if (
                     subscription
@@ -1982,10 +2885,6 @@ class ScenarioManager(Node):
 
         if not rclpy.ok():
             return False
-
-        # -----------------------------------------------------
-        # THEN branch
-        # -----------------------------------------------------
 
         if matched:
 
@@ -2029,10 +2928,6 @@ class ScenarioManager(Node):
                 step_id,
                 'then',
             )
-
-        # -----------------------------------------------------
-        # ELSE / timeout branch
-        # -----------------------------------------------------
 
         with condition_state[
             'lock'
@@ -2118,7 +3013,29 @@ class ScenarioManager(Node):
                 step,
                 step_number,
                 total_steps,
-                context_label=context_label,
+                context_label=(
+                    context_label
+                ),
+            )
+
+        # -----------------------------------------------------
+        # EXCAVATOR TRAJECTORY
+        # -----------------------------------------------------
+
+        if (
+            step_type
+            == 'excavator_trajectory'
+        ):
+
+            return (
+                self.execute_excavator_trajectory_step(
+                    step,
+                    step_number,
+                    total_steps,
+                    context_label=(
+                        context_label
+                    ),
+                )
             )
 
         # -----------------------------------------------------
@@ -2131,20 +3048,29 @@ class ScenarioManager(Node):
                 step,
                 step_number,
                 total_steps,
-                context_label=context_label,
+                context_label=(
+                    context_label
+                ),
             )
 
         # -----------------------------------------------------
         # TOPIC PUBLISH
         # -----------------------------------------------------
 
-        if step_type == 'topic_publish':
+        if (
+            step_type
+            == 'topic_publish'
+        ):
 
-            return self.execute_topic_publish_step(
-                step,
-                step_number,
-                total_steps,
-                context_label=context_label,
+            return (
+                self.execute_topic_publish_step(
+                    step,
+                    step_number,
+                    total_steps,
+                    context_label=(
+                        context_label
+                    ),
+                )
             )
 
         # -----------------------------------------------------
@@ -2171,13 +3097,9 @@ class ScenarioManager(Node):
                 total_steps,
             )
 
-        # -----------------------------------------------------
-        # Unsupported
-        # -----------------------------------------------------
-
         raise RuntimeError(
             f'Step {step_number}: '
-            f'unsupported step type '
+            'unsupported step type '
             f'"{step_type}".'
         )
 
@@ -2227,10 +3149,12 @@ class ScenarioManager(Node):
                     index
                 )
 
-                success = self.execute_step(
-                    step,
-                    index + 1,
-                    total_steps,
+                success = (
+                    self.execute_step(
+                        step,
+                        index + 1,
+                        total_steps,
+                    )
                 )
 
                 if not success:
@@ -2244,8 +3168,9 @@ class ScenarioManager(Node):
                     )
 
                     self.get_logger().error(
-                        f'Failed at step '
-                        f'{index + 1}/{total_steps}'
+                        'Failed at step '
+                        f'{index + 1}/'
+                        f'{total_steps}'
                     )
 
                     self.get_logger().error(
@@ -2255,10 +3180,6 @@ class ScenarioManager(Node):
                     self.scenario_finished = True
 
                     return
-
-            # -------------------------------------------------
-            # Complete
-            # -------------------------------------------------
 
             self.scenario_finished = True
 
@@ -2271,11 +3192,12 @@ class ScenarioManager(Node):
             )
 
             self.get_logger().info(
-                f'Name: {self.scenario_title}'
+                f'Name: '
+                f'{self.scenario_title}'
             )
 
             self.get_logger().info(
-                f'Completed steps: '
+                'Completed steps: '
                 f'{total_steps}'
             )
 
@@ -2310,7 +3232,9 @@ def main(args=None):
         args=args
     )
 
-    node = ScenarioManager()
+    node = (
+        ScenarioManager()
+    )
 
     try:
 

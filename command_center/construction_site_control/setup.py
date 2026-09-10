@@ -9,7 +9,7 @@ package_name = 'construction_site_control'
 
 setup(
     name=package_name,
-    version='0.0.0',
+    version='0.1.0',
 
     packages=find_packages(
         exclude=[
@@ -71,6 +71,11 @@ setup(
                 'scenario_manager_node = '
                 'construction_site_control.'
                 'scenario_manager_node:main'
+            ),
+            (
+                'excavator_task_client = '
+                'construction_site_control.'
+                'excavator_task_client:main'
             ),
         ],
     },
