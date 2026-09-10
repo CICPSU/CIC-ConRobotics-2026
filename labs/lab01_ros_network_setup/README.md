@@ -1,18 +1,61 @@
-## Part A — ROS Computer Setup
+# Lab 01 — ROS 2 Network Setup
 
-### Step 1 — Log In to the ROS Computer
+In this lab, you will configure remote access to the course ROS computer, connect to a Raspberry Pi, and establish ROS 2 communication between two computers.
+
+By the end of this lab, you will be able to:
+
+- remotely access the ROS computer using SSH
+- use VS Code Remote SSH
+- clone and build the course repository
+- connect to a Raspberry Pi
+- configure the course Zenoh network
+- run ROS 2 nodes across two computers
+- verify ROS 2 communication using a talker and listener
+
+The CIC ConRobotics system uses the following basic network architecture:
+
+```text
+Your Laptop
+     │
+     │ SSH
+     ▼
+   ROS PC
+     │
+     ├── Zenoh Router
+     │
+     └──────────────┐
+                    │
+                    ▼
+               Raspberry Pi
+```
+
+For ROS 2 communication, the important architecture is:
+
+```text
+1 Zenoh Router
+      +
+1 ROS PC
+      +
+N Robot Clients
+```
+
+---
+
+# Part A — ROS Computer Setup
+
+## Step 1 — Log In to the ROS Computer
 
 For the initial setup, you must first log in to the ROS computer physically using your Penn State account.
 
 > **Important:** You only need to complete this initial setup once.
 
-#### 1. Log in to Ubuntu
+### 1. Log in to Ubuntu
 
 Log in to the ROS computer using your Penn State account.
 
 Wait until the Ubuntu desktop has fully loaded.
 
-#### 2. Open a Terminal
+### 2. Open a Terminal
 
 Click **Show Apps** at the bottom-left corner of the desktop.
 
@@ -21,12 +64,10 @@ Click **Show Apps** at the bottom-left corner of the desktop.
 Search for **Terminal** and click the **Terminal** application.
 
 <img src="images/step01_terminal_search.png" width="900">
-<!-- SCREENSHOT: Application search showing Terminal -->
 
 A Terminal window should open.
 
 <img src="images/step01_terminal_open.png" width="900">
-<!-- SCREENSHOT: Open Terminal window -->
 
 You should see a command prompt similar to:
 
@@ -36,24 +77,25 @@ your_psu_id@computer-name:~$
 
 Do not close this terminal. You will use this for the next steps.
 
-#### 3. Confirm your user account
+### 3. Confirm your user account
 
-First, confirm which user account you are currently using.
-
-Copy and paste the command below into the Terminal. You can use the copy button in the upper-right corner of the code block.
+Run:
 
 ```bash
 whoami
 ```
 
-Press **Enter** and You should see your PSU ID:
+Press **Enter**.
+
+You should see your PSU ID:
 
 ```text
 your_psu_id
 ```
 
+---
 
-### Step 2 — Enable SSH
+## Step 2 — Enable SSH
 
 SSH allows you to remotely access the ROS computer from your own laptop.
 
@@ -63,55 +105,105 @@ First, check whether SSH is enabled:
 systemctl is-enabled ssh
 ```
 
-If the output is: 
+If the output is:
+
+```text
 enabled
+```
+
 SSH is already enabled. Continue to the next step.
 
 If the output is:
+
+```text
 disabled
-enable SSH using:
+```
+
+enable SSH:
+
 ```bash
 sudo systemctl enable ssh
 ```
+
 Enter your Penn State password if prompted.
-Next, start SSH:
+
+Then start SSH:
+
 ```bash
 sudo systemctl start ssh
 ```
 
 Check that SSH is running:
+
 ```bash
-systemctl is-enabled ssh
+systemctl status ssh
 ```
 
-You should do this from your ROS computer so that you can access RaspberryPi from the ROS computer.
+Look for:
 
+```text
+active (running)
+```
 
+You will also use SSH later to access Raspberry Pi computers remotely.
 
-## Part B — Remote Development Setup
+---
 
-### Step 3 — Create an SSH Key
+# Part B — Remote Development Setup
+
+## Step 3 — Create an SSH Key
 
 You will now configure your laptop so that you can remotely access the ROS computer without entering your Penn State password every time.
 
-> **Important:** From this step forward, use **your own laptop** first, not the physical ROS computer. You should do this from your ROS computer later so that you can access RaspberryPi from the ROS computer.
+> **Important:** From this step forward, use **your own laptop**, not the physical ROS computer.
 
+---
 
-#### 1. Open a Terminal on YOUR Laptop
+### 1. Open a Terminal on YOUR Laptop
 
-Open a Terminal **on your laptop**.
+Open a terminal on your laptop.
 
-- **macOS:** Open **Terminal**.
-- **Windows:** Open **PowerShell** or **Windows Terminal**.
+### macOS
 
-#### 2. Check for an Existing SSH Key
+Open:
+
+```text
+Terminal
+```
+
+### Windows
+
+Use:
+
+```text
+Git Bash
+```
+
+> **Important for Windows users:** Use **Git Bash** for the SSH setup steps in this lab.
+
+Windows PowerShell includes the `ssh` command, but it does not normally include `ssh-copy-id`.
+
+Git Bash provides a Linux-like shell and allows you to use the same SSH commands shown in this lab.
+
+If Git Bash is not installed, install Git for Windows first.
+
+---
+
+### 2. Check for an Existing SSH Key
 
 Before creating a new SSH key, check whether your laptop already has one.
 
-Copy and paste the following command into the Terminal of your laptop:
+Run:
 
 ```bash
 ls ~/.ssh/id_ed25519.pub
+```
+
+This command works in:
+
+```text
+macOS Terminal
+Git Bash on Windows
 ```
 
 If you see a file path similar to:
@@ -120,9 +212,21 @@ If you see a file path similar to:
 /Users/your_username/.ssh/id_ed25519.pub
 ```
 
+or:
+
+```text
+/c/Users/your_username/.ssh/id_ed25519.pub
+```
+
 you already have an SSH key.
 
-> **Do not create a new key.** Continue to **Step 4 — Copy Your SSH Key to the ROS Computer**.
+> **Do not create a new key.**
+
+Continue to:
+
+```text
+Step 3.5 — Connect to the PSU VPN
+```
 
 If you see a message similar to:
 
@@ -130,11 +234,13 @@ If you see a message similar to:
 No such file or directory
 ```
 
-continue to the next section to create a new SSH key.
+continue to the next section.
 
-#### 3. Generate an SSH Key
+---
 
-Copy and paste the following command into the Terminal:
+### 3. Generate an SSH Key
+
+Run:
 
 ```bash
 ssh-keygen -t ed25519
@@ -146,57 +252,78 @@ You should see a message similar to:
 
 ```text
 Generating public/private ed25519 key pair.
+
 Enter file in which to save the key (.../.ssh/id_ed25519):
 ```
 
-<img src="images/step03_ssh_keygen_location.png" width="900">
-
 Press **Enter** to use the default location.
 
-You will then be asked to enter a passphrase:
+You will then be asked for a passphrase.
 
-```text
-Press Enter without typing anything
-```
+For this course setup, press **Enter** without typing anything.
 
-<!-- SCREENSHOT: SSH key passphrase prompt -->
-
-After completing the prompts, you should see a message similar to:
+After completing the prompts, you should see:
 
 ```text
 Your identification has been saved in ...
+
 Your public key has been saved in ...
 ```
 
 <img src="images/step03_ssh_keygen_complete.png" width="900">
 
-#### Checkpoint
+### Checkpoint
 
 Your SSH key has been successfully created.
 
-You are now ready to copy your SSH key to the ROS computer.
+---
 
+## Step 3.5 — Connect to the PSU VPN
 
+> **IMPORTANT:** Before attempting to connect to the ROS computer remotely, connect your laptop to the Penn State VPN.
 
-### Step 4 — Copy Your SSH Key to the ROS Computer
+Access https://www.it.psu.edu/software/ and download vpn.
+Connect to the global protect.
+
+### Checkpoint — PSU VPN
+
+Before continuing, confirm that:
+
+- [ ] Your laptop is connected to the Penn State VPN.
+- [ ] The VPN connection is active.
+
+> Keep the VPN connected while accessing the course ROS computers remotely.
+
+---
+
+## Step 4 — Copy Your SSH Key to the ROS Computer
 
 Next, copy your SSH key to the ROS computer.
 
-This will allow you to connect to the ROS computer without entering your Penn State password every time.
+This allows you to connect without entering your Penn State password every time.
 
-#### 1. Identify the ROS Computer
+> **Important:** Keep the PSU VPN connected during this step.
 
-Make sure you know the IP address of the ROS computer you are using.
+---
+
+### 1. Identify the ROS Computer
+
+Use the ROS computer assigned to you for the lab.
+
+Current course ROS computers include:
 
 ```text
-10.170.32.181 or 10.170.32.227
+ROS-PC-1    10.170.32.181
+ROS-PC-2    10.170.32.227
 ```
 
-> **Important:** Use the IP address of the ROS computer assigned to you for the lab day.
+> **Important:** Use the ROS computer assigned by the instructor.
 
-#### 2. Copy Your SSH Key
+---
 
-On **your laptop**, run the following command after opening the terminal:
+### 2. Copy Your SSH Key
+
+On your laptop, run:
 
 ```bash
 ssh-copy-id 'YOUR_PSU_ID@AD.PSU.EDU'@ROS_COMPUTER_IP
@@ -204,24 +331,42 @@ ssh-copy-id 'YOUR_PSU_ID@AD.PSU.EDU'@ROS_COMPUTER_IP
 
 Replace:
 
-- `YOUR_PSU_ID` with your Penn State user ID.
-- `ROS_COMPUTER_IP` with the IP address of your assigned ROS computer.
+- `YOUR_PSU_ID` with your Penn State user ID
+- `ROS_COMPUTER_IP` with the assigned ROS computer IP
 
-For example:
+Example:
 
 ```bash
 ssh-copy-id 'abc123@AD.PSU.EDU'@10.170.32.181
 ```
 
-Press **Enter**.
+### Windows Users
 
-#### 3. Confirm the Connection
+Run this command from:
 
-If this is your first time connecting to the ROS computer, you may see a message similar to:
+```text
+Git Bash
+```
+
+Do **not** use PowerShell for the `ssh-copy-id` step.
+
+Example:
+
+```bash
+ssh-copy-id 'abc123@AD.PSU.EDU'@10.170.32.181
+```
+
+---
+
+### 3. Confirm the First Connection
+
+If this is your first connection, you may see:
 
 ```text
 The authenticity of host '10.170.32.181 (10.170.32.181)' can't be established.
+
 ED25519 key fingerprint is SHA256:...
+
 Are you sure you want to continue connecting (yes/no/[fingerprint])?
 ```
 
@@ -235,95 +380,98 @@ yes
 
 and press **Enter**.
 
-> **This message is normal.** It appears because your laptop has not connected to this ROS computer before.
+This message is normal.
 
-#### 4. Enter Your Penn State Password
+---
 
-You may then be asked to enter your Penn State password:
+### 4. Enter Your Penn State Password
+
+You may be asked for your Penn State password.
+
+Your password will not appear while you type.
+
+You will not see:
 
 ```text
-YOUR_PSU_ID@AD.PSU.EDU@ROS_COMPUTER_IP's password:
+letters
+dots
+asterisks
 ```
 
-Enter your Penn State password and press **Enter**.
+This is normal.
 
-> **Important:** Your password will not appear on the screen while you type. You will not see letters, dots, or asterisks. This is normal.
+<img src="iimages/step04_ssh_first_connection.png" width="900">
 
-<img src="images/step04_ssh_password.png" width="900">
-
-If the SSH key was copied successfully, you should see a message similar to:
+If the SSH key was copied successfully, you should see:
 
 ```text
 Number of key(s) added: 1
 ```
 
-<img src="images/step04_ssh_copy_success.png" width="900">
 
-#### 5. Test the SSH Connection
+---
 
-Now test the connection to the ROS computer.
+### 5. Test the SSH Connection
+
+Run:
 
 ```bash
 ssh 'YOUR_PSU_ID@AD.PSU.EDU'@ROS_COMPUTER_IP
 ```
 
-For example:
+Example:
 
 ```bash
 ssh 'abc123@AD.PSU.EDU'@10.170.32.181
 ```
 
-Press **Enter**.
+If configured correctly, you should connect without entering your Penn State password.
 
-If the SSH key was configured correctly, you should connect to the ROS computer without entering your Penn State password.
-
-You should see a Terminal prompt for the ROS computer similar to:
+The prompt should look similar to:
 
 ```text
 abc123@AD.PSU.EDU@E5-AE-ROS-PC:~$
 ```
 
-<img src="images/step04_ssh_login_success.png" width="900">
 
 ### Checkpoint — Passwordless SSH Connection
 
-Before continuing, confirm that:
+Confirm that:
 
-- [ ] Your SSH key was successfully copied to the ROS computer.
-- [ ] You can connect to the ROS computer from your laptop.
-- [ ] You are not asked for your Penn State password when connecting.
+- [ ] The PSU VPN is connected.
+- [ ] Your SSH key was copied to the ROS computer.
+- [ ] You can connect from your laptop.
+- [ ] You are not asked for your Penn State password.
 
-> **You are now remotely controlling the ROS computer from your own laptop.**
-
-To return to your laptop, run:
+To return to your laptop:
 
 ```bash
 exit
 ```
 
-You are now ready to configure **VS Code Remote SSH**.
+---
 
-
-
-### Step 5 — Configure VS Code Remote SSH
+## Step 5 — Configure VS Code Remote SSH
 
 You will now configure **Visual Studio Code (VS Code)** to remotely access the ROS computer.
 
-After completing this setup, you will be able to use VS Code on your laptop to edit files and run commands directly on the ROS computer.
+After completing this setup, you will be able to edit files and run commands directly on the ROS computer from your laptop.
 
 > **Important:** Complete this step on **your own laptop**.
 
-#### 1. Open VS Code
+> Keep the PSU VPN connected while using the remote ROS computers.
 
-Open **Visual Studio Code** on your laptop.
+---
 
-<!-- SCREENSHOT: VS Code main window -->
+### 1. Open VS Code
 
-#### 2. Install the Remote - SSH Extension
+Open **Visual Studio Code**.
 
-Click the **Extensions** icon on the left side of VS Code.
+---
 
-<!-- SCREENSHOT: VS Code Extensions icon -->
+### 2. Install Remote - SSH
+
+Open the **Extensions** panel.
 
 Search for:
 
@@ -331,18 +479,27 @@ Search for:
 Remote - SSH
 ```
 
-Install the **Remote - SSH** extension from Microsoft.
+Install the extension from Microsoft.
 
-<!-- SCREENSHOT: Remote - SSH extension -->
+If it is already installed, continue.
 
-> If the extension is already installed, you do not need to install it again.
+---
 
-#### 3. Open the SSH Configuration File
+### 3. Open the SSH Configuration File
 
-Open the **Command Palette** in VS Code.
+Open the VS Code **Command Palette**.
 
-- **macOS:** Press `Command + Shift + P`
-- **Windows:** Press `Ctrl + Shift + P`
+### macOS
+
+```text
+Command + Shift + P
+```
+
+### Windows
+
+```text
+Ctrl + Shift + P
+```
 
 Search for:
 
@@ -350,36 +507,27 @@ Search for:
 Remote-SSH: Open SSH Configuration File...
 ```
 
-Select **Remote-SSH: Open SSH Configuration File...**
+Select your user SSH configuration file.
 
-<!-- SCREENSHOT: Remote-SSH Open SSH Configuration File -->
-
-VS Code may ask you which SSH configuration file you want to open.
-
-Select the file located in your user `.ssh` directory.
-
-It will typically look similar to:
-
-**macOS/Linux**
+### macOS/Linux
 
 ```text
 ~/.ssh/config
 ```
 
-**Windows**
+### Windows
 
 ```text
 C:\Users\YOUR_USERNAME\.ssh\config
 ```
 
-<!-- SCREENSHOT: Select SSH configuration file -->
+---
 
-#### 4. Add the ROS Computers
+### 4. Add the Course Computers
 
-Copy the ROS computer configuration provided below and paste it into the SSH configuration file.
+Add the following configuration:
 
 ```text
-
 Host dumptruck1
     HostName 10.170.32.192
     User besure
@@ -426,23 +574,23 @@ Host ROS-PC-2
     IdentityFile ~/.ssh/id_ed25519
 ```
 
-Replace **YOUR_PSU_ID** with your Penn State user ID.
+Replace:
 
-> **Important:** Do not change `HostName` unless instructed to do so. Only replace `YOUR_PSU_ID` with your own Penn State user ID.
+```text
+YOUR_PSU_ID
+```
 
-<!-- SCREENSHOT: Completed SSH config -->
+with your Penn State user ID.
+
+> **Important:** Do not change `HostName` unless instructed to do so.
 
 Save the file.
 
-- **macOS:** Press `Command + S`
-- **Windows:** Press `Ctrl + S`
+---
 
-#### 5. Connect to the ROS Computer
+### 5. Connect to the ROS Computer
 
-Open the **Command Palette** again:
-
-- **macOS:** `Command + Shift + P`
-- **Windows:** `Ctrl + Shift + P`
+Open the Command Palette again.
 
 Search for:
 
@@ -450,102 +598,93 @@ Search for:
 Remote-SSH: Connect to Host...
 ```
 
-Select **Remote-SSH: Connect to Host...**
-
-<!-- SCREENSHOT: Connect to Host -->
-
-You should now see the ROS computers that you added to the SSH configuration file.
-
-For example:
+Select:
 
 ```text
 ROS-PC-1
+```
+
+or:
+
+```text
 ROS-PC-2
 ```
 
-Select the ROS computer assigned to you.
-
-<!-- SCREENSHOT: ROS-PC-1 and ROS-PC-2 host list -->
+depending on your assignment.
 
 A new VS Code window should open.
 
-The first connection may take a short time while VS Code configures the remote environment.
-
-If VS Code asks you to select the operating system of the remote computer, select:
+If VS Code asks for the operating system of the remote computer, select:
 
 ```text
 Linux
 ```
 
-<!-- SCREENSHOT: Select Linux -->
+---
 
-#### 6. Confirm the Remote Connection
+### 6. Confirm the Remote Connection
 
-Look at the **bottom-left corner** of the VS Code window.
+Look at the bottom-left corner of VS Code.
 
-You should see an indication that VS Code is connected to your ROS computer.
-
-For example:
+You should see something similar to:
 
 ```text
 SSH: ROS-PC-1
 ```
 
-<!-- SCREENSHOT: VS Code successfully connected to ROS-PC-1 -->
+<img src="images/step05_ssh_login_success.png" width="900">
 
 ### Checkpoint — VS Code Remote Connection
 
-Before continuing, confirm that:
+Confirm that:
 
-- [ ] The **Remote - SSH** extension is installed.
-- [ ] Your ROS computers appear in the Remote SSH host list.
-- [ ] You can connect to your assigned ROS computer.
-- [ ] VS Code shows that you are connected to the ROS computer.
+- [ ] Remote - SSH is installed.
+- [ ] Your ROS computer appears in the host list.
+- [ ] You can connect to the ROS computer.
+- [ ] VS Code shows the active remote connection.
 
-> **Important:** Even though VS Code is running on your laptop, files and commands in this remote VS Code window are now running on the **ROS computer**.
+> Even though VS Code is displayed on your laptop, commands in this remote window are now running on the **ROS computer**.
 
-You are now ready to download and build the course repository.
+---
 
+# Part C — Course Repository Setup
 
-## Part C — Course Repository Setup
-
-### Step 6 — Clone the Course Repository
+## Step 6 — Clone the Course Repository
 
 You will now download the course GitHub repository to the ROS computer.
 
-> **Important:** Before continuing, confirm that VS Code is remotely connected to your assigned ROS computer. Look at the bottom-left corner of VS Code and confirm that you see `SSH: ROS-PC-1` or `SSH: ROS-PC-2`.
+> **Important:** Make sure your VS Code window is remotely connected to the ROS computer.
 
-#### 1. Open a Terminal in VS Code
+---
 
-From the top menu in VS Code, select:
+### 1. Open a Terminal in VS Code
 
-**Terminal → Split Terminal**
+Select:
 
-<!-- SCREENSHOT: VS Code Terminal menu with Split Terminal selected -->
+```text
+Terminal → New Terminal
+```
 
-A Terminal should open at the bottom of the VS Code window.
-
-<!-- SCREENSHOT: VS Code remote Terminal -->
-
-Look at the Terminal prompt.
-
-It should show the name of the ROS computer, similar to:
+The prompt should look similar to:
 
 ```text
 your_psu_id@AD.PSU.EDU@E5-AE-ROS-PC:~$
 ```
 
-> **Important:** This Terminal is running on the **ROS computer**, even though you are using VS Code on your laptop.
+---
 
-#### 2. Go to Your Home Directory
+### 2. Create the Course Workspace
 
 Run:
 
 ```bash
-cd ~
+mkdir -p ~/ws_conrobotics
+cd ~/ws_conrobotics
 ```
 
-#### 3. Clone the Course Repository
+---
+
+### 3. Clone the Course Repository
 
 Run:
 
@@ -553,38 +692,37 @@ Run:
 git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
 ```
 
-Wait for the download to complete.
-
-You should see output similar to:
-
-```text
-Cloning into 'CIC-ConRobotics-2026'...
-...
-```
-
-<!-- SCREENSHOT: Successful git clone -->
-
-#### 4. Enter the Repository
-
-Run:
+Enter the repository:
 
 ```bash
-cd ~/CIC-ConRobotics-2026
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
 ```
 
-Confirm your current location:
+---
+
+### 4. Select the Course Branch
+
+For the current course development environment:
 
 ```bash
-pwd
+git checkout dev
 ```
 
-You should see a path ending with:
+Confirm:
+
+```bash
+git branch --show-current
+```
+
+Expected:
 
 ```text
-/CIC-ConRobotics-2026
+dev
 ```
 
-#### 5. Check the Repository
+---
+
+### 5. Check the Repository
 
 Run:
 
@@ -592,44 +730,51 @@ Run:
 ls
 ```
 
-You should now see the files and folders contained in the course repository.
+You should see directories such as:
 
-<!-- SCREENSHOT: Repository contents shown with ls -->
+```text
+robots
+common
+perception
+command_center
+operations
+network
+labs
+docs
+tools
+```
 
 ### Checkpoint — Repository Downloaded
 
-Before continuing, confirm that:
+Confirm that:
 
-- [ ] VS Code is remotely connected to your assigned ROS computer.
-- [ ] The course repository was successfully cloned.
-- [ ] You are inside the `CIC-ConRobotics-2026` directory.
-- [ ] You can see the repository contents using `ls`.
+- [ ] VS Code is remotely connected to the ROS computer.
+- [ ] The repository was successfully cloned.
+- [ ] You are on the correct branch.
+- [ ] You are inside `CIC-ConRobotics-2026`.
+- [ ] You can see the repository contents.
 
 ---
 
-### Step 7 — Build the ROS 2 Workspace
+## Step 7 — Build the ROS 2 Workspace
 
-Next, you will build the ROS 2 packages used in this course.
+Next, build the ROS 2 packages used by the course.
 
-#### 1. Set Up ROS 2
-
-Make sure you are inside the course repository:
+### 1. Set Up ROS 2
 
 ```bash
-cd ~/CIC-ConRobotics-2026
-```
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
-Load the ROS 2 Jazzy environment:
-
-```bash
 source /opt/ros/jazzy/setup.bash
 ```
 
-> The `source` command configures the current Terminal so that it can find and use ROS 2.
+The `source` command configures the current Terminal so it can find ROS 2.
 
-#### 2. Build the Workspace
+---
 
-Build the ROS 2 workspace:
+### 2. Build the Workspace
+
+Run:
 
 ```bash
 colcon build --symlink-install
@@ -637,183 +782,272 @@ colcon build --symlink-install
 
 The build may take some time.
 
-<!-- SCREENSHOT: colcon build running -->
+When complete, the build summary should show that the packages finished successfully.
 
-When the build is complete, you should see a summary showing that the ROS 2 packages finished successfully.
+---
 
-<!-- SCREENSHOT: Successful colcon build -->
+### 3. Load the Course Workspace
 
-#### 3. Load the Course Workspace
-
-After the build is complete, run:
+Run:
 
 ```bash
 source install/setup.bash
 ```
 
-> You will need to source the ROS 2 environment and the course workspace when you open a new Terminal. We will automate some of this setup later.
+You must source both ROS 2 and the course workspace when opening a new Terminal:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/ws_conrobotics/CIC-ConRobotics-2026/install/setup.bash
+```
 
 ### Checkpoint — ROS 2 Workspace Built
 
-Before continuing, confirm that:
+Confirm that:
 
 - [ ] `colcon build --symlink-install` completed without errors.
 - [ ] The `install` directory was created.
 - [ ] You successfully ran `source install/setup.bash`.
 
-You have now downloaded and built the course ROS 2 workspace on the ROS computer.
+---
 
+# Part D — Connect to the Raspberry Pi
 
-## Part D — Connect to the Raspberry Pi
+## Step 8 — Connect to Your Assigned Raspberry Pi
 
-### Step 8 — Connect to Your Assigned Raspberry Pi
-
-In this step, you will connect from the ROS computer to a Raspberry Pi used in the course robotics system.
+You will now connect to a Raspberry Pi used in the course robotics system.
 
 > **Important:** Each student or group must use the Raspberry Pi assigned to them.
->
-> Do **not** connect to another group's Raspberry Pi. Multiple students controlling the same Raspberry Pi can interfere with each other's work.
 
-#### 1. Confirm Your Assigned Raspberry Pi
+> Do **not** connect to another group's Raspberry Pi. Multiple students controlling the same robot can interfere with each other's work.
 
-Before connecting, confirm the Raspberry Pi assigned to your group.
+---
 
-Your instructor will provide the Raspberry Pi name and IP address.
+### 1. Confirm Your Assigned Raspberry Pi
 
+Your instructor will provide your assigned Raspberry Pi.
 
-<!-- SCREENSHOT OR TABLE: Raspberry Pi assignment list -->
-
-#### 2. Open a Terminal on the ROS Computer
-
-In your VS Code Remote SSH window, open a new Terminal:
-
-**Terminal → New Terminal**
-
-Confirm that you are still connected to the ROS computer.
-
-Your Terminal prompt should look similar to:
+Examples include:
 
 ```text
-your_psu_id@AD.PSU.EDU@E5-AE-ROS-PC:~$
+dumptruck1
+dumptruck3
+dumptruck4
+dumptruck5
+excavator1
+excavator2
+excavator3
 ```
 
-#### 3. Open another VSCode window and SSH to the Raspberry Pi
+---
 
-Open anouther VSCode window.
+### 2. Open a Second VS Code Window
 
-Use SSH to connect to your assigned Raspberry Pi.
+Keep your ROS PC VS Code window open.
 
-Connect through the remote SSH window.
-
-> Your instructor will provide the correct Raspberry Pi username and IP address.
-
-If this is your first time connecting to the Raspberry Pi, you may see:
+Open another VS Code window and use:
 
 ```text
-Are you sure you want to continue connecting (yes/no/[fingerprint])?
+Remote-SSH: Connect to Host...
 ```
 
-Type:
-
-```text
-yes
-```
-
-and press **Enter**.
-
-<!-- SCREENSHOT: Raspberry Pi SSH first connection -->
-
-Enter the Raspberry Pi password if prompted.
-
-#### 4. Confirm the Connection
-
-After connecting, your Terminal prompt should change.
+Select your assigned Raspberry Pi.
 
 For example:
 
 ```text
-besure@dumptruck1:~$
+dumptruck1
 ```
 
-<!-- SCREENSHOT: Successfully connected to Raspberry Pi -->
+---
 
-This means:
+### 3. Confirm the Raspberry Pi Connection
+
+The Raspberry Pi terminal prompt should look similar to:
 
 ```text
-Your Laptop
-    ↓
-VS Code Remote SSH
-    ↓
-ROS Computer
-
-Your Laptop
-    ↓
-SSH
-    ↓
-Raspberry Pi
+besure@Dumptruck1:~$
 ```
 
-You are now controlling the Raspberry Pi through your computer.
+You should now have two clearly separate VS Code windows:
+
+```text
+VS Code Window 1
+    │
+    └── ROS PC
+
+
+VS Code Window 2
+    │
+    └── Raspberry Pi
+```
+
+Your laptop is connecting independently to both machines:
+
+```text
+                    Your Laptop
+                    /         \
+                   /           \
+                  ▼             ▼
+              ROS PC       Raspberry Pi
+```
+
+> **Important:** Always check the terminal prompt before running commands.
 
 ### Checkpoint — Raspberry Pi Connection
 
-Before continuing, confirm that:
+Confirm that:
 
 - [ ] You are using the Raspberry Pi assigned to your group.
-- [ ] You successfully connected to the Raspberry Pi using SSH.
-- [ ] Your Terminal prompt now shows the Raspberry Pi hostname.
-
-> **Important:** Keep track of which computer your Terminal is currently controlling. Always check the Terminal prompt if you are unsure.
-
-
-## Part E — Test ROS 2 Communication
-
-### Step 9 — Test ROS 2 Communication Between Computers
-
-You are now ready to test ROS 2 communication between the ROS computer and Raspberry Pi.
-
-In this test:
-
-- The **ROS computer** will publish messages using a ROS 2 **talker** node.
-- The **Raspberry Pi** will receive the messages using a ROS 2 **listener** node.
-
-If the listener receives the messages, ROS 2 communication between the two computers is working.
+- [ ] You can connect using VS Code Remote SSH.
+- [ ] The Raspberry Pi hostname appears in the terminal prompt.
+- [ ] You can clearly distinguish the ROS PC and Raspberry Pi VS Code windows.
 
 ---
 
-#### 1. Open a Terminal on the ROS Computer
+# Part E — Configure ROS 2 Communication
 
-In VS Code, open a **new Terminal**:
+## Step 9 — Install Zenoh Support
 
-**Terminal → New Terminal**
+The CIC ConRobotics system uses **Zenoh** for ROS 2 communication between computers.
 
-> **Important:** Make sure this Terminal is running on the **ROS computer**, not the Raspberry Pi.
+Zenoh must be installed on both machines.
 
-Check the Terminal prompt.
+> This installation only needs to be completed once per computer.
 
-It should look similar to:
+---
 
-```text
-your_psu_id@AD.PSU.EDU@E5-AE-ROS-PC:~$
-```
+### ROS PC
 
-Load ROS 2:
+In the **ROS PC** terminal:
 
 ```bash
-source /opt/ros/jazzy/setup.bash
+sudo apt update
+sudo apt install ros-jazzy-rmw-zenoh-cpp
 ```
 
 ---
 
-#### 2. Start the ROS 2 Talker
+### Raspberry Pi
 
-On the **ROS computer**, run:
+In the **Raspberry Pi** terminal:
+
+```bash
+sudo apt update
+sudo apt install ros-jazzy-rmw-zenoh-cpp
+```
+
+---
+
+## Step 10 — Prepare the Repository on the Raspberry Pi
+
+The Raspberry Pi also needs the course repository because the network setup script is stored in the repository.
+
+In the **Raspberry Pi** terminal:
+
+```bash
+mkdir -p ~/ws_conrobotics
+cd ~/ws_conrobotics
+```
+
+If the repository has not already been cloned:
+
+```bash
+git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
+```
+
+Then:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+git checkout dev
+
+source /opt/ros/jazzy/setup.bash
+
+colcon build --symlink-install
+
+source install/setup.bash
+```
+
+If the repository already exists, do **not** clone it again.
+
+Instead:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+git pull
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+```
+
+---
+
+## Step 11 — Start the Zenoh Router
+
+The Zenoh router runs on the ROS computer.
+
+### ROS PC — Terminal 1
+
+**Keep this terminal running.**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh router
+
+ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+> **Do not close this terminal.**
+
+This terminal is now the communication router between the ROS PC and Raspberry Pi.
+
+---
+
+## Step 12 — Start the ROS 2 Talker
+
+Open a **second terminal on the ROS PC**.
+
+### ROS PC — Terminal 2
+
+First configure this terminal as a Zenoh client:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client ros-pc
+```
+
+You should see the network configuration printed in the terminal.
+
+Confirm the middleware:
+
+```bash
+echo $RMW_IMPLEMENTATION
+```
+
+Expected:
+
+```text
+rmw_zenoh_cpp
+```
+
+Now start the talker:
 
 ```bash
 ros2 run demo_nodes_cpp talker
 ```
 
-You should see messages similar to:
+You should see:
 
 ```text
 [INFO] [talker]: Publishing: 'Hello World: 1'
@@ -821,115 +1055,274 @@ You should see messages similar to:
 [INFO] [talker]: Publishing: 'Hello World: 3'
 ```
 
-<!-- SCREENSHOT: Talker running on ROS computer -->
-
-Keep this Terminal running.
-
-> **Do not close the talker Terminal.**
+**Keep this terminal running.**
 
 ---
 
-#### 3. Open the other VSCode window
+## Step 13 — Start the ROS 2 Listener
 
-Open another VSCode window and in the Terminal in VS Code:
+Go to your Raspberry Pi VS Code window.
 
-**Terminal → New Terminal**
+### Raspberry Pi — Terminal 1
 
-This new Terminal should initially be connected to the **RaspberryPi**.
-
-Now connect to your assigned Raspberry Pi:
-```
-
-Confirm that the Terminal prompt changes to the Raspberry Pi.
-
-For example:
-
-```text
-besure@dumptruck1:~$
-```
-
----
-
-#### 4. Start the ROS 2 Listener
-
-On the **Raspberry Pi**, load ROS 2:
+First go to the repository:
 
 ```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
 source /opt/ros/jazzy/setup.bash
+source install/setup.bash
 ```
 
-Then run:
+Configure the Raspberry Pi as its assigned Zenoh client.
+
+For example, for Dumptruck1:
+
+```bash
+source network/setup_zenoh.sh client dumptruck1
+```
+
+For Dumptruck3:
+
+```bash
+source network/setup_zenoh.sh client dumptruck3
+```
+
+For Dumptruck4:
+
+```bash
+source network/setup_zenoh.sh client dumptruck4
+```
+
+For Dumptruck5:
+
+```bash
+source network/setup_zenoh.sh client dumptruck5
+```
+
+For Excavator1:
+
+```bash
+source network/setup_zenoh.sh client excavator1
+```
+
+For Excavator2:
+
+```bash
+source network/setup_zenoh.sh client excavator2
+```
+
+For Excavator3:
+
+```bash
+source network/setup_zenoh.sh client excavator3
+```
+
+Use **only the command corresponding to your assigned Raspberry Pi**.
+
+Confirm:
+
+```bash
+echo $RMW_IMPLEMENTATION
+```
+
+Expected:
+
+```text
+rmw_zenoh_cpp
+```
+
+Now start the listener:
 
 ```bash
 ros2 run demo_nodes_cpp listener
 ```
 
-If ROS 2 communication is working correctly, you should begin receiving messages from the talker running on the ROS computer.
-
-You should see output similar to:
+If communication is working, you should see:
 
 ```text
 [INFO] [listener]: I heard: [Hello World: 1]
 [INFO] [listener]: I heard: [Hello World: 2]
 [INFO] [listener]: I heard: [Hello World: 3]
 ```
-
-<!-- SCREENSHOT: Listener receiving messages from ROS computer -->
-
-### Checkpoint — ROS 2 Communication
-
-Confirm that:
-
-- [ ] The talker is running on the **ROS computer**.
-- [ ] The listener is running on the **Raspberry Pi**.
-- [ ] The Raspberry Pi is receiving `Hello World` messages from the ROS computer.
-
-If you can see the messages on the Raspberry Pi:
-
-**Congratulations! You have successfully established ROS 2 communication between two computers.**
 
 ---
 
-## Part F — Lab Submission
+## Step 14 — Understand What Just Happened
 
-### Step 10 — Submit Your Result
-
-For this lab, submit **one screenshot** showing successful ROS 2 communication between the ROS computer and Raspberry Pi.
-
-Your screenshot must clearly show:
-
-- The Raspberry Pi Terminal.
-- The Raspberry Pi hostname in the Terminal prompt.
-- The ROS 2 listener running.
-- Multiple `I heard: [Hello World: ...]` messages.
-
-Example:
+Your system now looks like this:
 
 ```text
-robot@dumptruck-1:~$ ros2 run demo_nodes_cpp listener
-
-[INFO] [listener]: I heard: [Hello World: 1]
-[INFO] [listener]: I heard: [Hello World: 2]
-[INFO] [listener]: I heard: [Hello World: 3]
+ROS PC
+│
+├── Terminal 1
+│   │
+│   └── Zenoh Router
+│
+└── Terminal 2
+    │
+    └── ROS 2 Talker
+             │
+             │
+             ▼
+        Zenoh Router
+             │
+             ▼
+      Raspberry Pi
+             │
+             └── ROS 2 Listener
 ```
 
-<!-- SCREENSHOT: Example of acceptable lab submission -->
+The talker and listener are running on **different computers**.
 
-### Before You Leave
+Zenoh transports the ROS 2 messages between them.
 
-Stop any running ROS 2 nodes by pressing:
+The same architecture will later be used for:
+
+```text
+ROS PC
+│
+├── Camera
+├── AprilTag
+├── Localization
+├── Command Center
+└── Zenoh Router
+        │
+        ├── Dump Truck
+        ├── Dump Truck
+        └── Excavator
+```
+
+The important concept is:
+
+```text
+1 Router + N ROS 2 Clients
+```
+
+You do **not** manually configure a list of ROS peers.
+
+---
+
+# Part F — Verify ROS 2 Communication
+
+## Step 15 — Inspect the ROS Network
+
+While the talker and listener are running, open another Zenoh-configured ROS PC terminal.
+
+Run:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client ros-pc
+```
+
+Check the nodes:
+
+```bash
+ros2 node list
+```
+
+You should see nodes corresponding to the talker and listener.
+
+Check topics:
+
+```bash
+ros2 topic list
+```
+
+You should see:
+
+```text
+/chatter
+```
+
+Inspect the messages:
+
+```bash
+ros2 topic echo /chatter
+```
+
+You should see the same `Hello World` messages.
+
+Press:
 
 ```text
 Ctrl + C
 ```
 
-If you are connected to the Raspberry Pi through SSH, return to your computer using:
+to stop `ros2 topic echo`.
 
-```bash
-exit
+---
+
+## Checkpoint — ROS 2 Communication
+
+Confirm that:
+
+- [ ] The Zenoh router is running on the ROS computer.
+- [ ] The talker terminal was configured with `client ros-pc`.
+- [ ] The Raspberry Pi was configured using its correct robot profile.
+- [ ] `RMW_IMPLEMENTATION` reports `rmw_zenoh_cpp`.
+- [ ] The talker is running on the ROS computer.
+- [ ] The listener is running on the Raspberry Pi.
+- [ ] The Raspberry Pi receives multiple `Hello World` messages.
+
+If all items are complete:
+
+> **Congratulations! You have successfully established ROS 2 communication between two computers using Zenoh.**
+
+---
+
+# Part G — Lab Submission
+
+## Step 16 — Submit Your Result
+
+Submit **one screenshot** showing successful ROS 2 communication between the ROS computer and Raspberry Pi.
+
+Your screenshot must clearly show:
+
+- the Raspberry Pi VS Code window or terminal
+- the Raspberry Pi hostname in the terminal prompt
+- the Zenoh client configuration output or `RMW_IMPLEMENTATION=rmw_zenoh_cpp`
+- the ROS 2 listener
+- multiple `I heard: [Hello World: ...]` messages
+
+Example:
+
+```text
+besure@Dumptruck1:~$ echo $RMW_IMPLEMENTATION
+
+rmw_zenoh_cpp
+
+besure@Dumptruck1:~$ ros2 run demo_nodes_cpp listener
+
+[INFO] [listener]: I heard: [Hello World: 1]
+[INFO] [listener]: I heard: [Hello World: 2]
+[INFO] [listener]: I heard: [Hello World: 3]
 ```
 
-You can then close the VS Code Remote SSH connection.
+---
+
+# Before You Leave
+
+Stop running ROS 2 nodes using:
+
+```text
+Ctrl + C
+```
+
+Stop the talker.
+
+Stop the listener.
+
+Stop the Zenoh router after your group has finished using it.
+
+If other groups are using the same Zenoh router, **do not stop the shared router**.
+
+You can then close your VS Code Remote SSH connections.
 
 ---
 
@@ -937,16 +1330,28 @@ You can then close the VS Code Remote SSH connection.
 
 You have now:
 
-- Configured SSH on the ROS computer.
-- Created and installed an SSH key.
-- Connected to the ROS computer remotely.
-- Configured VS Code Remote SSH.
-- Cloned the course GitHub repository.
-- Built the ROS 2 workspace.
-- Connected to a Raspberry Pi.
-- Tested ROS 2 communication between two computers.
+- configured SSH on the ROS computer
+- created and installed an SSH key
+- connected to the PSU VPN
+- connected to the ROS computer remotely
+- configured VS Code Remote SSH
+- cloned the course GitHub repository
+- built the ROS 2 workspace
+- connected to a Raspberry Pi
+- installed ROS 2 Zenoh support
+- started a Zenoh router
+- configured ROS 2 Zenoh clients
+- tested ROS 2 communication between two computers
+- inspected ROS 2 nodes and topics across the network
 
-You are now ready to use the course robotics system remotely in future labs.
+You are now ready to use the course multi-machine robotics system in future labs.
 
+The network architecture you will continue using is:
 
-
+```text
+1 Zenoh Router
+      +
+1 Command Center
+      +
+N Robots
+```
