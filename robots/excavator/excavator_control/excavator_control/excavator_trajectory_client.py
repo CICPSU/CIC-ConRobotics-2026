@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
-
 import argparse
 import math
 import sys
-from pathlib import Path
+from typing import Dict, List
 
 import rclpy
 from action_msgs.msg import GoalStatus
@@ -22,45 +20,35 @@ DEFAULT_ACTION_NAME = (
     "/upper_arm_controller/follow_joint_trajectory"
 )
 
-JOINT_NAMES = [
-    "swing_joint",
-    "boom_joint",
-    "arm_joint",
-    "bucket_joint",
-]
+
+ROS_JOINT_NAMES: Dict[str, str] = {
+    "swing": "swing_joint",
+    "boom": "boom_joint",
+    "arm": "arm_joint",
+    "bucket": "bucket_joint",
+}
 
 
-def seconds_to_duration(seconds: float):
-    """
-    Convert floating-point seconds to ROS Duration message fields.
+def seconds_to_duration(
+    seconds: float,
+):
+    sec = int(seconds)
 
-    Returns
-    -------
-    tuple[int, int]
-        seconds and nanoseconds.
-    """
-
-    whole_seconds = int(seconds)
-    nanoseconds = int(
+    nanosec = int(
         round(
-            (seconds - whole_seconds) * 1_000_000_000
+            (seconds - sec)
+            * 1_000_000_000
         )
     )
 
-    if nanoseconds >= 1_000_000_000:
-        whole_seconds += 1
-        nanoseconds -= 1_000_000_000
+    if nanosec >= 1_000_000_000:
+        sec += 1
+        nanosec -= 1_000_000_000
 
-    return whole_seconds, nanoseconds
+    return sec, nanosec
 
 
 class ExcavatorTrajectoryClient(Node):
-    """
-    ROS 2 Action client for sending excavator trajectories.
-
-    The trajectory itself is loaded from an operational YAML file.
-    """
-
     def __init__(
         self,
         action_name: str,
@@ -77,19 +65,67 @@ class ExcavatorTrajectoryClient(Node):
             self._action_name,
         )
 
+    def _feedback_callback(
+        self,
+        feedback_msg,
+    ):
+        feedback = feedback_msg.feedback
+
+        desired = list(
+            feedback.desired.positions
+        )
+        actual = list(
+            feedback.actual.positions
+        )
+        error = list(
+            feedback.error.positions
+        )
+
+        desired_deg = [
+            round(
+                math.degrees(value),
+                1,
+            )
+            for value in desired
+        ]
+
+        actual_deg = [
+            round(
+                math.degrees(value),
+                1,
+            )
+            for value in actual
+        ]
+
+        error_deg = [
+            round(
+                math.degrees(value),
+                1,
+            )
+            for value in error
+        ]
+
+        self.get_logger().info(
+            "Feedback [deg] "
+            f"desired={desired_deg} "
+            f"actual={actual_deg} "
+            f"error={error_deg}"
+        )
+
     def send_trajectory(
         self,
         trajectory,
         seconds_per_waypoint: float,
-    ):
-        """
-        Convert a loaded ExcavatorTrajectory into a ROS Action goal.
-        """
-
+    ) -> bool:
         goal = FollowJointTrajectory.Goal()
 
-        goal.trajectory.joint_names = list(
-            JOINT_NAMES
+        ros_joint_names: List[str] = [
+            ROS_JOINT_NAMES[joint]
+            for joint in trajectory.joints
+        ]
+
+        goal.trajectory.joint_names = (
+            ros_joint_names
         )
 
         for index, waypoint in enumerate(
@@ -99,34 +135,22 @@ class ExcavatorTrajectoryClient(Node):
 
             point.positions = [
                 math.radians(
-                    waypoint.swing_deg
-                ),
-                math.radians(
-                    waypoint.boom_deg
-                ),
-                math.radians(
-                    waypoint.arm_deg
-                ),
-                math.radians(
-                    waypoint.bucket_deg
-                ),
+                    waypoint.positions_deg[
+                        joint
+                    ]
+                )
+                for joint in trajectory.joints
             ]
 
-            # The first waypoint occurs after one interval.
-            #
-            # Example with 3 s/waypoint:
-            #
-            # waypoint 1 -> 3 s
-            # waypoint 2 -> 6 s
-            # waypoint 3 -> 9 s
-            #
             time_from_start = (
                 (index + 1)
                 * seconds_per_waypoint
             )
 
-            sec, nanosec = seconds_to_duration(
-                time_from_start
+            sec, nanosec = (
+                seconds_to_duration(
+                    time_from_start
+                )
             )
 
             point.time_from_start.sec = sec
@@ -153,29 +177,43 @@ class ExcavatorTrajectoryClient(Node):
             return False
 
         self.get_logger().info(
-            "Sending trajectory "
+            f"Sending trajectory "
             f"'{trajectory.trajectory_name}' "
             f"with {len(trajectory.waypoints)} "
             "waypoints."
+        )
+
+        self.get_logger().info(
+            "Commanded joints: "
+            + ", ".join(
+                ros_joint_names
+            )
         )
 
         for index, waypoint in enumerate(
             trajectory.waypoints,
             start=1,
         ):
+            position_text = ", ".join(
+                (
+                    f"{joint}="
+                    f"{waypoint.positions_deg[joint]:.1f} deg"
+                )
+                for joint in trajectory.joints
+            )
+
             self.get_logger().info(
                 f"  {index:02d}. "
                 f"{waypoint.name}: "
-                f"swing={waypoint.swing_deg:.1f} deg, "
-                f"boom={waypoint.boom_deg:.1f} deg, "
-                f"arm={waypoint.arm_deg:.1f} deg, "
-                f"bucket={waypoint.bucket_deg:.1f} deg"
+                f"{position_text}"
             )
 
         send_goal_future = (
             self._client.send_goal_async(
                 goal,
-                feedback_callback=self._feedback_callback,
+                feedback_callback=(
+                    self._feedback_callback
+                ),
             )
         )
 
@@ -184,7 +222,9 @@ class ExcavatorTrajectoryClient(Node):
             send_goal_future,
         )
 
-        goal_handle = send_goal_future.result()
+        goal_handle = (
+            send_goal_future.result()
+        )
 
         if goal_handle is None:
             self.get_logger().error(
@@ -212,7 +252,9 @@ class ExcavatorTrajectoryClient(Node):
             result_future,
         )
 
-        wrapped_result = result_future.result()
+        wrapped_result = (
+            result_future.result()
+        )
 
         if wrapped_result is None:
             self.get_logger().error(
@@ -223,101 +265,58 @@ class ExcavatorTrajectoryClient(Node):
         status = wrapped_result.status
         result = wrapped_result.result
 
-        if status == GoalStatus.STATUS_SUCCEEDED:
+        if (
+            status
+            == GoalStatus.STATUS_SUCCEEDED
+        ):
             self.get_logger().info(
-                "Trajectory completed SUCCESSFULLY."
+                "Trajectory completed "
+                "SUCCESSFULLY."
             )
 
-            if result.error_string:
-                self.get_logger().info(
-                    f"Server message: "
-                    f"{result.error_string}"
-                )
+            self.get_logger().info(
+                "Server message: "
+                f"{result.error_string}"
+            )
 
             return True
 
-        if status == GoalStatus.STATUS_CANCELED:
-            self.get_logger().warning(
-                "Trajectory was CANCELED."
-            )
-
-        elif status == GoalStatus.STATUS_ABORTED:
-            self.get_logger().error(
-                "Trajectory was ABORTED."
-            )
-
-        else:
-            self.get_logger().error(
-                "Trajectory finished with ROS "
-                f"Action status {status}."
-            )
+        self.get_logger().error(
+            "Trajectory did not complete "
+            "successfully."
+        )
 
         self.get_logger().error(
-            "FollowJointTrajectory result: "
-            f"error_code={result.error_code}, "
-            f"error_string='{result.error_string}'"
+            f"Status: {status}"
+        )
+
+        self.get_logger().error(
+            f"Error code: "
+            f"{result.error_code}"
+        )
+
+        self.get_logger().error(
+            "Server message: "
+            f"{result.error_string}"
         )
 
         return False
 
-    def _feedback_callback(
-        self,
-        feedback_msg,
-    ):
-        feedback = feedback_msg.feedback
 
-        actual = list(
-            feedback.actual.positions
-        )
-
-        desired = list(
-            feedback.desired.positions
-        )
-
-        if not actual:
-            return
-
-        actual_deg = [
-            math.degrees(value)
-            for value in actual
-        ]
-
-        desired_deg = [
-            math.degrees(value)
-            for value in desired
-        ]
-
-        actual_text = ", ".join(
-            f"{value:.1f}"
-            for value in actual_deg
-        )
-
-        desired_text = ", ".join(
-            f"{value:.1f}"
-            for value in desired_deg
-        )
-
-        self.get_logger().info(
-            "Feedback [deg] "
-            f"desired=[{desired_text}] "
-            f"actual=[{actual_text}]"
-        )
-
-
-def parse_arguments():
+def parse_args():
     parser = argparse.ArgumentParser(
         description=(
             "Send an excavator trajectory YAML "
-            "to the FollowJointTrajectory server."
+            "to the FollowJointTrajectory "
+            "Action server."
         )
     )
 
     parser.add_argument(
-        "trajectory_file",
-        type=Path,
+        "trajectory",
         help=(
             "Path to an excavator trajectory "
-            "YAML file."
+            "YAML file"
         ),
     )
 
@@ -326,8 +325,8 @@ def parse_arguments():
         type=float,
         default=3.0,
         help=(
-            "Time allocated to each waypoint "
-            "(default: 3.0 seconds)."
+            "Time between trajectory waypoints "
+            "in seconds. Default: 3.0"
         ),
     )
 
@@ -335,7 +334,7 @@ def parse_arguments():
         "--action-name",
         default=DEFAULT_ACTION_NAME,
         help=(
-            "FollowJointTrajectory action name."
+            "FollowJointTrajectory Action name"
         ),
     )
 
@@ -343,7 +342,7 @@ def parse_arguments():
 
 
 def main(args=None):
-    cli_args = parse_arguments()
+    cli_args = parse_args()
 
     if cli_args.seconds_per_waypoint <= 0.0:
         print(
@@ -356,26 +355,25 @@ def main(args=None):
     try:
         trajectory = (
             load_excavator_trajectory(
-                cli_args.trajectory_file
+                cli_args.trajectory
             )
         )
-
     except ExcavatorTrajectoryError as exc:
         print(
-            "ERROR: Invalid excavator trajectory:",
-            file=sys.stderr,
-        )
-        print(
-            f"  {exc}",
+            f"ERROR: {exc}",
             file=sys.stderr,
         )
         return 1
 
-    rclpy.init(args=args)
+    rclpy.init(
+        args=args
+    )
 
     node = ExcavatorTrajectoryClient(
         action_name=cli_args.action_name
     )
+
+    success = False
 
     try:
         success = node.send_trajectory(
@@ -386,10 +384,9 @@ def main(args=None):
         )
 
     except KeyboardInterrupt:
-        node.get_logger().warning(
+        node.get_logger().warn(
             "Trajectory client interrupted."
         )
-        success = False
 
     finally:
         node.destroy_node()
@@ -401,4 +398,6 @@ def main(args=None):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(
+        main()
+    )

@@ -6,161 +6,116 @@ import yaml
 from excavator_control.config_loader import (
     load_excavator_config,
 )
-
 from excavator_control.trajectory_loader import (
     ExcavatorTrajectoryError,
     load_excavator_trajectory,
 )
-
 from excavator_control.validate_trajectory import (
     validate_trajectory_against_config,
 )
 
 
-def write_yaml(
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+
+REAL_CONFIG_PATH = (
+    PACKAGE_ROOT
+    / "config"
+    / "excavator1.yaml"
+)
+
+
+def write_trajectory_yaml(
     tmp_path: Path,
-    filename: str,
     data: dict,
 ) -> Path:
-    path = tmp_path / filename
+    path = tmp_path / "trajectory.yaml"
 
-    with path.open("w", encoding="utf-8") as file:
+    path.write_text(
         yaml.safe_dump(
             data,
-            file,
             sort_keys=False,
-        )
+        ),
+        encoding="utf-8",
+    )
 
     return path
 
 
-def make_config() -> dict:
+def make_subset_trajectory(
+    boom_position: float,
+):
     return {
-        "excavator_name": "excavator_test",
-
-        "joints": {
-            "boom": {
-                "adc_channel": 0,
-                "min_angle_deg": -60.0,
-                "max_angle_deg": 5.0,
-                "raw_at_min_angle": 1000,
-                "raw_at_max_angle": 2000,
-            },
-
-            "arm": {
-                "adc_channel": 1,
-                "min_angle_deg": 52.0,
-                "max_angle_deg": 112.0,
-                "raw_at_min_angle": 3000,
-                "raw_at_max_angle": 2000,
-            },
-
-            "bucket": {
-                "adc_channel": 2,
-                "min_angle_deg": 0.0,
-                "max_angle_deg": 90.0,
-                "raw_at_min_angle": 500,
-                "raw_at_max_angle": 2500,
-            },
-
-            "swing": {
-                "adc_channel": 3,
-                "min_angle_deg": -90.0,
-                "max_angle_deg": 90.0,
-                "angle_deg_table": [
-                    -90.0,
-                    0.0,
-                    90.0,
-                ],
-                "raw_table": [
-                    1000,
-                    2000,
-                    3000,
-                ],
-            },
-        },
-
-        "gpio": {},
-
-        "control": {},
-    }
-
-
-def make_trajectory() -> dict:
-    return {
-        "trajectory_name": "test",
-
+        "trajectory_name": "boom_test",
+        "description": (
+            "Boom-only trajectory used "
+            "for validation testing"
+        ),
+        "joints": [
+            "boom",
+        ],
         "waypoints": [
             {
-                "name": "point1",
-
+                "name": "test",
                 "positions": {
-                    "swing": 0.0,
-                    "boom": -20.0,
-                    "arm": 80.0,
-                    "bucket": 45.0,
+                    "boom": boom_position,
                 },
             },
         ],
     }
 
 
-def test_valid_trajectory_within_joint_limits(
-    tmp_path: Path,
-) -> None:
-    config_path = write_yaml(
-        tmp_path,
-        "config.yaml",
-        make_config(),
-    )
+def test_real_excavator_config_exists():
+    assert REAL_CONFIG_PATH.is_file()
 
-    trajectory_path = write_yaml(
-        tmp_path,
-        "trajectory.yaml",
-        make_trajectory(),
+
+def test_valid_subset_trajectory_within_joint_limits(
+    tmp_path: Path,
+):
+    trajectory_path = (
+        write_trajectory_yaml(
+            tmp_path,
+            make_subset_trajectory(
+                -20.0
+            ),
+        )
     )
 
     config = load_excavator_config(
-        config_path
+        REAL_CONFIG_PATH
     )
 
-    trajectory = load_excavator_trajectory(
-        trajectory_path
+    trajectory = (
+        load_excavator_trajectory(
+            trajectory_path
+        )
     )
 
     validate_trajectory_against_config(
-        trajectory,
         config,
+        trajectory,
     )
 
 
-def test_reject_trajectory_outside_joint_limits(
+def test_reject_subset_trajectory_outside_joint_limits(
     tmp_path: Path,
-) -> None:
-    config_data = make_config()
-
-    trajectory_data = make_trajectory()
-
-    trajectory_data["waypoints"][0]["positions"]["boom"] = -80.0
-
-    config_path = write_yaml(
-        tmp_path,
-        "config.yaml",
-        config_data,
-    )
-
-    trajectory_path = write_yaml(
-        tmp_path,
-        "trajectory.yaml",
-        trajectory_data,
+):
+    trajectory_path = (
+        write_trajectory_yaml(
+            tmp_path,
+            make_subset_trajectory(
+                20.0
+            ),
+        )
     )
 
     config = load_excavator_config(
-        config_path
+        REAL_CONFIG_PATH
     )
 
-    trajectory = load_excavator_trajectory(
-        trajectory_path
+    trajectory = (
+        load_excavator_trajectory(
+            trajectory_path
+        )
     )
 
     with pytest.raises(
@@ -168,6 +123,6 @@ def test_reject_trajectory_outside_joint_limits(
         match="outside configured range",
     ):
         validate_trajectory_against_config(
-            trajectory,
             config,
+            trajectory,
         )

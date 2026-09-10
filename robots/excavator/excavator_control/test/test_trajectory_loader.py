@@ -12,78 +12,155 @@ from excavator_control.trajectory_loader import (
 def write_yaml(
     tmp_path: Path,
     data: dict,
-    filename: str = "trajectory_test.yaml",
 ) -> Path:
-    path = tmp_path / filename
+    path = tmp_path / "trajectory.yaml"
 
-    with path.open("w", encoding="utf-8") as file:
+    path.write_text(
         yaml.safe_dump(
             data,
-            file,
             sort_keys=False,
-        )
+        ),
+        encoding="utf-8",
+    )
 
     return path
 
 
-def make_valid_trajectory() -> dict:
+def make_full_trajectory():
     return {
-        "trajectory_name": "test_cycle",
-
-        "description": "Test excavator trajectory",
-
+        "trajectory_name": (
+            "full_test"
+        ),
+        "description": (
+            "Four-joint trajectory"
+        ),
+        "joints": [
+            "swing",
+            "boom",
+            "arm",
+            "bucket",
+        ],
         "waypoints": [
             {
-                "name": "home",
-
+                "name": "start",
                 "positions": {
                     "swing": 0.0,
-                    "boom": -10.0,
-                    "arm": 70.0,
+                    "boom": -20.0,
+                    "arm": 90.0,
                     "bucket": 20.0,
                 },
             },
-
             {
-                "name": "dig",
-
+                "name": "finish",
                 "positions": {
-                    "swing": 0.0,
-                    "boom": -40.0,
+                    "swing": 30.0,
+                    "boom": -30.0,
                     "arm": 100.0,
-                    "bucket": 70.0,
+                    "bucket": 40.0,
                 },
             },
         ],
     }
 
 
-def test_load_valid_trajectory(
+def test_load_valid_full_trajectory(
     tmp_path: Path,
-) -> None:
+):
     path = write_yaml(
         tmp_path,
-        make_valid_trajectory(),
+        make_full_trajectory(),
     )
 
-    trajectory = load_excavator_trajectory(path)
+    trajectory = (
+        load_excavator_trajectory(
+            path
+        )
+    )
 
-    assert trajectory.trajectory_name == "test_cycle"
-    assert len(trajectory.waypoints) == 2
+    assert (
+        trajectory.trajectory_name
+        == "full_test"
+    )
 
-    assert trajectory.waypoints[0].name == "home"
-    assert trajectory.waypoints[0].swing_deg == 0.0
-    assert trajectory.waypoints[0].boom_deg == -10.0
-    assert trajectory.waypoints[0].arm_deg == 70.0
-    assert trajectory.waypoints[0].bucket_deg == 20.0
+    assert trajectory.joints == [
+        "swing",
+        "boom",
+        "arm",
+        "bucket",
+    ]
+
+    assert (
+        len(trajectory.waypoints)
+        == 2
+    )
+
+    assert (
+        trajectory.waypoints[
+            0
+        ].positions_deg["boom"]
+        == -20.0
+    )
 
 
-def test_reject_missing_joint(
+def test_load_valid_subset_trajectory(
     tmp_path: Path,
-) -> None:
-    data = make_valid_trajectory()
+):
+    data = {
+        "trajectory_name": (
+            "boom_only"
+        ),
+        "description": (
+            "Boom-only test"
+        ),
+        "joints": [
+            "boom",
+        ],
+        "waypoints": [
+            {
+                "name": "start",
+                "positions": {
+                    "boom": -20.0,
+                },
+            },
+            {
+                "name": "move",
+                "positions": {
+                    "boom": -22.0,
+                },
+            },
+        ],
+    }
 
-    del data["waypoints"][0]["positions"]["bucket"]
+    path = write_yaml(
+        tmp_path,
+        data,
+    )
+
+    trajectory = (
+        load_excavator_trajectory(
+            path
+        )
+    )
+
+    assert trajectory.joints == [
+        "boom"
+    ]
+
+    assert (
+        trajectory.waypoints[
+            1
+        ].positions_deg
+        == {
+            "boom": -22.0
+        }
+    )
+
+
+def test_reject_empty_joint_list(
+    tmp_path: Path,
+):
+    data = make_full_trajectory()
+    data["joints"] = []
 
     path = write_yaml(
         tmp_path,
@@ -91,18 +168,32 @@ def test_reject_missing_joint(
     )
 
     with pytest.raises(
-        ExcavatorTrajectoryError,
-        match="missing joint",
+        ExcavatorTrajectoryError
     ):
-        load_excavator_trajectory(path)
+        load_excavator_trajectory(
+            path
+        )
 
 
 def test_reject_unknown_joint(
     tmp_path: Path,
-) -> None:
-    data = make_valid_trajectory()
-
-    data["waypoints"][0]["positions"]["mystery_joint"] = 123.0
+):
+    data = {
+        "trajectory_name": "bad",
+        "joints": [
+            "boom",
+            "banana",
+        ],
+        "waypoints": [
+            {
+                "name": "test",
+                "positions": {
+                    "boom": -20.0,
+                    "banana": 0.0,
+                },
+            }
+        ],
+    }
 
     path = write_yaml(
         tmp_path,
@@ -111,17 +202,135 @@ def test_reject_unknown_joint(
 
     with pytest.raises(
         ExcavatorTrajectoryError,
-        match="unknown joint",
+        match="Unknown joint",
     ):
-        load_excavator_trajectory(path)
+        load_excavator_trajectory(
+            path
+        )
+
+
+def test_reject_duplicate_joint(
+    tmp_path: Path,
+):
+    data = {
+        "trajectory_name": "bad",
+        "joints": [
+            "boom",
+            "boom",
+        ],
+        "waypoints": [
+            {
+                "name": "test",
+                "positions": {
+                    "boom": -20.0,
+                },
+            }
+        ],
+    }
+
+    path = write_yaml(
+        tmp_path,
+        data,
+    )
+
+    with pytest.raises(
+        ExcavatorTrajectoryError,
+        match="Duplicate joint",
+    ):
+        load_excavator_trajectory(
+            path
+        )
+
+
+def test_reject_missing_position(
+    tmp_path: Path,
+):
+    data = {
+        "trajectory_name": "bad",
+        "joints": [
+            "boom",
+            "arm",
+        ],
+        "waypoints": [
+            {
+                "name": "test",
+                "positions": {
+                    "boom": -20.0,
+                },
+            }
+        ],
+    }
+
+    path = write_yaml(
+        tmp_path,
+        data,
+    )
+
+    with pytest.raises(
+        ExcavatorTrajectoryError,
+        match="missing positions",
+    ):
+        load_excavator_trajectory(
+            path
+        )
+
+
+def test_reject_extra_position(
+    tmp_path: Path,
+):
+    data = {
+        "trajectory_name": "bad",
+        "joints": [
+            "boom",
+        ],
+        "waypoints": [
+            {
+                "name": "test",
+                "positions": {
+                    "boom": -20.0,
+                    "arm": 90.0,
+                },
+            }
+        ],
+    }
+
+    path = write_yaml(
+        tmp_path,
+        data,
+    )
+
+    with pytest.raises(
+        ExcavatorTrajectoryError,
+        match="not listed",
+    ):
+        load_excavator_trajectory(
+            path
+        )
 
 
 def test_reject_duplicate_waypoint_name(
     tmp_path: Path,
-) -> None:
-    data = make_valid_trajectory()
-
-    data["waypoints"][1]["name"] = "home"
+):
+    data = {
+        "trajectory_name": "bad",
+        "joints": [
+            "boom",
+        ],
+        "waypoints": [
+            {
+                "name": "same",
+                "positions": {
+                    "boom": -20.0,
+                },
+            },
+            {
+                "name": "same",
+                "positions": {
+                    "boom": -25.0,
+                },
+            },
+        ],
+    }
 
     path = write_yaml(
         tmp_path,
@@ -132,15 +341,21 @@ def test_reject_duplicate_waypoint_name(
         ExcavatorTrajectoryError,
         match="Duplicate waypoint name",
     ):
-        load_excavator_trajectory(path)
+        load_excavator_trajectory(
+            path
+        )
 
 
 def test_reject_empty_waypoint_list(
     tmp_path: Path,
-) -> None:
-    data = make_valid_trajectory()
-
-    data["waypoints"] = []
+):
+    data = {
+        "trajectory_name": "bad",
+        "joints": [
+            "boom",
+        ],
+        "waypoints": [],
+    }
 
     path = write_yaml(
         tmp_path,
@@ -151,4 +366,6 @@ def test_reject_empty_waypoint_list(
         ExcavatorTrajectoryError,
         match="at least one waypoint",
     ):
-        load_excavator_trajectory(path)
+        load_excavator_trajectory(
+            path
+        )
