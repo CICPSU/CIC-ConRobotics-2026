@@ -205,30 +205,219 @@ robots/dump_truck/dump_truck_bringup/config/localization/
 ```
 
 ---
-
 ## 3.2 Excavator
 
 ```text
 robots/excavator/
+└── excavator_control/
 ```
 
-This directory is reserved for the ROS 2 excavator control system.
+The excavator is integrated into the ROS 2 construction robotics platform through the `excavator_control` package.
 
-The excavator architecture is being integrated into the same repository structure used by the dump truck system.
+The package provides the software required to operate the excavator in both physical and simulated environments.
 
-Excavator-specific code belongs under:
+The excavator control system includes:
+
+- Joint-state monitoring
+- Joint trajectory execution
+- Machine-specific configuration
+- Sensor calibration
+- Trajectory validation
+- ROS 2 Action-based trajectory control
+- Physical Raspberry Pi operation
+- Simulation and software integration testing
+- Command Center integration
+
+The excavator uses the standard ROS 2:
 
 ```text
-robots/excavator/
+control_msgs/action/FollowJointTrajectory
 ```
 
-while operational trajectory files belong under:
+Action interface for trajectory execution.
+
+This allows higher-level components such as the Command Center to request excavator motions without directly controlling motors or GPIO hardware.
+
+---
+
+### Excavator Software
+
+The primary package is:
+
+```text
+robots/excavator/excavator_control/
+```
+
+Its structure includes:
+
+```text
+excavator_control/
+├── excavator_control/
+│   ├── config_loader.py
+│   ├── trajectory_loader.py
+│   ├── validate_config.py
+│   ├── validate_trajectory.py
+│   ├── goal_validation.py
+│   ├── excavator_trajectory_server.py
+│   └── excavator_trajectory_client.py
+│
+├── config/
+│   ├── excavator_template.yaml
+│   └── excavator1.yaml
+│
+├── launch/
+│   └── excavator.launch.py
+│
+└── test/
+```
+
+The trajectory server provides a common ROS 2 interface while supporting different execution environments.
+
+Conceptually:
+
+```text
+                  FollowJointTrajectory
+                           │
+                           ▼
+               Excavator Trajectory Server
+                           │
+                 ┌─────────┴─────────┐
+                 │                   │
+                 ▼                   ▼
+             PI Mode              SIM Mode
+                 │                   │
+                 ▼                   ▼
+         Physical Hardware      Joint Commands
+```
+
+This allows the same higher-level trajectory interface to be used for physical robot operation and software integration testing.
+
+---
+
+### Machine Configuration
+
+Machine-specific excavator configuration is stored under:
+
+```text
+robots/excavator/excavator_control/config/
+```
+
+For example:
+
+```text
+excavator1.yaml
+```
+
+contains configuration associated with the physical excavator, including:
+
+- Joint limits
+- Sensor calibration
+- GPIO configuration
+- Motor control parameters
+- Control parameters
+- Home configuration
+
+A template configuration is also provided:
+
+```text
+excavator_template.yaml
+```
+
+Machine configuration is intentionally separated from operational trajectory data.
+
+---
+
+### Excavator Trajectories
+
+Operational trajectory files are stored under:
 
 ```text
 operations/excavator/trajectories/
 ```
 
-This separation keeps robot software independent from task-specific operational data.
+rather than inside the ROS package.
+
+Example structure:
+
+```text
+operations/excavator/trajectories/
+├── excavator_trajectory_template.yaml
+└── boom_small_test.yaml
+```
+
+Trajectory files describe **what motion the excavator should perform**, while the `excavator_control` package defines **how the excavator executes that motion**.
+
+Trajectories may control all excavator joints or a subset of joints.
+
+The current joint model includes:
+
+```text
+swing
+boom
+arm
+bucket
+```
+
+For example, a trajectory may command only the boom while leaving the other joints outside that trajectory request.
+
+Trajectory files can be validated before execution to detect problems such as:
+
+- Unknown joints
+- Duplicate joints
+- Invalid waypoint definitions
+- Missing joint positions
+- Joint targets outside configured machine limits
+
+This provides a safety and configuration-checking layer before trajectory execution.
+
+---
+
+### Command Center Integration
+
+The excavator can participate in higher-level construction scenarios through the Command Center.
+
+The communication structure is:
+
+```text
+Construction Scenario
+        │
+        ▼
+Scenario Manager
+        │
+        ▼
+Excavator Task Client
+        │
+        ▼
+FollowJointTrajectory Action
+        │
+        ▼
+Excavator Trajectory Server
+        │
+        ▼
+Excavator
+```
+
+This allows dump truck tasks and excavator trajectories to be coordinated within the same construction-site scenario architecture.
+
+Robot software therefore remains under:
+
+```text
+robots/excavator/
+```
+
+while operational trajectories remain under:
+
+```text
+operations/excavator/trajectories/
+```
+
+and multi-robot construction scenarios remain under:
+
+```text
+operations/scenarios/
+```
+
+This separation follows the same repository design philosophy used for the dump truck platform.
 
 ---
 
@@ -472,20 +661,62 @@ This allows construction operations to be modified without rewriting robot-contr
 
 ```text
 network/
+├── devices.sh
+├── setup_zenoh.sh
+└── setup_network.sh
 ```
 
-The physical robots communicate with ROS PCs over a shared network.
+The physical robots communicate with the ROS PC over a shared network.
 
-This directory contains common network configuration utilities used by the course platform.
+Network configuration is treated as a shared system-level responsibility rather than belonging to a particular robot.
 
-Current scripts include:
+The current platform uses **Zenoh (`rmw_zenoh_cpp`) as the primary ROS 2 communication method** between the ROS PC and robot computers.
+
+The network directory contains:
+
+| File | Purpose |
+|---|---|
+| `devices.sh` | Central registry of device names and assigned IP addresses |
+| `setup_zenoh.sh` | Primary ROS 2 network configuration using Zenoh |
+| `setup_network.sh` | DDS-based network configuration retained as an alternative/fallback |
+
+Device IP addresses are defined centrally in:
 
 ```text
-devices.sh
-setup_network.sh
+network/devices.sh
 ```
 
-Network configuration is treated as a shared system-level concern rather than belonging to a particular robot.
+Users should normally not enter robot or ROS PC IP addresses manually.
+
+Instead, configure each terminal using a device name.
+
+For example:
+
+```bash
+source network/setup_zenoh.sh client ros-pc
+source network/setup_zenoh.sh client dumptruck1
+source network/setup_zenoh.sh client excavator1
+```
+
+The Zenoh router runs on the ROS PC and provides the communication backbone between the ROS PC and the robot computers.
+
+The standard network architecture is:
+
+```text
+                    ROS PC
+                       │
+                 Zenoh Router
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+          ▼                         ▼
+    Dump Truck Pi              Excavator Pi
+          │                         │
+          ▼                         ▼
+   Robot Hardware             Robot Hardware
+```
+
+The detailed startup procedure is provided in Section 16.
 
 ---
 
@@ -669,19 +900,526 @@ source install/setup.bash
 ```
 
 ---
+# 16. Standard System Startup
 
-# 16. Typical ROS 2 Terminal Setup
+The recommended system configuration uses **Zenoh (`rmw_zenoh_cpp`)** for ROS 2 communication between the ROS PC and robot computers.
 
-Every new terminal used for the course should source ROS 2 and the workspace.
+For normal operation, the system can be started using:
 
-```bash
-source /opt/ros/jazzy/setup.bash
-source ~/ws_conrobotics/CIC-ConRobotics-2026/install/setup.bash
+```text
+ROS PC
+├── Terminal 1 → Zenoh Router
+└── Terminal 2 → Perception + Localization + Command Center
+
+Robot Computer
+└── Terminal 1 → Robot Hardware
 ```
 
-Depending on the lab and network configuration, additional ROS networking environment variables may also be required.
+This keeps the number of required terminals small while maintaining a clear separation between the communication infrastructure, ROS PC processes, and robot hardware.
 
-Follow the instructions provided for the specific lab or robot.
+Before starting the system, make sure the repository has been built and the latest workspace is available on each computer.
+
+---
+
+## 16.1 ROS PC Terminal 1 — Zenoh Router
+
+**Machine:** ROS PC  
+**Terminal:** T1  
+**Keep this terminal running.**
+
+Open a terminal on the ROS PC:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh router
+
+ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+This terminal runs the Zenoh router used by the ROS PC and robot computers.
+
+Do not close this terminal while operating the robotic system.
+
+---
+
+## 16.2 ROS PC Terminal 2 — Perception, Localization, and Command Center
+
+**Machine:** ROS PC  
+**Terminal:** T2  
+**Keep this terminal running.**
+
+For operation with Dump Truck 1:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client ros-pc
+
+ros2 launch construction_site_control command_center.launch.py \
+  trucks:=truck1 \
+  start_camera:=true \
+  start_apriltag:=true \
+  start_localization:=true \
+  start_action_servers:=true \
+  start_scenario_manager:=false
+```
+
+This launch starts the ROS PC components required for Dump Truck 1 operation:
+
+```text
+Command Center
+│
+├── Overhead Camera
+├── AprilTag Detection
+├── Dump Truck Localization
+└── Waypoint Action Server
+```
+
+The Scenario Manager is disabled in this example so that individual robot operation can be tested independently.
+
+For coordinated construction scenarios, the Scenario Manager can be enabled when required.
+
+---
+
+## 16.3 Dump Truck 1 Terminal 1 — Robot Hardware
+
+**Machine:** Dumptruck1 Raspberry Pi  
+**Terminal:** T1  
+**Keep this terminal running.**
+
+Open a terminal on Dump Truck 1:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client dumptruck1
+
+ros2 launch dump_truck_bringup truck1_pi.launch.py
+```
+
+This starts the hardware-side ROS 2 nodes for Dump Truck 1.
+
+These nodes communicate with the ROS PC through the Zenoh router.
+
+---
+
+## 16.4 Standard Terminal Layout
+
+For Dump Truck 1 operation, the complete terminal layout is:
+
+```text
+ROS PC
+│
+├── T1 — Zenoh Router
+│
+└── T2 — Command Center
+         │
+         ├── Overhead Camera
+         ├── AprilTag Detection
+         ├── Localization
+         └── Waypoint Action Server
+
+
+                    Zenoh
+                      │
+                      ▼
+
+
+Dumptruck1 Raspberry Pi
+│
+└── T1 — Dump Truck Hardware
+```
+
+Therefore, normal Dump Truck 1 operation requires:
+
+```text
+ROS PC       → 2 terminals
+Dumptruck1   → 1 terminal
+```
+
+Additional dump trucks follow the same architecture.
+
+Each Raspberry Pi runs its own robot hardware nodes while the ROS PC provides shared perception, localization, and higher-level task coordination.
+
+---
+## 16.5 Operating Multiple Dump Trucks
+
+The same Zenoh router is shared by all robot computers.
+
+When multiple dump trucks are used, **do not start a separate Zenoh router for each robot**.
+
+The system architecture becomes:
+
+```text
+                         ROS PC
+                            │
+                  ┌─────────┴─────────┐
+                  │                   │
+           Zenoh Router         Command Center
+                  │                   │
+                  │        ┌──────────┼──────────┐
+                  │        │          │          │
+                  │    Perception  Localization  Actions
+                  │
+        ┌─────────┼─────────┬─────────┐
+        │         │         │         │
+        ▼         ▼         ▼         ▼
+     Truck 1   Truck 3   Truck 4   Truck 5
+       Pi        Pi        Pi        Pi
+```
+
+All robot computers connect to the same Zenoh router running on the ROS PC.
+
+---
+
+### ROS PC Terminal 1 — Zenoh Router
+
+**Machine:** ROS PC  
+**Terminal:** T1  
+**Keep this terminal running.**
+
+Only one Zenoh router is required.
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh router
+
+ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+---
+
+### ROS PC Terminal 2 — Multi-Robot Command Center
+
+**Machine:** ROS PC  
+**Terminal:** T2  
+**Keep this terminal running.**
+
+For example, to operate Dump Trucks 1, 3, 4, and 5:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client ros-pc
+
+ros2 launch construction_site_control command_center.launch.py \
+  trucks:=truck1,truck3,truck4,truck5 \
+  start_camera:=true \
+  start_apriltag:=true \
+  start_localization:=true \
+  start_action_servers:=true \
+  start_scenario_manager:=false
+```
+
+The Command Center uses the `trucks` argument to determine which dump truck systems should be started on the ROS PC.
+
+For example:
+
+```bash
+trucks:=truck1
+```
+
+starts ROS PC components for Truck 1 only.
+
+```bash
+trucks:=truck1,truck3
+```
+
+starts ROS PC components for Trucks 1 and 3.
+
+```bash
+trucks:=truck1,truck3,truck4,truck5
+```
+
+starts ROS PC components for Trucks 1, 3, 4, and 5.
+
+The overhead camera and AprilTag detector are shared across the construction site and therefore do not need to be started separately for each truck.
+
+---
+
+### Robot Terminals
+
+Each physical dump truck runs its own hardware-side launch file on its Raspberry Pi.
+
+#### Dump Truck 1
+
+**Machine:** Dumptruck1 Raspberry Pi  
+**Terminal:** T1  
+**Keep this terminal running.**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client dumptruck1
+
+ros2 launch dump_truck_bringup truck1_pi.launch.py
+```
+
+#### Dump Truck 3
+
+**Machine:** Dumptruck3 Raspberry Pi  
+**Terminal:** T1  
+**Keep this terminal running.**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client dumptruck3
+
+ros2 launch dump_truck_bringup truck3_pi.launch.py
+```
+
+#### Dump Truck 4
+
+**Machine:** Dumptruck4 Raspberry Pi  
+**Terminal:** T1  
+**Keep this terminal running.**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client dumptruck4
+
+ros2 launch dump_truck_bringup truck4_pi.launch.py
+```
+
+#### Dump Truck 5
+
+**Machine:** Dumptruck5 Raspberry Pi  
+**Terminal:** T1  
+**Keep this terminal running.**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client dumptruck5
+
+ros2 launch dump_truck_bringup truck5_pi.launch.py
+```
+
+Each robot computer connects independently to the same Zenoh router.
+
+The robot computers do not need to know the IP addresses of the other robots.
+
+---
+
+## 16.6 Multi-Robot Terminal Layout
+
+For operation with three dump trucks, the recommended terminal layout is:
+
+```text
+ROS PC
+│
+├── T1 — Zenoh Router
+│
+└── T2 — Command Center
+         │
+         ├── Overhead Camera
+         ├── AprilTag Detection
+         ├── Truck 1 Localization + Action Server
+         ├── Truck 3 Localization + Action Server
+         ├── Truck 4 Localization + Action Server
+         └── Truck 5 Localization + Action Server
+
+
+                         Zenoh
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+          │                │                │
+          ▼                ▼                ▼
+     Dumptruck1        Dumptruck3       Dumptruck4       
+     Raspberry Pi      Raspberry Pi     Raspberry Pi      
+          │                │                │              
+       T1 │             T1 │             T1 │              
+          ▼                ▼                ▼             
+      Hardware          Hardware         Hardware          
+       Nodes             Nodes            Nodes            
+```
+
+The important principle is:
+
+```text
+ONE ROS PC
+    │
+    ├── ONE Zenoh Router
+    │
+    └── ONE Command Center
+              │
+              ├── Truck 1
+              ├── Truck 3
+              └── Truck 4
+
+ONE hardware launch per physical robot
+```
+
+Adding another robot does **not** require another Zenoh router or another ROS PC terminal.
+
+It only requires:
+
+1. Adding the robot to the Command Center `trucks` argument.
+2. Starting the corresponding hardware launch file on that robot's Raspberry Pi.
+
+---
+
+## 16.7 Adding the Excavator
+
+The excavator uses the same Zenoh communication architecture.
+
+The excavator computer connects to the existing Zenoh router:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client excavator1
+```
+
+The system therefore follows the same general architecture:
+
+```text
+                         ROS PC
+                            │
+                       Zenoh Router
+                            │
+          ┌─────────────────┼─────────────────┐
+          │                 │                 │
+          ▼                 ▼                 ▼
+      Dump Truck        Dump Truck        Excavator
+          Pi                Pi                Pi
+```
+
+The Zenoh router acts as the shared communication backbone for the construction robotics platform.
+
+Robot-specific startup procedures are documented in the corresponding robot directories.
+
+---
+
+## 16.8 Network Setup Summary
+
+The network setup script identifies computers using device names rather than requiring users to manually enter IP addresses.
+
+ROS PC application terminals use:
+
+```bash
+source network/setup_zenoh.sh client ros-pc
+```
+
+Dump truck computers use:
+
+```bash
+source network/setup_zenoh.sh client dumptruck1
+source network/setup_zenoh.sh client dumptruck2
+source network/setup_zenoh.sh client dumptruck3
+source network/setup_zenoh.sh client dumptruck4
+source network/setup_zenoh.sh client dumptruck5
+```
+
+Excavator computers use:
+
+```bash
+source network/setup_zenoh.sh client excavator1
+```
+
+The Zenoh router terminal uses:
+
+```bash
+source network/setup_zenoh.sh router
+```
+
+Users should normally **not manually set**:
+
+```text
+RMW_IMPLEMENTATION
+ROS_STATIC_PEERS
+ZENOH_CONFIG_OVERRIDE
+```
+
+The network setup scripts configure the required communication environment.
+
+---
+
+## 16.9 System Communication Flow
+
+For a dump truck, the primary operational flow is:
+
+```text
+Overhead Camera
+      │
+      ▼
+AprilTag Detection
+      │
+      ▼
+ /detections
+      │
+      ▼
+Localization
+      │
+      ▼
+/truckN/fused_odom
+      │
+      ▼
+Waypoint Action Server
+      │
+      ▼
+Waypoint Controller
+      │
+      ▼
+/truckN/cmd_vel
+      │
+      │
+   Zenoh
+      │
+      ▼
+Dump Truck Raspberry Pi
+      │
+      ▼
+Motor Control
+      │
+      ▼
+Physical Dump Truck
+```
+
+This architecture separates:
+
+- Shared perception
+- Robot-specific localization and control
+- High-level task execution
+- Network communication
+- Physical robot hardware
+
+The same communication backbone can support multiple construction robots simultaneously.
 
 ---
 
@@ -883,20 +1621,177 @@ When in doubt, start with the README or instructions for the specific lab.
 
 This repository is under active development for **Fall 2026**.
 
-The dump truck platform currently provides the most complete ROS 2 implementation, including:
-
-- Hardware control
-- Odometry
-- Localization
-- Waypoint navigation
-- ROS 2 Action-based task execution
-- Multi-robot scenario coordination
-
-The excavator ROS 2 system is being integrated into the same architecture.
-
-Additional robot capabilities, labs, documentation, and construction-site scenarios will continue to be added during development.
+The platform currently integrates multiple construction robot systems, shared perception, ROS 2 Actions, and higher-level multi-robot coordination within a common architecture.
 
 ---
+
+## Dump Truck System
+
+The dump truck platform currently supports:
+
+- Raspberry Pi-based hardware control
+- Motor and bucket control
+- Wheel-state feedback
+- Odometry
+- Overhead AprilTag-based localization
+- Fused robot localization
+- Waypoint navigation
+- ROS 2 Action-based task execution
+- Multiple dump truck configurations
+- Multi-robot scenario coordination
+
+Operational waypoint definitions are stored separately from the reusable robot software under:
+
+```text
+operations/dump_truck/waypoints/
+```
+
+---
+
+## Excavator System
+
+The excavator platform currently supports:
+
+- Machine-specific configuration
+- Joint sensor calibration
+- Joint-state feedback
+- Joint trajectory execution
+- ROS 2 `FollowJointTrajectory` Actions
+- Full-joint and subset-joint trajectory definitions
+- Trajectory and configuration validation
+- Physical Raspberry Pi execution mode
+- Simulation/software integration mode
+- Command Center integration
+- Scenario-based coordination with dump trucks
+
+Operational excavator trajectories are stored under:
+
+```text
+operations/excavator/trajectories/
+```
+
+The excavator software architecture and ROS 2 communication interfaces are integrated into the repository.
+
+Physical robot calibration and hardware behavior may continue to be refined independently from the higher-level ROS 2 architecture.
+
+---
+
+## Perception and Localization
+
+The shared perception system currently supports:
+
+- Overhead USB camera input
+- AprilTag detection
+- Multiple robot tag definitions
+- Robot localization using AprilTag observations
+- Integration of perception data with dump truck localization
+
+The overhead perception system can provide shared observations for multiple robots operating within the model construction site.
+
+---
+
+## Network Communication
+
+The platform uses **Zenoh (`rmw_zenoh_cpp`) as the primary ROS 2 communication method** between the ROS PC and robot computers.
+
+The network architecture supports:
+
+```text
+One ROS PC
+     │
+     └── One Zenoh Router
+              │
+              ├── Dump Truck 1
+              ├── Dump Truck 2
+              ├── Dump Truck 3
+              ├── Dump Truck 4
+              ├── Dump Truck 5
+              └── Excavator
+```
+
+Device addresses are managed centrally through:
+
+```text
+network/devices.sh
+```
+
+and normal Zenoh configuration is performed through:
+
+```text
+network/setup_zenoh.sh
+```
+
+The existing DDS-based network configuration is retained as an alternative/fallback.
+
+---
+
+## Command Center
+
+The Command Center currently supports higher-level robot coordination using ROS 2 Actions and scenario definitions.
+
+Supported scenario concepts include:
+
+- Individual robot tasks
+- Dump truck waypoint tasks
+- Excavator trajectory tasks
+- Sequential execution
+- Parallel execution
+- Wait operations
+- Topic-based conditions
+- Robot-state conditions
+- Mixed dump truck and excavator scenarios
+
+Scenario definitions are stored under:
+
+```text
+operations/scenarios/
+```
+
+This allows construction operations to be changed independently from the underlying robot-control software.
+
+---
+
+## Current Platform Architecture
+
+At a high level, the current platform is:
+
+```text
+                         OPERATIONS
+                             │
+                 Waypoints / Trajectories
+                       / Scenarios
+                             │
+                             ▼
+                      COMMAND CENTER
+                             │
+                       ROS 2 Actions
+                             │
+              ┌──────────────┴──────────────┐
+              │                             │
+              ▼                             ▼
+         DUMP TRUCKS                    EXCAVATOR
+              │                             │
+         Robot Control                Joint Control
+              │                             │
+              └──────────────┬──────────────┘
+                             │
+                           Zenoh
+                             │
+                             ▼
+                     PHYSICAL ROBOTS
+
+
+                 OVERHEAD PERCEPTION
+                         │
+                    AprilTags
+                         │
+                         ▼
+                    LOCALIZATION
+                         │
+                         └──────► Robot Control
+```
+
+The platform is continuing to evolve as additional robot capabilities, course labs, operational scenarios, and documentation are developed for Fall 2026.
 
 # 23. Course and Research Context
 

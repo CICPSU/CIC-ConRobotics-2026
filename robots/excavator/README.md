@@ -9,32 +9,34 @@ The excavator software supports both:
 
 The current interface is based on the standard ROS 2 `FollowJointTrajectory` Action.
 
+Zenoh (`rmw_zenoh_cpp`) is the primary ROS 2 communication method for communication between the ROS PC and the excavator Raspberry Pi.
+
 ---
 
-## 1. System Architecture
+# 1. System Architecture
 
 The excavator currently uses the following software flow:
 
 ```text
 Trajectory YAML
-      |
-      v
+      │
+      ▼
 excavator_trajectory_client
-      |
-      | FollowJointTrajectory Action
-      v
+      │
+      │ FollowJointTrajectory Action
+      ▼
 excavator_trajectory_server
-      |
-      +----------------------+
-      |                      |
-      v                      v
+      │
+      ├──────────────────────┐
+      │                      │
+      ▼                      ▼
    SIM mode                PI mode
-      |                      |
-      v                      v
+      │                      │
+      ▼                      ▼
 /joint_command        GPIO / PWM / ADC
-                           |
-                           v
-                  Physical Excavator
+                             │
+                             ▼
+                    Physical Excavator
 ```
 
 The Action interface is:
@@ -54,14 +56,34 @@ bucket
 
 Trajectories may command all four joints or only a subset of the joints.
 
+For multi-machine operation, the excavator communicates through the same Zenoh router used by the rest of the construction robotics platform:
+
+```text
+                         ROS PC
+                            │
+                       Zenoh Router
+                            │
+              ┌─────────────┴─────────────┐
+              │                           │
+              ▼                           ▼
+      ROS PC Applications          Excavator Pi
+              │                           │
+              │                           ▼
+              │                 Excavator Trajectory
+              │                       Server
+              │                           │
+              └──── ROS 2 Actions ────────┘
+```
+
 ---
 
-## 2. Repository Structure
+# 2. Repository Structure
 
 ```text
 robots/excavator/
 └── excavator_control/
     ├── excavator_control/
+    │   ├── __init__.py
     │   ├── config_loader.py
     │   ├── trajectory_loader.py
     │   ├── validate_config.py
@@ -77,7 +99,15 @@ robots/excavator/
     ├── launch/
     │   └── excavator.launch.py
     │
+    ├── resource/
+    │   └── excavator_control
+    │
     ├── test/
+    │   ├── __init__.py
+    │   ├── test_config_loader.py
+    │   ├── test_trajectory_loader.py
+    │   ├── test_validate_trajectory.py
+    │   └── test_goal_validation.py
     │
     ├── package.xml
     ├── setup.cfg
@@ -90,16 +120,23 @@ Operational trajectory files are stored separately from the ROS package:
 operations/
 └── excavator/
     └── trajectories/
+        ├── excavator_trajectory_template.yaml
+        └── boom_small_test.yaml
 ```
 
 This separates:
 
-- machine-specific configuration and calibration
-- reusable operational trajectories
+```text
+Machine configuration / calibration
+        → robots/excavator/excavator_control/config/
+
+Reusable operational trajectories
+        → operations/excavator/trajectories/
+```
 
 ---
 
-## 3. Build the Package
+# 3. Build the Package
 
 From the repository root:
 
@@ -132,7 +169,7 @@ excavator_control validate_excavator_trajectory
 
 ---
 
-## 4. Validate the Excavator Configuration
+# 4. Validate the Excavator Configuration
 
 Before using a machine configuration, validate it.
 
@@ -154,7 +191,7 @@ It does **not** guarantee that physical calibration values are correct.
 
 ---
 
-## 5. Validate a Trajectory
+# 5. Validate a Trajectory
 
 Trajectory files should be validated against the machine configuration before execution.
 
@@ -185,7 +222,7 @@ TRAJECTORY IS VALID
 
 ---
 
-## 6. Trajectory YAML Format
+# 6. Trajectory YAML Format
 
 A trajectory defines the joints that should be controlled and a sequence of target positions.
 
@@ -225,7 +262,7 @@ The trajectory client converts them to radians before sending the ROS 2 Action g
 
 ---
 
-## 7. Subset-Joint Trajectories
+# 7. Subset-Joint Trajectories
 
 A trajectory does not need to command all four joints.
 
@@ -269,9 +306,11 @@ Joints not listed in the trajectory are not included in the trajectory command.
 
 # Simulation
 
-## 8. Start the Excavator in SIM Mode
+# 8. Start the Excavator in SIM Mode
 
 SIM mode does not access Raspberry Pi hardware.
+
+For local simulation testing, no multi-machine network setup is required.
 
 Start the server with:
 
@@ -290,7 +329,9 @@ The server should report:
 
 ```text
 Detected mode: SIM
+
 [SIM MODE] ExcavatorTrajectoryServer ready
+
 Action  : /upper_arm_controller/follow_joint_trajectory
 Publishes: /joint_command
 ```
@@ -303,7 +344,7 @@ SIM mode publishes commanded joint states to:
 
 ---
 
-## 9. Send a Trajectory in SIM Mode
+# 9. Send a Trajectory in SIM Mode
 
 Keep the server running.
 
@@ -325,7 +366,7 @@ The client should report that the Action goal was accepted and eventually comple
 
 ---
 
-## 10. Observe SIM Commands
+# 10. Observe SIM Commands
 
 In another terminal:
 
@@ -346,74 +387,67 @@ If no trajectory is running, `ros2 topic echo` may wait without displaying a mes
 
 # Physical Excavator
 
-## 11. Network Setup
+# 11. Zenoh Network Setup
 
-The excavator Raspberry Pi and ROS computer must first be configured for the project ROS network.
+The excavator Raspberry Pi and ROS PC use Zenoh (`rmw_zenoh_cpp`) for ROS 2 communication.
 
-### Excavator Raspberry Pi
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-source network/setup_network.sh \
-  excavator_01 \
-  ros_laptop_backup
-```
-
-### ROS Computer
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-source network/setup_network.sh \
-  ros_laptop_backup \
-  excavator_01
-```
-
-The network setup currently uses:
+The same network architecture is shared by the dump trucks and other construction robots.
 
 ```text
-ROS_DOMAIN_ID=10
-ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
+                         ROS PC
+                            │
+                       Zenoh Router
+                            │
+          ┌─────────────────┼─────────────────┐
+          │                 │                 │
+          ▼                 ▼                 ▼
+      Dump Truck        Dump Truck        Excavator
+          Pi                Pi                Pi
 ```
 
-The required static peers are configured by `network/setup_network.sh`.
+Only one Zenoh router is required.
+
+The excavator does **not** require a separate router.
+
+Network configuration is managed through:
+
+```text
+network/
+├── devices.sh
+├── setup_zenoh.sh
+└── setup_network.sh
+```
+
+`setup_zenoh.sh` is the primary network setup.
+
+`setup_network.sh` is retained as a DDS-based fallback.
 
 ---
 
-## 12. Current RMW Configuration
+# 12. Start the Zenoh Router
 
-During current excavator testing, ROS 2 Action communication has been verified with **CycloneDDS on both machines**.
-
-Before running the excavator server:
-
-```bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-```
-
-The same RMW implementation must be selected on the ROS computer:
+**Machine:** ROS PC  
+**Terminal:** T1  
+**Keep this terminal running.**
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh router
+
+ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
-Then run the normal network setup script.
+Only one router should normally be running for the construction robotics system.
 
-### Important
-
-CycloneDDS is currently a **verified excavator configuration**, not yet a project-wide RMW standard.
-
-The final RMW configuration for the complete multi-robot system is still under evaluation.
+If a Zenoh router is already running for the dump truck system, **do not start another router for the excavator**.
 
 ---
 
-## 13. Start the Physical Excavator
+# 13. Start the Physical Excavator
 
 > **WARNING:** PI mode can command physical motors.
 
@@ -425,7 +459,9 @@ auto_home_on_startup=false
 
 Therefore, simply starting the server should not intentionally move the excavator to its home position.
 
-On the Raspberry Pi:
+**Machine:** Excavator1 Raspberry Pi  
+**Terminal:** T1  
+**Keep this terminal running.**
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -433,11 +469,7 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-source network/setup_network.sh \
-  excavator_01 \
-  ros_laptop_backup
+source network/setup_zenoh.sh client excavator1
 
 sudo pigpiod
 
@@ -448,11 +480,16 @@ ros2 launch excavator_control \
 
 Do not enable automatic homing unless the physical system has been checked and the intended motion is understood.
 
+The excavator client profile connects this Raspberry Pi to the Zenoh router running on the ROS PC.
+
 ---
 
-## 14. Check Communication
+# 14. Configure the ROS PC Client
 
-From the ROS computer:
+**Machine:** ROS PC  
+**Terminal:** T2
+
+In the ROS PC terminal used to communicate with the excavator:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -460,14 +497,18 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-source network/setup_network.sh \
-  ros_laptop_backup \
-  excavator_01
+source network/setup_zenoh.sh client ros-pc
 ```
 
-Check the Action server:
+This terminal now communicates through the local Zenoh router.
+
+If the Command Center is already running in a Zenoh-configured ROS PC terminal, a separate terminal is not required for normal operation.
+
+---
+
+# 15. Check Communication
+
+From a Zenoh-configured ROS PC terminal:
 
 ```bash
 ros2 action list
@@ -485,13 +526,23 @@ Check excavator joint feedback:
 ros2 topic echo /joint_states --once
 ```
 
+For a longer communication-rate check:
+
+```bash
+ros2 topic hz /joint_states
+```
+
+Allow the frequency check to run for several seconds.
+
+The excavator `/joint_states` stream has been validated across the Zenoh connection between the excavator Raspberry Pi and ROS PC.
+
 ---
 
-## 15. Safe Action Communication Check
+# 16. Safe Action Communication Check
 
 The following command intentionally uses an invalid joint name.
 
-It is useful for checking that the ROS 2 Action payload reaches the excavator without commanding a real excavator joint.
+It is useful for verifying that the complete ROS 2 Action payload reaches the excavator without commanding a real excavator joint.
 
 ```bash
 ros2 action send_goal \
@@ -508,9 +559,13 @@ Unknown joints: ['fake_joint']
 
 This rejection is expected.
 
+A rejection containing the requested invalid joint confirms that the Action request and its joint-name payload reached the excavator server.
+
+This test has been successfully performed across the Zenoh connection between the ROS PC and excavator Raspberry Pi.
+
 ---
 
-## 16. Send an Operational Trajectory
+# 17. Send an Operational Trajectory
 
 Before sending any trajectory to physical hardware:
 
@@ -538,11 +593,76 @@ ros2 run excavator_control \
   --seconds-per-waypoint 3.0
 ```
 
+For initial physical tests, prefer a small subset-joint trajectory rather than commanding all excavator joints simultaneously.
+
+An example subset trajectory is stored at:
+
+```text
+operations/excavator/trajectories/boom_small_test.yaml
+```
+
+A structurally valid trajectory is not automatically a physically validated trajectory.
+
+---
+
+# Command Center Integration
+
+# 18. Excavator in Construction Scenarios
+
+The excavator is integrated with the construction-site Command Center.
+
+The high-level architecture is:
+
+```text
+Construction Scenario
+        │
+        ▼
+Scenario Manager
+        │
+        ▼
+Excavator Task Client
+        │
+        │ FollowJointTrajectory
+        ▼
+Excavator Trajectory Server
+        │
+        ▼
+Physical Excavator
+```
+
+Excavator trajectories can therefore be coordinated with dump truck operations through scenario YAML files stored under:
+
+```text
+operations/scenarios/
+```
+
+The Scenario Manager supports excavator trajectory tasks in addition to dump truck tasks.
+
+This allows a scenario to contain operations such as:
+
+```text
+Dump Truck Task
+       │
+       ▼
+Excavator Trajectory
+       │
+       ▼
+Wait
+       │
+       ▼
+Parallel Robot Operations
+       │
+       ▼
+Next Construction Task
+```
+
+The excavator uses the same Zenoh communication backbone as the dump trucks.
+
 ---
 
 # Safety
 
-## 17. Hardware Safety
+# 19. Hardware Safety
 
 The physical excavator is still undergoing calibration and hardware validation.
 
@@ -565,11 +685,13 @@ It does not verify:
 
 For initial hardware testing, prefer **single-joint subset trajectories** rather than commanding all joints simultaneously.
 
+Automatic homing should remain disabled unless the physical system has been explicitly prepared for the intended motion.
+
 ---
 
 # Current Development Status
 
-## 18. Verified
+# 20. Verified
 
 The following functionality has been verified:
 
@@ -583,14 +705,19 @@ The following functionality has been verified:
 - SIM trajectory execution
 - SIM `/joint_command` output
 - launch-based SIM bringup
-- ROS 2 Topic communication between the excavator Pi and ROS computer
-- ROS 2 Action communication between the excavator Pi and ROS computer using CycloneDDS
+- ROS 2 Topic communication between the excavator Pi and ROS PC
+- Zenoh communication between the excavator Pi and ROS PC
+- `/joint_states` communication across Zenoh
+- `FollowJointTrajectory` Action communication across Zenoh
+- safe invalid-joint Action payload verification across Zenoh
+- Command Center excavator task integration
+- mixed dump truck and excavator scenario integration
 
 Automated tests currently cover configuration loading, trajectory loading, trajectory validation, and Action goal validation.
 
 ---
 
-## 19. Pending Hardware Validation
+# 21. Pending Hardware Validation
 
 Physical closed-loop excavator control is **not yet considered fully validated**.
 
@@ -602,57 +729,91 @@ Known areas requiring additional hardware work include:
 - complete multi-joint physical trajectories
 - final tuning of joint control parameters
 
+These are physical hardware and calibration validation items.
+
+They are separate from the ROS 2 software architecture and Zenoh communication layer, which have been integrated and tested.
+
 Hardware validation should be resumed after the physical system and calibration are ready for controlled testing.
 
 ---
 
-## 20. Communication Items for Future Evaluation
+# 22. ROS 2 Communication Status
 
-The current verified excavator communication configuration uses CycloneDDS.
-
-The following items are intentionally deferred for later evaluation:
-
-### Python Virtual Environment
-
-Earlier excavator development used:
+The project currently uses:
 
 ```text
-~/excavator_env
+RMW_IMPLEMENTATION=rmw_zenoh_cpp
 ```
 
-Current testing has shown that the excavator server can run without activating this environment.
+for normal multi-machine ROS 2 operation.
 
-Future testing should determine whether the virtual environment changes behavior when:
+The standard topology is:
 
-- `RMW_IMPLEMENTATION` is not explicitly set
-- Fast DDS is explicitly selected
+```text
+ONE ROS PC
+    │
+    └── ONE Zenoh Router
+              │
+              ├── Dump Truck Pi
+              ├── Dump Truck Pi
+              ├── ...
+              └── Excavator Pi
+```
 
-The virtual environment should not be deleted until this evaluation is complete.
+The excavator has been tested through this architecture for:
 
-### Fast DDS
+- ROS 2 topic discovery
+- `/joint_states` transport
+- `FollowJointTrajectory` Action discovery
+- `FollowJointTrajectory` Action payload transport
 
-Explicit Fast DDS startup on the excavator Raspberry Pi has produced a Fast CDR/shared-library symbol error.
+Users should normally configure communication using:
 
-This currently requires further investigation before Fast DDS can be considered a supported excavator configuration.
+```bash
+source network/setup_zenoh.sh ...
+```
 
-### Zenoh
+rather than manually exporting middleware or peer settings.
 
-ROS 2 Zenoh / `rmw_zenoh` may be evaluated as an alternative communication layer for the multi-machine system.
+Detailed network configuration is documented in:
 
-Potential evaluation should include:
+```text
+network/README.md
+```
 
-- excavator Action communication
-- `/joint_states`
-- camera and AprilTag nodes
-- dump truck communication
-- multi-machine discovery
-- restart/reconnection behavior
+The previous DDS setup remains available through:
 
-No project-wide RMW decision has been made yet.
+```text
+network/setup_network.sh
+```
+
+as an alternative/fallback configuration.
+
+---
+
+# 23. Previous DDS Testing
+
+Earlier excavator integration testing evaluated multiple DDS configurations.
+
+CycloneDDS successfully transported both ROS 2 topics and `FollowJointTrajectory` Actions between the ROS computer and excavator Raspberry Pi.
+
+Other DDS configurations showed communication or compatibility issues during testing.
+
+These results were useful during development, but CycloneDDS-specific environment configuration is **no longer the standard excavator startup procedure**.
+
+Normal operation now uses the project-wide Zenoh configuration.
+
+The previous DDS helper remains available for troubleshooting and future communication-layer evaluation:
+
+```text
+network/setup_network.sh
+```
 
 ---
 
 # Development Tests
+
+# 24. Run Unit Tests
 
 Run the excavator unit tests with the system ROS Python environment:
 
@@ -676,4 +837,98 @@ colcon test \
 colcon test-result --verbose
 ```
 
-Use `/usr/bin/python3 -m pytest` rather than a user-installed `pytest` executable to avoid accidentally running tests with a Python environment associated with Isaac Sim or Isaac Lab.
+Use:
+
+```text
+/usr/bin/python3 -m pytest
+```
+
+rather than a user-installed `pytest` executable.
+
+This avoids accidentally running ROS 2 tests using a Python environment associated with Isaac Sim or Isaac Lab.
+
+---
+
+# 25. Standard Physical System Terminal Layout
+
+For normal physical excavator operation:
+
+```text
+ROS PC
+│
+├── T1 — Zenoh Router
+│        KEEP RUNNING
+│
+└── T2 — ROS PC Applications / Command Center
+         KEEP RUNNING
+
+
+Excavator Raspberry Pi
+│
+└── T1 — Excavator PI Mode
+         KEEP RUNNING
+```
+
+If dump trucks are operating simultaneously, they use the same ROS PC router:
+
+```text
+                            ROS PC
+                               │
+                         Zenoh Router
+                               │
+          ┌────────────────────┼────────────────────┐
+          │                    │                    │
+          ▼                    ▼                    ▼
+      Dumptruck1           Dumptruck3          Excavator1
+          Pi                   Pi                   Pi
+          │                    │                    │
+       Hardware             Hardware          Excavator Server
+```
+
+Do not start one Zenoh router per robot.
+
+The intended system architecture is:
+
+```text
+1 Zenoh Router
+      +
+1 Command Center
+      +
+N Physical Robot Clients
+```
+
+---
+
+# 26. Where New Excavator Files Belong
+
+Use the following rule when extending the excavator system:
+
+```text
+Excavator control software
+    → robots/excavator/excavator_control/
+
+Machine configuration / calibration
+    → robots/excavator/excavator_control/config/
+
+Excavator launch files
+    → robots/excavator/excavator_control/launch/
+
+Operational excavator trajectories
+    → operations/excavator/trajectories/
+
+Construction scenarios
+    → operations/scenarios/
+
+Shared ROS interfaces
+    → common/construction_site_interfaces/
+
+High-level robot coordination
+    → command_center/construction_site_control/
+
+ROS network configuration
+    → network/
+```
+
+The general design rule is:
+
+> Keep reusable robot software and machine configuration separate from operational trajectory and scenario data.
