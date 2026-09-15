@@ -731,7 +731,7 @@ class PotJointConfig: # holds config values
     pulse_off_cycles: int = 0
 
     # Optional ADC glitch filter. Disabled when raw_jump_limit <= 0.
-    # Currently enabled only for bucket_joint.
+    # Enabled for boom_joint, arm_joint, and bucket_joint.
     raw_jump_limit: int = 0
     raw_jump_confirmations: int = 3
 
@@ -752,7 +752,7 @@ class PotentiometerJointMotor: #preparing everything the controller will need. w
         self._last_valid_raw = None
 
         # Generic ADC jump-filter state. This remains unused unless
-        # raw_jump_limit > 0 (currently bucket_joint only).
+        # raw_jump_limit > 0 (boom_joint, arm_joint, and bucket_joint).
         self._raw_jump_candidate = None
         self._raw_jump_candidate_count = 0
 
@@ -1594,6 +1594,10 @@ class PiExcavatorTrajectoryServer(Node):
                     stop_tolerance_rad=float(
                         boom_control.get("stop_tolerance_rad", 0.015)
                     ),
+                    # Reject transient ADS1115 jumps while allowing
+                    # sustained real joint motion to be accepted.
+                    raw_jump_limit=2500,
+                    raw_jump_confirmations=3,
                 ),
             ),
             "arm_joint": PotentiometerJointMotor(
@@ -1620,6 +1624,10 @@ class PiExcavatorTrajectoryServer(Node):
                     stop_tolerance_rad=float(
                         arm_control.get("stop_tolerance_rad", 0.015)
                     ),
+                    # Reject transient ADS1115 jumps while allowing
+                    # sustained real joint motion to be accepted.
+                    raw_jump_limit=2500,
+                    raw_jump_confirmations=3,
                 ),
             ),
             "bucket_joint": PotentiometerJointMotor(
@@ -1646,9 +1654,8 @@ class PiExcavatorTrajectoryServer(Node):
                     stop_tolerance_rad=float(
                         bucket_control.get("stop_tolerance_rad", 0.06)
                     ),
-                    # Excavator 3 bucket potentiometer occasionally produces
-                    # large transient ADC jumps. Filter only this joint so
-                    # boom/arm/swing behavior remains unchanged.
+                    # Reject transient ADS1115 jumps while allowing
+                    # sustained real joint motion to be accepted.
                     raw_jump_limit=2500,
                     raw_jump_confirmations=3,
                 ),
