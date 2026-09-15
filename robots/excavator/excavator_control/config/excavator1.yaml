@@ -78,7 +78,7 @@ gpio:
   boom:
     in1_pin: 8
     in2_pin: 25
-    invert_motor: false
+    invert_motor: true
 
   arm:
     in1_pin: 15
