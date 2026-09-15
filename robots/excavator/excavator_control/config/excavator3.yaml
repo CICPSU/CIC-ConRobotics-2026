@@ -142,8 +142,8 @@ joint_control:
     max_pwm: 255
     kick_pwm: 180
 
-    tolerance_rad: 0.035
-    stop_tolerance_rad: 0.015
+    tolerance_rad: 0.052
+    stop_tolerance_rad: 0.035
 
   arm:
     kp: 120.0
@@ -151,8 +151,8 @@ joint_control:
     max_pwm: 220
     kick_pwm: 180
 
-    tolerance_rad: 0.035
-    stop_tolerance_rad: 0.015
+     tolerance_rad: 0.052
+    stop_tolerance_rad: 0.035
 
   bucket:
     kp: 70.0

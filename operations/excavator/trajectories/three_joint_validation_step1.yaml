@@ -1,0 +1,17 @@
+trajectory_name: three_joint_validation_step1
+description: >
+  Excavator 3 three-joint closed-loop validation.
+  Move boom, arm, and bucket simultaneously with small motions.
+  Swing is intentionally excluded.
+
+joints:
+  - boom
+  - arm
+  - bucket
+
+waypoints:
+  - name: three_joint_test
+    positions:
+      boom: 0.0
+      arm: 110.0
+      bucket: 90.0

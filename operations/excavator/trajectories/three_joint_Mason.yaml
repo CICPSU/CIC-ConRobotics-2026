@@ -1,0 +1,30 @@
+trajectory_name: three_joint_Mason
+description: >
+  Excavator 3 three-joint closed-loop validation.
+  Move boom, arm, and bucket simultaneously with small motions.
+  Swing is intentionally excluded.
+
+joints:
+  - boom
+  - arm
+  - bucket
+
+waypoints:
+
+  - name: position_1
+    positions:
+      boom: -30.0
+      arm: 60.0
+      bucket: 0.0
+
+  - name: position_2
+    positions:
+      boom: -15.0
+      arm: 60.0
+      bucket: 45.0
+
+  - name: position_3
+    positions:
+      boom: -5.0
+      arm: 60.0
+      bucket: 90.0
