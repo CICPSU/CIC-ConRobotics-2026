@@ -83,7 +83,7 @@ gpio:
   arm:
     in1_pin: 15
     in2_pin: 14
-    invert_motor: false
+    invert_motor: true
 
   bucket:
     in1_pin: 23
