@@ -99,7 +99,7 @@ control:
   control_hz: 50.0
   feedback_hz: 10.0
 
-  goal_tolerance_rad: 0.12
+  goal_tolerance_rad: 0.035
   stop_on_goal_finish: true
 
   ads1115_address: 72

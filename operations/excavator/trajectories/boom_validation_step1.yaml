@@ -1,0 +1,13 @@
+trajectory_name: boom_validation_step1
+
+description: >
+  Initial boom-only closed-loop hardware validation.
+  Commands only the boom joint to -5 degrees.
+
+joints:
+  - boom
+
+waypoints:
+  - name: boom_minus_5
+    positions:
+      boom: -5.0
