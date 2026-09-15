@@ -7,6 +7,6 @@ joints:
   - bucket
 
 waypoints:
-  - name: bucket_85
+  - name: bucket_15
     positions:
-      bucket: 85
+      bucket: 15
