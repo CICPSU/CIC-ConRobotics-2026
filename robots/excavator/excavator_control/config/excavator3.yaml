@@ -15,14 +15,14 @@ excavator_name: excavator3
 joints:
 
   boom:
-    adc_channel: 2
+    adc_channel: 1
     min_angle_deg: -60.0
     max_angle_deg: 5.0
     raw_at_min_angle: 7500
     raw_at_max_angle: 14320
 
   arm:
-    adc_channel: 1
+    adc_channel: 2
     min_angle_deg: 52.0
     max_angle_deg: 112.0
     raw_at_min_angle: 17800
