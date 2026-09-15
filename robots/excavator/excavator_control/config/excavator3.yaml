@@ -151,7 +151,7 @@ joint_control:
     max_pwm: 220
     kick_pwm: 180
 
-     tolerance_rad: 0.052
+    tolerance_rad: 0.052
     stop_tolerance_rad: 0.035
 
   bucket:
