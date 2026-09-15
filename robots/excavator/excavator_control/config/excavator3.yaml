@@ -88,7 +88,7 @@ gpio:
   bucket:
     in1_pin: 23
     in2_pin: 24
-    invert_motor: false
+    invert_motor: true
 
 # ================================================================
 # GLOBAL CONTROL PARAMETERS
