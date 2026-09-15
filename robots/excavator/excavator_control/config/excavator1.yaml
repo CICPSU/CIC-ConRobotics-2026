@@ -18,22 +18,22 @@ joints:
     adc_channel: 2
     min_angle_deg: -60.0
     max_angle_deg: 5.0
-    raw_at_min_angle: 17880
-    raw_at_max_angle: 12050
+    raw_at_min_angle: 17940
+    raw_at_max_angle: 12045
 
   arm:
     adc_channel: 1
     min_angle_deg: 52.0
     max_angle_deg: 112.0
-    raw_at_min_angle: 17000
-    raw_at_max_angle: 11730
+    raw_at_min_angle: 17450
+    raw_at_max_angle: 11750
 
   bucket:
     adc_channel: 0
     min_angle_deg: 0.0
     max_angle_deg: 90.0
     raw_at_min_angle: 14270
-    raw_at_max_angle: 12800
+    raw_at_max_angle: 13100
 
   swing:
     adc_channel: 3
