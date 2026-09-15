@@ -1,0 +1,164 @@
+# ================================================================
+# Excavator 3 Configuration
+# ================================================================
+# Physical machine configuration for Excavator 3.
+#
+# Calibration convention:
+#   raw_at_min_angle = ADC raw value at min_angle_deg
+#   raw_at_max_angle = ADC raw value at max_angle_deg
+#
+# Raw ADC values may increase OR decrease as joint angle increases.
+# ================================================================
+
+excavator_name: excavator3
+
+joints:
+
+  boom:
+    adc_channel: 2
+    min_angle_deg: -60.0
+    max_angle_deg: 5.0
+    raw_at_min_angle: 7500
+    raw_at_max_angle: 14320
+
+  arm:
+    adc_channel: 1
+    min_angle_deg: 52.0
+    max_angle_deg: 112.0
+    raw_at_min_angle: 17800
+    raw_at_max_angle: 12050
+
+  bucket:
+    adc_channel: 0
+    min_angle_deg: 0.0
+    max_angle_deg: 90.0
+    raw_at_min_angle: 1750
+    raw_at_max_angle: 25200
+
+  swing:
+    adc_channel: 3
+    min_angle_deg: -90.0
+    max_angle_deg: 90.0
+
+    angle_deg_table:
+      - -90.0
+      - -45.0
+      - -30.0
+      - 0.0
+      - 30.0
+      - 45.0
+      - 60.0
+      - 75.0
+      - 90.0
+
+    raw_table:
+      - 1600
+      - 1800
+      - 3955
+      - 6968
+      - 9943
+      - 11410
+      - 14282
+      - 17497
+      - 21447
+
+# ================================================================
+# GPIO
+# ================================================================
+
+gpio:
+  standby_pin: 21
+  shared_pwm_pin: 7
+
+  swing:
+    in1_pin: 16
+    in2_pin: 20
+    invert_motor: false
+
+  boom:
+    in1_pin: 8
+    in2_pin: 25
+    invert_motor: true
+
+  arm:
+    in1_pin: 15
+    in2_pin: 14
+    invert_motor: true
+
+  bucket:
+    in1_pin: 23
+    in2_pin: 24
+    invert_motor: false
+
+# ================================================================
+# GLOBAL CONTROL PARAMETERS
+# ================================================================
+
+control:
+  publish_hz: 10.0
+  control_hz: 50.0
+  feedback_hz: 10.0
+
+  goal_tolerance_rad: 0.035
+  stop_on_goal_finish: true
+
+  ads1115_address: 72
+  pwm_frequency_hz: 1000
+  pwm_arbitration: exclusive
+
+# ================================================================
+# HOME POSITION
+# ================================================================
+# Human-readable degrees.
+# Boom home intentionally set to -20 deg.
+
+home:
+  boom_deg: -20.0
+  arm_deg: 105.020
+  bucket_deg: 12.245
+
+# ================================================================
+# PER-JOINT CONTROL PARAMETERS
+# ================================================================
+
+joint_control:
+
+  swing:
+    kp: 120.0
+    min_pwm: 220
+    max_pwm: 255
+    kick_pwm: 255
+
+    tolerance_rad: 0.04
+    stop_tolerance_rad: 0.05
+
+    pulse_err_deg: 5.0
+    pulse_on_cycles: 1
+    pulse_off_cycles: 2
+
+  boom:
+    kp: 120.0
+    min_pwm: 130
+    max_pwm: 255
+    kick_pwm: 180
+
+    tolerance_rad: 0.035
+    stop_tolerance_rad: 0.015
+
+  arm:
+    kp: 120.0
+    min_pwm: 180
+    max_pwm: 220
+    kick_pwm: 180
+
+    tolerance_rad: 0.035
+    stop_tolerance_rad: 0.015
+
+  bucket:
+    kp: 70.0
+    min_pwm: 75
+    max_pwm: 255
+    kick_pwm: 80
+
+    tolerance_rad: 0.08
+    stop_tolerance_rad: 0.06
