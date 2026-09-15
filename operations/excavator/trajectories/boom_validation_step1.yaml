@@ -10,4 +10,4 @@ joints:
 waypoints:
   - name: boom_minus_5
     positions:
-      boom: -10.0
+      boom: -5.0
