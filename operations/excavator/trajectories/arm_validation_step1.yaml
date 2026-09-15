@@ -1,12 +1,12 @@
 trajectory_name: arm_validation_step1
 description: >
-  Initial arm-only closed-loop hardware validation.
-  Commands only the arm joint to 65 degrees.
+  Excavator 3 arm-only closed-loop validation.
+  Move the arm from approximately 91 degrees to 96 degrees.
 
 joints:
   - arm
 
 waypoints:
-  - name: arm_65
+  - name: arm_96
     positions:
-      arm: 65.0
+      arm: 96.0

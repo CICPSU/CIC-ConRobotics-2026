@@ -730,6 +730,11 @@ class PotJointConfig: # holds config values
     pulse_on_cycles: int = 1
     pulse_off_cycles: int = 0
 
+    # Optional ADC glitch filter. Disabled when raw_jump_limit <= 0.
+    # Currently enabled only for bucket_joint.
+    raw_jump_limit: int = 0
+    raw_jump_confirmations: int = 3
+
 
 class PotentiometerJointMotor: #preparing everything the controller will need. which also contains the above class. 
     def __init__(self, pi, adc: ADS1115Reader, cfg: PotJointConfig):
@@ -745,6 +750,12 @@ class PotentiometerJointMotor: #preparing everything the controller will need. w
         self._last_target_rad = None
         self._target_stable_since = time.monotonic()
         self._last_valid_raw = None
+
+        # Generic ADC jump-filter state. This remains unused unless
+        # raw_jump_limit > 0 (currently bucket_joint only).
+        self._raw_jump_candidate = None
+        self._raw_jump_candidate_count = 0
+
         # False until at least one in-range sample has been read. The
         # controller refuses to drive the swing while this is False.
         self._swing_raw_valid = False
@@ -779,6 +790,59 @@ class PotentiometerJointMotor: #preparing everything the controller will need. w
         if cfg.limit_negative is not None:
             pi.set_mode(cfg.limit_negative, pigpio.INPUT)
             pi.set_pull_up_down(cfg.limit_negative, pigpio.PUD_UP)
+    def _read_filtered_pot_raw(self) -> int:
+        """
+        Read a potentiometer with optional transient-jump rejection.
+
+        If raw_jump_limit <= 0, preserve the original single-read behavior.
+
+        For filtered joints:
+          - take a median of 5 ADC samples;
+          - accept small/continuous changes immediately;
+          - reject isolated large jumps and hold the last trusted reading;
+          - accept a large change after repeated similar readings so real
+            joint motion cannot leave the feedback permanently frozen.
+        """
+        c = self.cfg
+
+        if c.raw_jump_limit <= 0:
+            return self.adc.read(c.adc_channel)
+
+        candidate = self.adc.read_median3(c.adc_channel)
+
+        # First reading establishes the trusted baseline.
+        if self._last_valid_raw is None:
+            self._last_valid_raw = candidate
+            self._raw_jump_candidate = None
+            self._raw_jump_candidate_count = 0
+            return candidate
+
+        # Normal continuous movement: accept immediately.
+        if abs(candidate - self._last_valid_raw) <= c.raw_jump_limit:
+            self._last_valid_raw = candidate
+            self._raw_jump_candidate = None
+            self._raw_jump_candidate_count = 0
+            return candidate
+
+        # Large jump: require repeated evidence before accepting it.
+        if (
+            self._raw_jump_candidate is not None
+            and abs(candidate - self._raw_jump_candidate) <= c.raw_jump_limit
+        ):
+            self._raw_jump_candidate_count += 1
+        else:
+            self._raw_jump_candidate = candidate
+            self._raw_jump_candidate_count = 1
+
+        if self._raw_jump_candidate_count >= max(1, c.raw_jump_confirmations):
+            self._last_valid_raw = candidate
+            self._raw_jump_candidate = None
+            self._raw_jump_candidate_count = 0
+            return candidate
+
+        # Transient glitch: keep the previous trusted position.
+        return self._last_valid_raw
+
     def read_position_rad(self) -> float:
         c = self.cfg
 
@@ -873,7 +937,7 @@ class PotentiometerJointMotor: #preparing everything the controller will need. w
         # NORMAL POTENTIOMETERS
         # ==========================================================
         else:
-            raw = self.adc.read(c.adc_channel)
+            raw = self._read_filtered_pot_raw()
 
             span = max(1, c.adc_max - c.adc_min)
 
@@ -1582,6 +1646,11 @@ class PiExcavatorTrajectoryServer(Node):
                     stop_tolerance_rad=float(
                         bucket_control.get("stop_tolerance_rad", 0.06)
                     ),
+                    # Excavator 3 bucket potentiometer occasionally produces
+                    # large transient ADC jumps. Filter only this joint so
+                    # boom/arm/swing behavior remains unchanged.
+                    raw_jump_limit=2500,
+                    raw_jump_confirmations=3,
                 ),
             ),
         }

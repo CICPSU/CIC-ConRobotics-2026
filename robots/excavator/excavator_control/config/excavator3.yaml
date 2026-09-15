@@ -156,8 +156,8 @@ joint_control:
 
   bucket:
     kp: 70.0
-    min_pwm: 75
-    max_pwm: 255
+    min_pwm: 40
+    max_pwm: 150
     kick_pwm: 80
 
     tolerance_rad: 0.08

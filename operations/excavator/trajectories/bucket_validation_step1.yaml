@@ -1,0 +1,12 @@
+trajectory_name: bucket_validation_step1
+description: >
+  Excavator 3 bucket-only closed-loop validation.
+  Move the bucket from approximately 90 degrees to 85 degrees.
+
+joints:
+  - bucket
+
+waypoints:
+  - name: bucket_85
+    positions:
+      bucket: 85

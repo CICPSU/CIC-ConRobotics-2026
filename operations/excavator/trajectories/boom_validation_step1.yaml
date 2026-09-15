@@ -1,13 +1,12 @@
 trajectory_name: boom_validation_step1
-
 description: >
-  Initial boom-only closed-loop hardware validation.
-  Commands only the boom joint to -5 degrees.
+  Excavator 3 boom-only closed-loop validation.
+  Move the boom from approximately -50 degrees to -45 degrees.
 
 joints:
   - boom
 
 waypoints:
-  - name: boom_minus_5
+  - name: boom_minus_45
     positions:
-      boom: -5.0
+      boom: -45.0
