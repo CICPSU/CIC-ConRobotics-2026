@@ -1,0 +1,12 @@
+trajectory_name: arm_validation_step1
+description: >
+  Initial arm-only closed-loop hardware validation.
+  Commands only the arm joint to 65 degrees.
+
+joints:
+  - arm
+
+waypoints:
+  - name: arm_65
+    positions:
+      arm: 65.0

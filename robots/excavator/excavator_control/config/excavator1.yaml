@@ -147,7 +147,7 @@ joint_control:
 
   arm:
     kp: 120.0
-    min_pwm: 180
+    min_pwm: 220
     max_pwm: 220
     kick_pwm: 180
 
