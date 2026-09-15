@@ -151,8 +151,8 @@ joint_control:
     max_pwm: 220
     kick_pwm: 180
 
-    tolerance_rad: 0.052
-    stop_tolerance_rad: 0.035
+    tolerance_rad: 0.087 # 5 degrees
+    stop_tolerance_rad: 0.070 # 4 degrees
 
   bucket:
     kp: 70.0
@@ -160,5 +160,5 @@ joint_control:
     max_pwm: 150
     kick_pwm: 80
 
-    tolerance_rad: 0.08
-    stop_tolerance_rad: 0.06
+    tolerance_rad: 0.105 # 6 degrees
+    stop_tolerance_rad: 0.087 # 5 degrees
