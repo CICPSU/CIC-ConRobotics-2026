@@ -14,25 +14,31 @@ waypoints:
   - name: position_1
     positions:
       boom: -10
-      arm: 90.0
-      bucket: 90.0
+      arm: 110.0
+      bucket: 0.0
+
+  - name: position_1.5
+    positions:
+      boom: -50.0
+      arm: 110.0
+      bucket: 0.0
 
   - name: position_2
     positions:
       boom: -50.0
-      arm: 75.0
+      arm: 90.0
       bucket: 0.0
 
   - name: position_3
     positions:
       boom: -50.0
-      arm: 100.0
+      arm: 90.0
       bucket: 90.0
 
   - name: position_4
     positions:
       boom: -10.0
-      arm: 100.0
+      arm: 90.0
       bucket: 90.0
 
   - name: position_5
