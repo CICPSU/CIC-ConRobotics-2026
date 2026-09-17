@@ -13,5 +13,5 @@ waypoints:
   - name: three_joint_test
     positions:
       boom: -10.0
-      arm: 75.0
+      arm: 90.0
       bucket: 90.0
