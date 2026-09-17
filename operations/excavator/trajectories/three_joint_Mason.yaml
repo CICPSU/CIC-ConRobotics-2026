@@ -38,5 +38,5 @@ waypoints:
   - name: position_5
     positions:
       boom: -20.0
-      arm: 75.0
-      bucket: 00.0
+      arm: 80.0
+      bucket: 0.0
