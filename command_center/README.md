@@ -2,19 +2,21 @@
 
 The `command_center` directory contains the ROS 2 components used to coordinate multiple construction robots in the CIC ConRobotics system.
 
-The Command Center provides a higher-level execution layer above individual robot controllers. It allows construction operations to be described as YAML scenarios and executed as sequences of robot tasks, excavator trajectories, waits, topic commands, parallel operations, and conditions.
+The Command Center provides a higher-level execution layer above individual robot controllers. Construction operations can be described as YAML scenarios and executed as sequences of robot tasks, excavator trajectories, waits, topic commands, parallel operations, and conditions.
 
 The current system supports:
 
 - Dump truck waypoint tasks using `ExecuteRobotTask`
 - Excavator joint trajectories using `FollowJointTrajectory`
+- Multiple independently namespaced excavators
 - Sequential multi-robot scenarios
 - Parallel scenario steps
 - Conditional execution based on ROS 2 topics
 - Direct topic publishing
-- Software-only testing using a mock dump truck and simulated excavator
+- Software-only testing using mock dump trucks and simulated excavators
 - Physical dump truck operation
-- Physical excavator communication
+- Physical excavator operation
+- Mixed dump truck + excavator scenarios
 - Multi-machine ROS 2 communication using Zenoh
 
 ---
@@ -25,35 +27,48 @@ The current system supports:
                          Scenario YAML
                               │
                               ▼
-                     Scenario Manager
+                       Scenario Manager
                               │
-              ┌───────────────┴───────────────┐
-              │                               │
-              ▼                               ▼
-      ExecuteRobotTask              FollowJointTrajectory
-              │                               │
-              ▼                               ▼
-        Dump Truck                     Excavator
-              │                               │
-        Physical / Mock                  Physical / SIM
+              ┌───────────────┴────────────────┐
+              │                                │
+              ▼                                ▼
+      ExecuteRobotTask                FollowJointTrajectory
+              │                                │
+              ▼                                ▼
+       /truckN/...                    /excavatorN/...
+              │                                │
+              ▼                                ▼
+         Dump Truck                       Excavator
+              │                                │
+       Physical / Mock                  Physical / SIM
 ```
 
 The Command Center does not directly control motors.
 
 Instead, it sends higher-level commands to robot-specific ROS 2 interfaces.
 
-For physical multi-machine operation, the Command Center communicates with robot computers through a shared Zenoh router.
+For physical multi-machine operation, the Command Center and robot computers communicate through a shared Zenoh router.
 
 ```text
-                            ROS PC
-                               │
-                        Zenoh Router
-                               │
-             ┌─────────────────┼─────────────────┐
-             │                 │                 │
-             ▼                 ▼                 ▼
-         Dump Truck        Dump Truck        Excavator
-             Pi                Pi                Pi
+                              ROS PC
+                                 │
+                           Zenoh Router
+                                 │
+          ┌──────────────────────┼──────────────────────┐
+          │                      │                      │
+          ▼                      ▼                      ▼
+      Dump Truck            Excavator 1            Excavator 3
+          Pi                    Pi                     Pi
+```
+
+The intended architecture is:
+
+```text
+1 Zenoh Router
+      +
+1 Command Center
+      +
+N Physical Robot Clients
 ```
 
 ---
@@ -95,7 +110,7 @@ operations/
 └── scenarios/
 ```
 
-This separates reusable ROS 2 software from site- and operation-specific task definitions.
+This separates reusable ROS 2 software from operation-specific task definitions.
 
 ---
 
@@ -107,9 +122,9 @@ The main Command Center node is:
 ros2 run construction_site_control scenario_manager_node
 ```
 
-The Scenario Manager reads a YAML scenario and executes its steps in order.
+The Scenario Manager reads a YAML scenario and executes its steps.
 
-Currently supported step types include:
+Currently supported step types are:
 
 ```text
 task
@@ -122,6 +137,10 @@ condition
 
 A scenario can therefore coordinate different types of construction robots without requiring them to use the same low-level controller.
 
+Sequential steps proceed only after the previous step completes successfully.
+
+If an Action step reports failure, the Scenario Manager does not treat the step as successful and the sequential scenario is aborted.
+
 ---
 
 # 2. Dump Truck Tasks
@@ -132,7 +151,7 @@ Dump trucks use the custom ROS 2 Action:
 construction_site_interfaces/action/ExecuteRobotTask
 ```
 
-The Action Server for each truck is:
+The Action interface for each truck is:
 
 ```text
 /<truck_name>/execute_robot_task
@@ -154,13 +173,15 @@ A dump truck scenario step looks like:
   task_file: truck1_waypoints.yaml
 ```
 
+The `robot` field determines the target truck.
+
 Waypoint files are stored under:
 
 ```text
 operations/dump_truck/waypoints/
 ```
 
-The real Action Server uses the truck localization and control stack to execute the requested waypoint file.
+The physical Action Server uses the truck localization and control stack to execute the requested waypoint file.
 
 A mock Action Server is also available for software-only integration testing.
 
@@ -168,27 +189,64 @@ A mock Action Server is also available for software-only integration testing.
 
 # 3. Excavator Tasks
 
-The excavator uses the standard ROS 2:
+Excavators use the standard ROS 2 Action:
 
 ```text
 control_msgs/action/FollowJointTrajectory
 ```
 
-Action interface:
+Each excavator runs inside its own ROS 2 namespace.
+
+The standard Action interface is:
 
 ```text
-/upper_arm_controller/follow_joint_trajectory
+/<excavator_name>/upper_arm_controller/follow_joint_trajectory
+```
+
+For example:
+
+```text
+/excavator1/upper_arm_controller/follow_joint_trajectory
+/excavator3/upper_arm_controller/follow_joint_trajectory
 ```
 
 An excavator scenario step looks like:
 
 ```yaml
-- id: excavator_load
+- id: excavator3_move
   type: excavator_trajectory
-  robot: excavator1
-  task_file: boom_small_test.yaml
-  seconds_per_waypoint: 2.0
+  robot: excavator3
+  task_file: three_joint_Mason.yaml
+  seconds_per_waypoint: 5.0
 ```
+
+The `robot` field is used to resolve the target Action.
+
+For example:
+
+```yaml
+robot: excavator3
+```
+
+resolves to:
+
+```text
+/excavator3/upper_arm_controller/follow_joint_trajectory
+```
+
+and:
+
+```yaml
+robot: excavator1
+```
+
+resolves to:
+
+```text
+/excavator1/upper_arm_controller/follow_joint_trajectory
+```
+
+An explicit `action_name` may be supplied in a scenario step when an override is required. Otherwise, the namespaced Action is derived automatically from `robot`.
 
 Trajectory files are stored under:
 
@@ -198,88 +256,110 @@ operations/excavator/trajectories/
 
 Excavator trajectories may command all joints or only a subset of joints.
 
-For example, a boom-only trajectory can contain:
+Joints not listed in the trajectory are not included in the `FollowJointTrajectory` goal.
 
-```yaml
-trajectory_name: boom_small_test
-
-joints:
-  - boom
-
-waypoints:
-  - name: boom_target
-    positions:
-      boom: -14.3
-```
-
-This allows individual joints to be tested without unintentionally commanding the other excavator joints.
+This is useful for isolated joint testing and for operations that do not require every excavator joint.
 
 ---
 
-# 4. Mixed-Robot Scenarios
+# 4. Multi-Excavator Support
 
-A single scenario can coordinate both dump trucks and the excavator.
+The Command Center supports independently namespaced excavators.
 
-Example:
-
-```yaml
-scenario_name: truck1_excavator_cycle
-
-steps:
-  - id: truck1_arrive
-    type: task
-    robot: truck1
-    task_type: waypoint
-    task_file: truck1_waypoints3.yaml
-
-  - id: excavator_load
-    type: excavator_trajectory
-    robot: excavator1
-    task_file: boom_small_test.yaml
-    seconds_per_waypoint: 2.0
-
-  - id: truck1_depart
-    type: task
-    robot: truck1
-    task_type: waypoint
-    task_file: truck1_waypoints.yaml
-```
-
-Because scenario steps are sequential by default, the next step begins only after the previous Action has completed successfully.
-
-Therefore, the example above represents:
+Conceptually:
 
 ```text
-Truck 1 arrives
-      │
-      ▼
-Excavator operates
-      │
-      ▼
-Truck 1 departs
+                         Scenario Manager
+                                │
+             ┌──────────────────┴──────────────────┐
+             │                                     │
+             ▼                                     ▼
+        robot: excavator1                     robot: excavator3
+             │                                     │
+             ▼                                     ▼
+/excavator1/upper_arm_controller/     /excavator3/upper_arm_controller/
+   follow_joint_trajectory               follow_joint_trajectory
+             │                                     │
+             ▼                                     ▼
+        Excavator 1                            Excavator 3
 ```
+
+The robot name therefore serves as both:
+
+- the logical robot identity used by the scenario
+- the basis for resolving the excavator's ROS 2 Action namespace
+
+This removes the previous single global excavator Action and allows multiple excavators to coexist on the same ROS 2 network.
 
 ---
 
-# 5. Software-Only Integration Testing
+# 5. Mixed-Robot Scenarios
+
+A single scenario can coordinate dump trucks and excavators.
+
+For example:
+
+```yaml
+scenario_name: truck1_excavator3_integration_test
+
+steps:
+  - id: truck1_short_move
+    type: task
+    robot: truck1
+    task_type: waypoint
+    task_file: truck1_integration_test.yaml
+
+  - id: excavator3_move
+    type: excavator_trajectory
+    robot: excavator3
+    task_file: three_joint_Mason.yaml
+    seconds_per_waypoint: 5.0
+```
+
+Because these steps are sequential, the execution flow is:
+
+```text
+Truck 1 Task
+      │
+      ▼
+ExecuteRobotTask
+      │
+      ▼
+SUCCESS
+      │
+      ▼
+Excavator 3 Trajectory
+      │
+      ▼
+/excavator3/upper_arm_controller/
+follow_joint_trajectory
+      │
+      ▼
+Action Result
+```
+
+The next sequential step begins only after the previous Action completes successfully.
+
+A physical Truck 1 + Excavator 3 scenario has been used to verify this routing architecture.
+
+---
+
+# 6. Software-Only Integration Testing
 
 The Command Center can be tested without physical robots.
 
-This is the recommended development workflow before testing physical hardware.
-
-The current software-only configuration uses:
+A typical software-only configuration uses:
 
 ```text
 Dump Truck  → Mock Action Server
-
 Excavator   → SIM mode
 ```
 
-This allows the complete scenario orchestration layer to be tested independently of sensors, motors, Raspberry Pis, and physical calibration.
+This allows scenario orchestration to be tested independently of sensors, motors, Raspberry Pis, and physical calibration.
 
 ---
 
-# 6. Build
+# 7. Build
 
 From the repository root:
 
@@ -299,11 +379,13 @@ colcon build \
 source install/setup.bash
 ```
 
-A setuptools warning related to `pytest-repeat` may appear during the build. If the packages finish successfully, this warning does not indicate a build failure.
+A setuptools warning related to `pytest-repeat` may appear during the build.
+
+If all packages finish successfully, this warning does not indicate a build failure.
 
 ---
 
-# 7. Start the Excavator in SIM Mode
+# 8. Start an Excavator in SIM Mode
 
 **Terminal 1**
 
@@ -315,24 +397,25 @@ source install/setup.bash
 
 ros2 launch excavator_control \
   excavator.launch.py \
-  mode:=sim
+  mode:=sim \
+  robot_name:=excavator1
 ```
 
-The excavator server should report:
+The expected node namespace is:
 
 ```text
-[SIM MODE] ExcavatorTrajectoryServer ready
+/excavator1
 ```
 
-The Action interface should be:
+The Action interface is:
 
 ```text
-/upper_arm_controller/follow_joint_trajectory
+/excavator1/upper_arm_controller/follow_joint_trajectory
 ```
 
 ---
 
-# 8. Start a Mock Dump Truck
+# 9. Start a Mock Dump Truck
 
 **Terminal 2**
 
@@ -363,11 +446,9 @@ and publishes status on:
 
 The mock server loads the real waypoint YAML but does not command motors or require odometry.
 
-It simulates completion of each waypoint and returns a successful `ExecuteRobotTask` result.
-
 ---
 
-# 9. Run a Mixed-Robot Software Scenario
+# 10. Run a Mixed-Robot Software Scenario
 
 **Terminal 3**
 
@@ -390,88 +471,45 @@ The expected execution sequence is:
 SCENARIO START
       │
       ▼
-truck1_arrive
-      │
-      ▼
-Dump Truck Mock
+Truck 1 Mock
       │
       ▼
 SUCCESS
       │
       ▼
-excavator_load
-      │
-      ▼
-Excavator SIM
+Excavator 1 SIM
       │
       ▼
 EXCAVATOR SUCCESS
       │
       ▼
-truck1_depart
-      │
-      ▼
-Dump Truck Mock
-      │
-      ▼
-SUCCESS
+Next Step
       │
       ▼
 SCENARIO COMPLETE
 ```
 
-This workflow has been successfully tested as a software-only mixed-robot integration test.
-
----
-
-# 10. Excavator-Only Scenario Test
-
-An excavator-only scenario is also available:
-
-```text
-operations/scenarios/excavator_sim_test.yaml
-```
-
-Run:
-
-```bash
-ros2 run construction_site_control \
-  scenario_manager_node \
-  --ros-args \
-  -p scenario:=excavator_sim_test.yaml
-```
-
-This is useful for testing:
-
-```text
-Scenario YAML
-      │
-      ▼
-Scenario Manager
-      │
-      ▼
-FollowJointTrajectory
-      │
-      ▼
-Excavator SIM
-```
-
-without starting any dump truck components.
-
 ---
 
 # 11. Direct Excavator Command Center Test
 
-The Command Center also contains a standalone excavator Action client:
+The Command Center contains a standalone excavator Action client.
+
+For Excavator 3:
 
 ```bash
 ros2 run construction_site_control \
   excavator_task_client \
-  boom_small_test.yaml \
-  --seconds-per-waypoint 2.0
+  operations/excavator/trajectories/three_joint_Mason.yaml \
+  --robot excavator3 \
+  --seconds-per-waypoint 5.0
 ```
 
-This bypasses the Scenario Manager and is useful for isolating the interface between the Command Center and `excavator_control`.
+This bypasses the Scenario Manager and directly targets:
+
+```text
+/excavator3/upper_arm_controller/follow_joint_trajectory
+```
 
 The execution path is:
 
@@ -481,25 +519,32 @@ Excavator Trajectory YAML
           ▼
 excavator_task_client
           │
+          │ --robot excavator3
           ▼
-FollowJointTrajectory
+/excavator3/upper_arm_controller/
+follow_joint_trajectory
           │
           ▼
-excavator_control
+Excavator 3
 ```
+
+An explicit Action name can also be supplied through the client's Action-name override when required.
 
 ---
 
 # 12. Physical Robot Operation
 
-The same high-level interfaces are used for both simulation and physical operation.
+The same high-level interfaces are used for simulation and physical operation.
 
-For the excavator:
+For excavators:
 
 ```text
 Command Center
       │
       │ FollowJointTrajectory
+      ▼
+/excavatorN/...
+      │
       ▼
 excavator_control
       │
@@ -508,12 +553,15 @@ excavator_control
       └── PI mode
 ```
 
-For the dump trucks:
+For dump trucks:
 
 ```text
 Command Center
       │
       │ ExecuteRobotTask
+      ▼
+/truckN/execute_robot_task
+      │
       ▼
 dump_truck_action_server
       │
@@ -524,41 +572,31 @@ dump_truck_control
 Physical Dump Truck
 ```
 
-The purpose of this architecture is to keep scenario definitions independent from the underlying hardware implementation.
+The Command Center therefore remains independent of the low-level hardware implementation.
 
 ---
 
 # 13. ROS 2 Network Architecture
 
-Zenoh (`rmw_zenoh_cpp`) is the primary ROS 2 communication method for physical multi-machine operation.
+Zenoh (`rmw_zenoh_cpp`) is the standard ROS 2 communication method for physical multi-machine operation.
 
-The normal network topology is:
+The normal topology is:
 
 ```text
                               ROS PC
                                  │
-                            Zenoh Router
+                           Zenoh Router
                                  │
-              ┌──────────────────┼──────────────────┐
-              │                  │                  │
-              ▼                  ▼                  ▼
-          Dumptruck1         Dumptruck3        Excavator1
-              Pi                 Pi                 Pi
-```
-
-The system uses:
-
-```text
-ONE Zenoh Router
-      +
-ONE Command Center
-      +
-N Physical Robot Clients
+          ┌──────────────────────┼──────────────────────┐
+          │                      │                      │
+          ▼                      ▼                      ▼
+      Dumptruck1            Excavator1             Excavator3
+          Pi                    Pi                     Pi
 ```
 
 The robot Raspberry Pis do not need to be configured as direct ROS peers of one another.
 
-Each robot connects independently to the router running on the ROS PC.
+Each robot independently connects to the router running on the ROS PC.
 
 Network configuration is managed through:
 
@@ -569,17 +607,10 @@ network/
 └── setup_network.sh
 ```
 
-The files have the following roles:
+Normal operation uses:
 
 ```text
-devices.sh
-    Central device-name and IP registry
-
 setup_zenoh.sh
-    Primary Zenoh configuration
-
-setup_network.sh
-    DDS-based fallback configuration
 ```
 
 Detailed network instructions are provided in:
@@ -592,7 +623,7 @@ network/README.md
 
 # 14. Standard Physical System Startup
 
-The recommended physical system uses only two primary ROS PC terminals.
+The recommended physical system uses:
 
 ```text
 ROS PC
@@ -600,7 +631,7 @@ ROS PC
 └── T2 → Command Center
 
 Robot Raspberry Pis
-└── T1 → Robot Hardware
+└── T1 → Robot Hardware / Robot Server
 ```
 
 ---
@@ -626,9 +657,7 @@ Do not start one router per robot.
 
 ---
 
-## Robot Raspberry Pi
-
-Each physical robot independently connects to the same router.
+## Dump Truck Raspberry Pi
 
 Example for Truck 1:
 
@@ -645,7 +674,11 @@ sudo pigpiod
 ros2 launch dump_truck_bringup truck1_pi.launch.py
 ```
 
-Example for Excavator 1:
+---
+
+## Excavator Raspberry Pi
+
+Example for Excavator 3:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -653,30 +686,34 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-source network/setup_zenoh.sh client excavator1
+source network/setup_zenoh.sh client excavator3
 
 sudo pigpiod
 
 ros2 launch excavator_control \
   excavator.launch.py \
-  mode:=pi
+  mode:=pi \
+  robot_name:=excavator3 \
+  config:=$(ros2 pkg prefix excavator_control)/share/excavator_control/config/excavator3.yaml
 ```
 
-Additional dump trucks use their corresponding device profiles.
+The Zenoh client profile:
 
-For example:
-
-```bash
-source network/setup_zenoh.sh client dumptruck3
+```text
+excavator3
 ```
 
-```bash
-source network/setup_zenoh.sh client dumptruck4
+configures the machine's network connection.
+
+The launch argument:
+
+```text
+robot_name:=excavator3
 ```
 
-```bash
-source network/setup_zenoh.sh client dumptruck5
-```
+configures the ROS 2 namespace.
+
+These are separate configuration concepts and should normally use the corresponding robot identity.
 
 ---
 
@@ -715,81 +752,52 @@ ros2 launch construction_site_control command_center.launch.py \
   start_scenario_manager:=false
 ```
 
-This allows the ROS PC to start:
-
-```text
-Overhead Camera
-AprilTag Detection
-Dump Truck Odometry
-Tag/Odom Fusion
-Dump Truck Action Servers
-```
-
-while all selected physical trucks communicate through the shared Zenoh router.
+The excavator Action Server runs on the excavator Raspberry Pi and does not need to be launched by the Command Center.
 
 ---
 
-# 15. Multi-Robot Communication
+# 15. Verify Multi-Robot Communication
 
-Adding more robots does not require additional ROS PC routers.
+From a Zenoh-configured ROS PC terminal:
 
-For example:
+```bash
+echo "===== NODES ====="
+ros2 node list
 
-```text
-ROS PC
-│
-├── Zenoh Router
-│
-└── Command Center
-       │
-       ├── Truck 1
-       ├── Truck 3
-       ├── Truck 4
-       ├── Truck 5
-       └── Excavator 1
+echo
+echo "===== ACTIONS ====="
+ros2 action list
+
+echo
+echo "===== EXCAVATOR 3 ====="
+ros2 action info \
+  /excavator3/upper_arm_controller/follow_joint_trajectory
+
+echo
+echo "===== EXCAVATOR 3 JOINT STATES ====="
+ros2 topic info \
+  /excavator3/joint_states
 ```
 
-Each physical robot runs its own hardware-side process.
-
-The high-level Command Center remains centralized on the ROS PC.
-
-Conceptually:
+For an active Excavator 3 server, the expected interfaces include:
 
 ```text
-                      Scenario Manager
-                            │
-             ┌──────────────┴──────────────┐
-             │                             │
-             ▼                             ▼
-      Dump Truck Actions           Excavator Action
-             │                             │
-             ▼                             ▼
-       Zenoh Router                  Zenoh Router
-             │                             │
-             └──────────────┬──────────────┘
-                            ▼
-                    Physical Robots
+/excavator3/excavator_trajectory_server
+/excavator3/upper_arm_controller/follow_joint_trajectory
+/excavator3/joint_states
 ```
 
-Both robot types share the same ROS 2 communication backbone.
+The Action should report one Action server.
 
 ---
 
 # 16. Current Communication Status
 
-The current project-wide physical communication configuration uses:
+Normal physical operation uses:
 
 ```text
 RMW_IMPLEMENTATION=rmw_zenoh_cpp
 ```
-
-Normal operation should use:
-
-```bash
-source network/setup_zenoh.sh ...
-```
-
-rather than manually exporting middleware configuration.
 
 Zenoh has been validated for:
 
@@ -800,75 +808,40 @@ Zenoh has been validated for:
 - overhead camera communication
 - AprilTag detection messages
 - compressed camera image transport
-- excavator `/joint_states`
-- excavator `FollowJointTrajectory` Action discovery
-- excavator `FollowJointTrajectory` Action payload transport
+- namespaced excavator `/joint_states`
+- namespaced excavator `FollowJointTrajectory`
+- excavator Action goal transport
+- excavator Action feedback
+- excavator Action results
 - Command Center integration
-- physical dump truck end-to-end operation
-
-The physical dump truck stack has been successfully operated through the following path:
-
-```text
-Overhead Camera
-      │
-      ▼
-AprilTag Detection
-      │
-      ▼
-Localization / Fused Odom
-      │
-      ▼
-Waypoint / Action Control
-      │
-      ▼
-/<truck>/cmd_vel
-      │
-      ▼
-Dump Truck Raspberry Pi
-      │
-      ▼
-Physical Robot Motion
-```
+- physical dump truck operation
+- physical Truck 1 + Excavator 3 scenario routing
 
 Zenoh is therefore the standard communication layer for the integrated system.
 
 ---
 
-# 17. Previous DDS Testing
-
-Earlier system integration work evaluated DDS-based communication.
-
-CycloneDDS successfully transported excavator ROS 2 topics and `FollowJointTrajectory` Actions during testing.
-
-Other DDS configurations showed communication or library compatibility issues on some machines.
-
-These results remain useful for development history and troubleshooting, but CycloneDDS-specific configuration is no longer the standard startup method.
-
-The previous DDS helper remains available at:
-
-```text
-network/setup_network.sh
-```
-
-for fallback and future communication testing.
-
----
-
-# 18. Running a Scenario Automatically
+# 17. Running a Scenario Automatically
 
 The Command Center can start the Scenario Manager automatically.
 
-Example:
+For example, the Truck 1 + Excavator 3 integration scenario can be started with:
 
 ```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-pc
+
 ros2 launch construction_site_control command_center.launch.py \
-  trucks:=truck1,truck3,truck4,truck5 \
+  trucks:=truck1 \
   start_camera:=true \
   start_apriltag:=true \
   start_localization:=true \
   start_action_servers:=true \
   start_scenario_manager:=true \
-  scenario:=truck1_3_4_5.yaml
+  scenario:=dtex_integration.yaml
 ```
 
 Scenario files are resolved from:
@@ -877,17 +850,17 @@ Scenario files are resolved from:
 operations/scenarios/
 ```
 
-It is generally preferable to first start the system with:
+For new physical scenarios, it is generally preferable to first start the system with:
 
-```bash
+```text
 start_scenario_manager:=false
 ```
 
-verify communication and robot state, and then execute a scenario.
+and verify the intended robot interfaces before initiating physical motion.
 
 ---
 
-# 19. Scenario Step Types
+# 18. Scenario Step Types
 
 The Scenario Manager currently supports:
 
@@ -906,8 +879,6 @@ topic_publish
 
 Executes a robot task through `ExecuteRobotTask`.
 
-Example:
-
 ```yaml
 - id: truck1_route
   type: task
@@ -922,14 +893,18 @@ Example:
 
 Executes an excavator trajectory through `FollowJointTrajectory`.
 
-Example:
-
 ```yaml
-- id: excavator_load
+- id: excavator3_move
   type: excavator_trajectory
-  robot: excavator1
-  task_file: boom_small_test.yaml
-  seconds_per_waypoint: 2.0
+  robot: excavator3
+  task_file: three_joint_Mason.yaml
+  seconds_per_waypoint: 5.0
+```
+
+Unless explicitly overridden, the Action is resolved from the robot name:
+
+```text
+/excavator3/upper_arm_controller/follow_joint_trajectory
 ```
 
 ---
@@ -937,8 +912,6 @@ Example:
 ## `wait`
 
 Introduces a timed delay.
-
-Example:
 
 ```yaml
 - id: wait_after_truck
@@ -964,14 +937,16 @@ Example:
       task_type: waypoint
       task_file: truck1_waypoints.yaml
 
-    - id: truck3_move
-      type: task
-      robot: truck3
-      task_type: waypoint
-      task_file: truck3_waypoints.yaml
+    - id: excavator3_move
+      type: excavator_trajectory
+      robot: excavator3
+      task_file: three_joint_Mason.yaml
+      seconds_per_waypoint: 5.0
 ```
 
 The scenario continues after all parallel child steps complete successfully.
+
+Different excavators can be represented by different `robot` names and therefore different Action namespaces.
 
 ---
 
@@ -979,38 +954,70 @@ The scenario continues after all parallel child steps complete successfully.
 
 Waits for a ROS topic value to satisfy a condition.
 
-This can be used to coordinate execution based on robot state.
+This allows scenario execution to depend on robot or system state.
 
-Example conceptual flow:
+Conceptually:
 
 ```text
-Truck 1 Action
+Robot State Topic
       │
       ▼
-Truck 1 status
+Condition Evaluation
       │
-      ▼
-state == completed
+      ├── satisfied → then
       │
-      ▼
-Condition satisfied
-      │
-      ▼
-Next task
+      └── otherwise → else
 ```
 
 ---
 
 ## `topic_publish`
 
-Publishes directly to a ROS topic.
+Publishes directly to a supported ROS topic.
 
-This is useful for:
+This can be used for:
 
-- simple actuator commands
-- direct test commands
+- simple commands
 - integration testing
 - operations that do not require an Action abstraction
+
+Robot-busy protection in the Scenario Manager prevents direct commands from being used to bypass an active Action for the same robot.
+
+---
+
+# 19. Action Success and Failure Behavior
+
+The Scenario Manager waits for Action results before advancing sequential scenarios.
+
+For excavator trajectories:
+
+```text
+Scenario Manager
+      │
+      ▼
+FollowJointTrajectory Goal
+      │
+      ▼
+Excavator Server
+      │
+      ├── SUCCESS
+      │      │
+      │      ▼
+      │   Next Step
+      │
+      └── FAILURE
+             │
+             ▼
+        Scenario Abort
+```
+
+This behavior has been physically tested with Excavator 3.
+
+The namespaced Action successfully received the trajectory and returned continuous trajectory feedback through the Command Center.
+
+When the physical excavator did not reach the final joint tolerance, the excavator server returned a trajectory failure and the Scenario Manager correctly aborted the scenario rather than reporting success.
+
+Physical tracking or calibration failures should therefore be distinguished from Command Center routing failures.
 
 ---
 
@@ -1018,7 +1025,7 @@ This is useful for:
 
 ## Verified
 
-The following software and integration components have been successfully tested:
+The following software and integration functionality has been tested:
 
 ```text
 Excavator configuration loading
@@ -1033,9 +1040,11 @@ FollowJointTrajectory goal validation
 
 Excavator SIM Action Server
 
-Excavator Action client
+Namespaced Excavator Actions
 
-Excavator launch file
+Namespaced Excavator joint-state topics
+
+Excavator Action client
 
 Command Center → Excavator SIM
 
@@ -1043,60 +1052,46 @@ Scenario Manager → Excavator SIM
 
 Mock Dump Truck Action Server
 
-Mixed Dump Truck + Excavator scenario
+Mixed Dump Truck + Excavator software scenario
 
 Zenoh ROS 2 communication
 
-Excavator FollowJointTrajectory over Zenoh
+Namespaced FollowJointTrajectory over Zenoh
 
 Dump Truck ROS communication over Zenoh
 
 Overhead Camera and AprilTag communication over Zenoh
 
 Physical Dump Truck end-to-end operation over Zenoh
+
+Physical Truck 1 + Excavator 3 Command Center routing
+
+Excavator Action feedback propagation
+
+Excavator Action failure propagation
+
+Scenario abort following robot Action failure
 ```
 
-The excavator package currently passes:
+The physical Excavator 3 Boom, Arm, and Bucket joints have been individually exercised using closed-loop position control.
 
-```text
-24 tests
-0 errors
-0 failures
-0 skipped
-```
-
-A software-only mixed-robot scenario has also been successfully executed:
-
-```text
-Mock Dump Truck
-      │
-      ▼
-Excavator SIM
-      │
-      ▼
-Mock Dump Truck
-      │
-      ▼
-SCENARIO COMPLETE
-```
+Swing has not yet been validated.
 
 ---
 
-## Pending Hardware Validation
+## Remaining Excavator Hardware Work
 
-Physical closed-loop excavator control is **not yet considered fully validated**.
+Remaining Excavator 3 work includes:
 
-Additional hardware work is still required for:
+- final Arm tracking/tolerance tuning
+- final Bucket feedback/control tuning
+- continued coordinated multi-joint trajectory validation
+- Swing sensing and control validation
+- final physical motion and safety validation
 
-- boom sensor/calibration behavior
-- swing sensing/control behavior
-- physical trajectory execution
-- multi-joint physical trajectories
-- final physical safety and motion validation
+These are robot-level hardware/control items rather than unresolved Command Center routing or Zenoh architecture issues.
 
-These items are separate from the Command Center and communication architecture.
-
-Software development and integration can continue using SIM mode while the remaining excavator hardware work is addressed.
+> **Do not command Excavator 3 Swing until it has been separately validated.**
 
 ---
 
@@ -1123,28 +1118,16 @@ Use the system in progressively higher-risk stages:
 6. Integrated Construction Scenario
 ```
 
-Do not move directly from an untested trajectory or scenario to full multi-robot physical operation.
+For new excavator trajectories:
 
-For excavator trajectories in particular, validate the YAML before physical execution.
+1. Inspect the trajectory YAML.
+2. Confirm the target excavator.
+3. Validate the trajectory against that machine's configuration.
+4. Confirm the intended joints.
+5. Confirm the physical workspace is clear.
+6. Begin with conservative physical motion.
 
-Example:
-
-```bash
-ros2 run excavator_control \
-  validate_excavator_trajectory \
-  robots/excavator/excavator_control/config/excavator1.yaml \
-  operations/excavator/trajectories/boom_small_test.yaml
-```
-
-Expected:
-
-```text
-TRAJECTORY IS VALID
-```
-
-YAML validation confirms configuration and trajectory consistency.
-
-It does not prove that physical sensor calibration or resulting robot motion is correct.
+For Excavator 3, do not include Swing until it has been separately validated.
 
 ---
 
@@ -1153,33 +1136,31 @@ It does not prove that physical sensor calibration or resulting robot motion is 
 The current architecture supports:
 
 ```text
-Operational YAML
-      │
-      ▼
-Scenario Manager
-      │
-      ├─────────────────────────────┐
-      │                             │
-      ▼                             ▼
-ExecuteRobotTask             FollowJointTrajectory
-      │                             │
-      ▼                             ▼
-Dump Truck                       Excavator
-      │                             │
-Mock / Physical                SIM / Physical
-      │                             │
-      └──────────────┬──────────────┘
-                     ▼
-                Zenoh Network
+                         Operational YAML
+                               │
+                               ▼
+                         Scenario Manager
+                               │
+             ┌─────────────────┴─────────────────┐
+             │                                   │
+             ▼                                   ▼
+      ExecuteRobotTask                  FollowJointTrajectory
+             │                                   │
+             ▼                                   ▼
+     /truckN/execute_robot_task        /excavatorN/upper_arm_controller/
+                                          follow_joint_trajectory
+             │                                   │
+             ▼                                   ▼
+         Dump Truck                           Excavator
+             │                                   │
+      Mock / Physical                     SIM / Physical
+             │                                   │
+             └─────────────────┬─────────────────┘
+                               ▼
+                          Zenoh Network
 ```
 
-The current project direction is:
-
-1. Continue refining scenario definitions.
-2. Expand validated operational trajectories.
-3. Complete physical excavator calibration and closed-loop testing.
-4. Continue multi-robot physical integration.
-5. Execute integrated construction scenarios.
+This architecture allows scenario logic to identify robots by name while robot-specific ROS 2 interfaces remain isolated by namespace.
 
 ---
 
@@ -1218,4 +1199,4 @@ ROS network configuration
 
 The general design principle is:
 
-> The Command Center coordinates robot tasks, while robot-specific packages remain responsible for executing the physical motion.
+> The Command Center coordinates robot tasks, while robot-specific packages remain responsible for executing physical motion.

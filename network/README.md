@@ -2,24 +2,31 @@
 
 This directory contains the shared network configuration for the CIC Construction Robotics platform.
 
-The platform uses **Zenoh (`rmw_zenoh_cpp`) as the primary ROS 2 communication method** between the ROS PC and robot computers.
-
-The network configuration is designed around a simple architecture:
+The standard ROS 2 communication architecture for the platform uses:
 
 ```text
-                    ROS PC
-                       │
-                 Zenoh Router
-                       │
-       ┌───────────────┼───────────────┐
-       │               │               │
-       ▼               ▼               ▼
-  Dump Truck Pi   Dump Truck Pi   Excavator Pi
+rmw_zenoh_cpp
+```
+
+between the ROS PC and robot computers.
+
+The network is organized around one shared Zenoh router:
+
+```text
+                              ROS PC
+                                 │
+                           Zenoh Router
+                                 │
+          ┌──────────────────────┼──────────────────────┐
+          │                      │                      │
+          ▼                      ▼                      ▼
+      Dump Truck            Excavator 1            Excavator 3
+          Pi                    Pi                     Pi
 ```
 
 Only one Zenoh router is required for the construction robotics system.
 
-All ROS PC applications and robot computers connect to this router.
+All ROS PC applications and physical robot computers communicate through this shared architecture.
 
 ---
 
@@ -38,8 +45,14 @@ The files have the following responsibilities:
 | File | Purpose |
 |---|---|
 | `devices.sh` | Central registry of device names and assigned IP addresses |
-| `setup_zenoh.sh` | Primary ROS 2 network configuration using Zenoh |
-| `setup_network.sh` | DDS-based network configuration retained as an alternative/fallback |
+| `setup_zenoh.sh` | Standard ROS 2 network configuration using Zenoh |
+| `setup_network.sh` | Legacy DDS configuration retained for specialized troubleshooting |
+
+Normal physical operation uses:
+
+```text
+setup_zenoh.sh
+```
 
 ---
 
@@ -57,21 +70,14 @@ The file defines addresses for:
 - Dump truck Raspberry Pis
 - Excavator Raspberry Pis
 
-For example:
-
-```bash
-ROS_PC="..."
-
-DUMPTRUCK_01="..."
-DUMPTRUCK_02="..."
-
-EXCAVATOR_01="..."
-EXCAVATOR_02="..."
-```
-
 The purpose of this file is to provide a **single source of truth for network addresses**.
 
-Do not hard-code device IP addresses into launch files, operational YAML files, or normal startup instructions.
+Do not hard-code device IP addresses into:
+
+- launch files
+- operational YAML files
+- robot-control code
+- normal startup instructions
 
 When a device address changes, update:
 
@@ -83,24 +89,30 @@ rather than modifying multiple files throughout the repository.
 
 ---
 
-# 3. Primary Communication Method: Zenoh
+# 3. Standard Communication Architecture: Zenoh
 
-The primary ROS 2 communication method for the platform is:
+The standard ROS 2 middleware for the physical platform is:
 
 ```text
-rmw_zenoh_cpp
+RMW_IMPLEMENTATION=rmw_zenoh_cpp
 ```
 
-Zenoh is used to provide communication between the ROS PC and the robot computers.
+The ROS PC hosts one Zenoh router:
 
-The standard topology is:
+```text
+rmw_zenohd
+```
+
+Robot computers connect to this router as Zenoh clients.
+
+ROS 2 applications running on the ROS PC also connect to the local router as clients.
 
 ```text
                          ROS PC
                             │
                        rmw_zenohd
                             │
-                      Zenoh Router
+                       Zenoh Router
                             │
           ┌─────────────────┼─────────────────┐
           │                 │                 │
@@ -109,23 +121,31 @@ The standard topology is:
           Pi                Pi                Pi
 ```
 
-The ROS PC hosts the Zenoh router.
+The robot computers do not need to be configured as direct ROS peers of one another.
 
-Robot computers connect to the ROS PC as Zenoh clients.
+The intended topology is:
 
-ROS nodes running on the ROS PC also connect to the local Zenoh router as clients.
+```text
+1 ROS PC
+    │
+    ├── 1 Zenoh Router
+    │
+    ├── ROS PC Applications
+    │
+    └── N Robot Clients
+```
 
 ---
 
-# 4. Standard Network Setup
+# 4. Network Setup Script
 
-Network configuration is performed using:
+Normal network configuration is performed using:
 
 ```text
 network/setup_zenoh.sh
 ```
 
-The script must be **sourced** rather than executed because it configures environment variables in the current terminal.
+The script must be **sourced**, because it configures environment variables in the current terminal.
 
 Correct:
 
@@ -138,6 +158,20 @@ Do not use:
 ```bash
 ./network/setup_zenoh.sh ...
 ```
+
+The general forms are:
+
+```bash
+source network/setup_zenoh.sh router
+```
+
+for the ROS PC router terminal, and:
+
+```bash
+source network/setup_zenoh.sh client <device>
+```
+
+for ROS PC application terminals and physical robot computers.
 
 ---
 
@@ -162,13 +196,15 @@ ros2 run rmw_zenoh_cpp rmw_zenohd
 
 Only **one Zenoh router** should normally be running for the construction robotics system.
 
-The router terminal must remain running while the robots are being operated.
+Do not start a separate router for each robot.
+
+The router terminal must remain running while the physical system is being operated.
 
 ---
 
 # 6. ROS PC — Configure Application Terminals
 
-ROS nodes running on the ROS PC should connect to the local Zenoh router.
+ROS 2 nodes running on the ROS PC connect to the local Zenoh router.
 
 In each ROS PC application terminal:
 
@@ -201,7 +237,9 @@ ros2 launch construction_site_control command_center.launch.py \
 
 Each physical robot computer connects to the same Zenoh router running on the ROS PC.
 
-The user specifies the robot by name.
+The device name identifies which computer is being configured.
+
+Examples:
 
 ## Dump Truck 1
 
@@ -239,33 +277,94 @@ source network/setup_zenoh.sh client dumptruck5
 source network/setup_zenoh.sh client excavator1
 ```
 
-Additional configured excavators follow the same pattern.
+## Excavator 3
 
-The device name identifies the computer being configured.
+```bash
+source network/setup_zenoh.sh client excavator3
+```
 
-It does **not** mean that the robot connects directly to that device's own IP address.
+Additional configured robots follow the same pattern.
+
+The device name selects the appropriate network configuration.
+
+It does **not** mean that the robot connects directly to its own IP address.
 
 Remote robot clients connect to the Zenoh router running on the ROS PC.
 
 ---
 
-# 8. Multiple Robots
+# 8. Zenoh Device Profile vs. ROS 2 Namespace
+
+The Zenoh device profile and ROS 2 namespace are related to robot identity, but they serve different purposes.
+
+For example, on Excavator 3:
+
+```bash
+source network/setup_zenoh.sh client excavator3
+```
+
+configures the **network connection** for the Excavator 3 computer.
+
+When the excavator server is launched with:
+
+```text
+robot_name:=excavator3
+```
+
+the launch argument configures the **ROS 2 namespace**.
+
+The resulting ROS interfaces include:
+
+```text
+/excavator3/excavator_trajectory_server
+/excavator3/upper_arm_controller/follow_joint_trajectory
+/excavator3/joint_states
+```
+
+Conceptually:
+
+```text
+Zenoh Device Profile
+        │
+        ▼
+How does this computer connect?
+        │
+        ▼
+       Zenoh
+
+
+ROS robot_name
+        │
+        ▼
+What ROS namespace does this robot use?
+        │
+        ▼
+/excavator3/...
+```
+
+The network profile does not automatically create the ROS namespace.
+
+For normal operation, the corresponding robot identity should be used consistently for both.
+
+---
+
+# 9. Multiple Robots
 
 Multiple robots share the same Zenoh router.
 
 For example:
 
 ```text
-                         ROS PC
-                            │
-                       Zenoh Router
-                            │
-          ┌─────────┬───────┼───────┬─────────┐
-          │         │       │       │         │
-          ▼         ▼       ▼       ▼         ▼
-       Truck 1   Truck 2 Truck 3 Truck 4   Truck 5
-          │         │       │       │         │
-          Pi        Pi      Pi      Pi        Pi
+                              ROS PC
+                                 │
+                           Zenoh Router
+                                 │
+       ┌──────────┬──────────┬───┴────┬──────────┐
+       │          │          │        │          │
+       ▼          ▼          ▼        ▼          ▼
+    Truck 1    Truck 3    Truck 4  Truck 5   Excavator 3
+       │          │          │        │          │
+       Pi         Pi         Pi       Pi         Pi
 ```
 
 Each robot computer independently runs:
@@ -274,7 +373,7 @@ Each robot computer independently runs:
 source network/setup_zenoh.sh client <device>
 ```
 
-For example, on four different Raspberry Pis:
+For example:
 
 ```bash
 # Dumptruck1 Raspberry Pi
@@ -287,38 +386,17 @@ source network/setup_zenoh.sh client dumptruck3
 ```
 
 ```bash
-# Dumptruck4 Raspberry Pi
-source network/setup_zenoh.sh client dumptruck4
+# Excavator3 Raspberry Pi
+source network/setup_zenoh.sh client excavator3
 ```
 
-```bash
-# Dumptruck5 Raspberry Pi
-source network/setup_zenoh.sh client dumptruck5
-```
-
-All four clients connect to the same ROS PC router.
+All clients connect to the same ROS PC router.
 
 The robots do not need to be configured as direct peers of one another.
 
-The general architecture is therefore:
-
-```text
-1 ROS PC
-    │
-    ├── 1 Zenoh Router
-    │
-    └── ROS PC Applications
-             │
-             ├── Perception
-             ├── Localization
-             └── Command Center
-
-1 Zenoh client configuration per robot computer
-```
-
 ---
 
-# 9. Environment Variables
+# 10. Environment Variables
 
 `setup_zenoh.sh` configures the ROS 2 communication environment automatically.
 
@@ -355,34 +433,6 @@ instead.
 
 ---
 
-# 10. Switching From DDS to Zenoh
-
-A terminal may contain environment variables from a previous DDS configuration.
-
-`setup_zenoh.sh` removes DDS-specific settings that should not remain active when using Zenoh.
-
-These include:
-
-```text
-ROS_STATIC_PEERS
-ROS_AUTOMATIC_DISCOVERY_RANGE
-ROS_AUTOMATIC_DISCOVERY
-```
-
-This reduces configuration conflicts when switching between communication backends.
-
-When changing ROS middleware implementations, opening a fresh terminal is still recommended when practical.
-
-If ROS 2 CLI discovery behaves unexpectedly after changing middleware, restart the ROS 2 daemon:
-
-```bash
-ros2 daemon stop
-```
-
-The daemon will restart automatically when required.
-
----
-
 # 11. Verify Zenoh Configuration
 
 After sourcing the Zenoh setup script, inspect the environment with:
@@ -393,55 +443,71 @@ echo $ROS_DOMAIN_ID
 echo $ZENOH_CONFIG_OVERRIDE
 ```
 
-For a robot client, the expected middleware is:
+Expected middleware:
 
 ```text
 rmw_zenoh_cpp
 ```
 
-and the ROS domain should be:
+Expected ROS domain:
 
 ```text
 10
 ```
 
-The Zenoh configuration should indicate client mode and a connection endpoint to the ROS PC router.
+For a remote robot client, the Zenoh configuration should indicate client mode and an endpoint for the ROS PC router.
+
+For a ROS PC application terminal, the client connects to the router running locally on the ROS PC.
 
 ---
 
 # 12. Verify ROS 2 Communication
 
-After the router and clients are running, verify ROS 2 discovery with:
+After the router and clients are running, check ROS 2 discovery:
 
 ```bash
 ros2 node list
 ```
 
-and:
+Check topics:
 
 ```bash
 ros2 topic list
 ```
 
-For a dump truck system, expected topics may include:
+Check Actions:
+
+```bash
+ros2 action list
+```
+
+The exact interfaces depend on which components are currently running.
+
+For example, a Truck 1 system may expose:
 
 ```text
-/detections
 /truck1/cmd_vel
 /truck1/wheel_states
 /truck1/odom
 /truck1/fused_odom
+/truck1/execute_robot_task
 ```
 
-The exact topic list depends on which components are currently running.
+An active Excavator 3 server should expose interfaces including:
+
+```text
+/excavator3/excavator_trajectory_server
+/excavator3/joint_states
+/excavator3/upper_arm_controller/follow_joint_trajectory
+```
 
 ---
 
-# 13. Verify Topic Data
+# 13. Verify Topic and Action Data
 
-Seeing a topic name confirms discovery, but it does not necessarily confirm that useful data is being transferred.
+Seeing a topic or Action name confirms ROS 2 discovery, but it does not by itself confirm that useful data is being transferred.
 
-Check the actual message stream.
+Check actual messages when appropriate.
 
 For example:
 
@@ -449,11 +515,26 @@ For example:
 ros2 topic echo /detections
 ```
 
-For frequency-based checks:
+Dump Truck 1 wheel-state frequency:
 
 ```bash
 ros2 topic hz /truck1/wheel_states
 ```
+
+Excavator 3 joint feedback:
+
+```bash
+ros2 topic echo /excavator3/joint_states --once
+```
+
+Excavator 3 Action:
+
+```bash
+ros2 action info \
+  /excavator3/upper_arm_controller/follow_joint_trajectory
+```
+
+For an active Excavator 3 trajectory server, the Action should report one Action server.
 
 For image transport, compressed image topics may be useful when communicating across machines:
 
@@ -467,7 +548,7 @@ Run frequency tests for several seconds rather than relying on a single sample.
 
 # 14. ROS 2 Message Types Must Exist on Both Computers
 
-Zenoh transports ROS 2 messages between machines, but each computer still needs the ROS 2 interface definitions required to deserialize the messages it uses.
+Zenoh transports ROS 2 messages between machines, but each computer still needs the ROS 2 interface definitions required to interpret the messages it uses.
 
 For example, a computer receiving:
 
@@ -477,13 +558,21 @@ For example, a computer receiving:
 
 must have the corresponding AprilTag message definitions installed.
 
+Similarly, computers interacting with the Command Center may require:
+
+```text
+construction_site_interfaces
+```
+
+and computers interacting with excavator trajectories require the standard ROS 2 control message definitions.
+
 If ROS 2 reports an error similar to:
 
 ```text
 The message type '...' is invalid
 ```
 
-first verify that the required ROS 2 message package is installed on that computer.
+first verify that the required ROS 2 message package is installed and sourced on that computer.
 
 This is different from a network discovery problem.
 
@@ -491,9 +580,9 @@ This is different from a network discovery problem.
 
 # 15. Standard Multi-Robot Startup Pattern
 
-A typical multi-robot session uses the following terminal arrangement.
+A typical physical multi-robot session uses the following terminal arrangement.
 
-## ROS PC T1
+## ROS PC T1 — Router
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -508,7 +597,9 @@ ros2 run rmw_zenoh_cpp rmw_zenohd
 
 **Keep running.**
 
-## ROS PC T2
+---
+
+## ROS PC T2 — Applications / Command Center
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -529,7 +620,9 @@ ros2 launch construction_site_control command_center.launch.py \
 
 **Keep running.**
 
-## Dumptruck1 T1
+---
+
+## Dumptruck1 Raspberry Pi
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -544,11 +637,108 @@ ros2 launch dump_truck_bringup truck1_pi.launch.py
 
 **Keep running.**
 
-Other robot computers follow the same pattern using their own device and launch names.
+---
+
+## Excavator3 Raspberry Pi
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client excavator3
+
+sudo pigpiod
+
+ros2 launch excavator_control \
+  excavator.launch.py \
+  mode:=pi \
+  robot_name:=excavator3 \
+  config:=$(ros2 pkg prefix excavator_control)/share/excavator_control/config/excavator3.yaml
+```
+
+**Keep running.**
+
+Other robot computers follow the same pattern using their corresponding device profile and launch configuration.
 
 ---
 
-# 16. DDS Fallback
+# 16. One Router, Multiple Robot Types
+
+Dump trucks and excavators use the same communication backbone.
+
+For example:
+
+```text
+                              ROS PC
+                                 │
+                ┌────────────────┴────────────────┐
+                │                                 │
+          Zenoh Router                      ROS Applications
+                │                                 │
+       ┌────────┼─────────┐                       │
+       │        │         │                       │
+       ▼        ▼         ▼                       │
+    Truck 1  Truck 3  Excavator 3 ◄───────────────┘
+       Pi       Pi         Pi
+```
+
+No robot-specific router is required.
+
+Adding another physical robot normally requires:
+
+1. A device entry in `network/devices.sh`
+2. A valid Zenoh client profile
+3. The robot's ROS 2 packages and dependencies
+4. Robot-specific launch/configuration
+
+It does not require another Zenoh router.
+
+---
+
+# 17. Troubleshooting
+
+If ROS 2 nodes cannot communicate across machines, check the system in this order:
+
+1. Confirm that the ROS PC and robot computer are connected to the required network.
+2. Confirm that the Zenoh router is still running on the ROS PC.
+3. Confirm that the correct `setup_zenoh.sh` client profile was sourced.
+4. Confirm that `RMW_IMPLEMENTATION` is `rmw_zenoh_cpp`.
+5. Confirm that all machines use the same `ROS_DOMAIN_ID`.
+6. Confirm that the required ROS 2 message packages exist and are sourced.
+7. Check `ros2 node list`, `ros2 topic list`, and `ros2 action list`.
+8. Check actual topic data using `ros2 topic echo` or `ros2 topic hz`.
+9. For Action-based robots, inspect the expected Action with `ros2 action info`.
+
+For Excavator 3, for example:
+
+```bash
+ros2 action info \
+  /excavator3/upper_arm_controller/follow_joint_trajectory
+```
+
+If middleware configuration was previously changed in the same terminal, opening a fresh terminal is recommended.
+
+The ROS 2 daemon can also be restarted with:
+
+```bash
+ros2 daemon stop
+```
+
+Then source the ROS environment and `setup_zenoh.sh` again.
+
+For network address changes, update:
+
+```text
+network/devices.sh
+```
+
+rather than hard-coding IP addresses into launch commands.
+
+---
+
+# 18. Legacy DDS Configuration
 
 The repository retains:
 
@@ -556,71 +746,39 @@ The repository retains:
 network/setup_network.sh
 ```
 
-for DDS-based network configuration.
+for legacy DDS-based configuration and specialized troubleshooting.
 
-This is maintained as an alternative/fallback communication method.
-
-The DDS setup uses device addresses from the same:
+It uses the same device registry:
 
 ```text
 network/devices.sh
 ```
 
-registry.
+This is **not the standard communication path for normal physical robot operation**.
 
-Example:
-
-```bash
-source network/setup_network.sh dumptruck_01 dumptruck_03
-```
-
-The Zenoh and DDS setup scripts should not normally be sourced together in the same operational terminal.
-
-For normal Fall 2026 system operation, use:
+Normal Fall 2026 operation uses:
 
 ```text
-setup_zenoh.sh
+rmw_zenoh_cpp
 ```
 
-unless a lab or troubleshooting procedure explicitly specifies otherwise.
+through:
+
+```bash
+source network/setup_zenoh.sh ...
+```
+
+Do not switch a physical robot to DDS as a normal troubleshooting step.
+
+The Zenoh and legacy DDS setup scripts should not be sourced together in the same operational terminal.
 
 ---
 
-# 17. Troubleshooting
+# 19. Design Principle
 
-If ROS 2 nodes cannot communicate across machines, check the system in the following order:
+The network layer is intentionally separated from robot software.
 
-1. Confirm that the ROS PC and robot computer are connected to the required network.
-2. Confirm that the Zenoh router is still running on the ROS PC.
-3. Confirm that the correct `setup_zenoh.sh` client profile was sourced.
-4. Confirm that `RMW_IMPLEMENTATION` is `rmw_zenoh_cpp`.
-5. Confirm that all machines use the same `ROS_DOMAIN_ID`.
-6. Confirm that the required ROS 2 message packages exist on each computer.
-7. Check `ros2 node list` and `ros2 topic list`.
-8. Check actual topic data using `ros2 topic echo` or `ros2 topic hz`.
-9. If middleware was recently changed, open a fresh terminal or run:
-
-```bash
-ros2 daemon stop
-```
-
-Then repeat the network setup.
-
-For network configuration changes, update:
-
-```text
-network/devices.sh
-```
-
-rather than hard-coding new IP addresses into launch commands.
-
----
-
-# 18. Design Principle
-
-The network layer is intentionally separated from the robot software.
-
-Robot code should not need to know whether another robot is located at a particular IP address.
+Robot code should not need to know the physical IP address of another robot.
 
 Instead:
 
@@ -640,7 +798,7 @@ Network Configuration
 Physical Network
 ```
 
-This allows the robot software, perception system, and Command Center to remain largely independent from changes to the underlying physical network.
+This allows robot software, perception, and the Command Center to remain largely independent from changes to the physical network.
 
 The intended operational rule is:
 
@@ -648,4 +806,16 @@ The intended operational rule is:
 Configure the network once.
 
 Then run normal ROS 2 commands.
+```
+
+At the system level:
+
+```text
+ONE ROS PC
+    +
+ONE Zenoh Router
+    +
+ONE Command Center
+    +
+N Robot Clients
 ```

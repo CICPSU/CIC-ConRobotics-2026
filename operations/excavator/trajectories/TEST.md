@@ -2,19 +2,26 @@
 
 This guide explains how to operate **Excavator 3** using ROS 2 trajectory files.
 
-The excavator is controlled through a ROS 2 `FollowJointTrajectory` action server.  
-Tasks are defined as YAML trajectory files and sent from the ROS PC to the Raspberry Pi on the excavator through Zenoh.
+Excavator 3 is controlled through the namespaced ROS 2 `FollowJointTrajectory` Action:
 
-## Current Validation Status
+```text
+/excavator3/upper_arm_controller/follow_joint_trajectory
+```
+
+Tasks are defined as YAML trajectory files and sent from the ROS PC to the Raspberry Pi on Excavator 3 through Zenoh.
+
+---
+
+# Current Validation Status
 
 | Joint | Status | Notes |
 |---|---|---|
 | Boom | ✅ Validated | Closed-loop position control |
-| Arm | ✅ Validated | Closed-loop position control |
-| Bucket | ✅ Validated | Closed-loop position control with ADC filtering |
-| Swing | ⚠️ Not validated | **Do not command yet** |
+| Arm | ✅ Validated | Closed-loop position control; final tuning may continue |
+| Bucket | ✅ Validated | Closed-loop position control with ADC filtering; final tuning may continue |
+| Swing | ⚠️ Not validated | **Do not command** |
 
-> **Important:** Until Swing has been validated separately, do not include `swing` in trajectory files.
+> **Important:** Until Swing has been validated separately, do not include `swing` in physical Excavator 3 trajectory files.
 
 ---
 
@@ -22,19 +29,19 @@ Tasks are defined as YAML trajectory files and sent from the ROS PC to the Raspb
 
 ## Raspberry Pi — Excavator03
 
-SSH into Excavator03 and move to the repository:
+Move to the repository:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 ```
 
-Update the repository:
+Update the repository if required:
 
 ```bash
 git pull origin dev
 ```
 
-Set up ROS 2 and build the excavator package:
+Build the excavator package:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -46,7 +53,7 @@ colcon build \
 source install/setup.bash
 ```
 
-Configure Zenoh:
+Configure the Raspberry Pi as the Excavator 3 Zenoh client:
 
 ```bash
 source network/setup_zenoh.sh client excavator3
@@ -64,70 +71,97 @@ Start the Excavator 3 trajectory server:
 ros2 launch excavator_control \
   excavator.launch.py \
   mode:=pi \
+  robot_name:=excavator3 \
   config:=$(ros2 pkg prefix excavator_control)/share/excavator_control/config/excavator3.yaml
 ```
 
-Confirm that the terminal reports something similar to:
+The server should create:
 
 ```text
-Detected mode: PI
-Config: .../excavator3.yaml
-[PI MODE] PiExcavatorTrajectoryServer ready
-Action: /upper_arm_controller/follow_joint_trajectory
-Publishes feedback: /joint_states
-auto_home_on_startup=false
+/excavator3/excavator_trajectory_server
+/excavator3/upper_arm_controller/follow_joint_trajectory
+/excavator3/joint_states
 ```
 
 Leave this terminal running.
+
+The current configuration uses:
+
+```text
+auto_home_on_startup=false
+```
+
+so starting the server should not intentionally command the excavator to a home position.
 
 ---
 
 # 2. Set Up the ROS PC
 
-Open another terminal on the ROS PC:
+The Zenoh router should already be running on the ROS PC.
+
+Open a ROS PC application terminal:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
+
 source network/setup_zenoh.sh client ros-pc
 ```
 
-Check that joint feedback is available:
+Check that Excavator 3 is visible:
 
 ```bash
-ros2 topic echo /joint_states
+ros2 node list | grep excavator3
 ```
 
-You should see:
+Expected:
 
 ```text
-name:
-- swing_joint
-- boom_joint
-- arm_joint
-- bucket_joint
-position:
-- ...
-- ...
-- ...
-- ...
+/excavator3/excavator_trajectory_server
 ```
 
-Press `Ctrl+C` after confirming that feedback is being received.
+Check the Action:
+
+```bash
+ros2 action list | grep excavator3
+```
+
+Expected:
+
+```text
+/excavator3/upper_arm_controller/follow_joint_trajectory
+```
+
+Check joint feedback:
+
+```bash
+ros2 topic echo /excavator3/joint_states --once
+```
+
+The message should contain:
+
+```text
+swing_joint
+boom_joint
+arm_joint
+bucket_joint
+```
+
+Joint positions reported through `/joint_states` are in **radians**.
 
 ---
 
 # 3. Trajectory File Format
 
-Excavator tasks are stored as YAML files under:
+Excavator tasks are stored under:
 
 ```text
 operations/excavator/trajectories/
 ```
 
-A basic trajectory looks like this:
+A basic Excavator 3 trajectory looks like:
 
 ```yaml
 trajectory_name: example_task
@@ -141,7 +175,6 @@ joints:
   - bucket
 
 waypoints:
-
   - name: position_1
     positions:
       boom: -40.0
@@ -155,34 +188,71 @@ waypoints:
       bucket: 25.0
 ```
 
-Joint positions are specified in **degrees**.
+Trajectory positions are specified in **degrees**.
 
-The trajectory client converts these values and sends the corresponding ROS 2 trajectory to the excavator.
+The trajectory client converts these values to radians before creating the ROS 2 `FollowJointTrajectory` goal.
+
+Trajectories may contain all supported joints or only a subset.
+
+Joints not listed in the YAML are not included in the trajectory request.
 
 ---
 
-# 4. Run a Task
+# 4. Validate a Trajectory Before Running It
 
-For example:
+Before sending a new trajectory to Excavator 3, validate it against the Excavator 3 configuration.
+
+```bash
+ros2 run excavator_control \
+  validate_excavator_trajectory \
+  robots/excavator/excavator_control/config/excavator3.yaml \
+  operations/excavator/trajectories/<TRAJECTORY_FILE>.yaml
+```
+
+A valid trajectory should report:
+
+```text
+TRAJECTORY IS VALID
+```
+
+The validator checks software-level requirements such as:
+
+- supported joints
+- duplicate joints
+- waypoint structure
+- missing positions
+- invalid values
+- configured joint limits
+
+> Validation does not guarantee that a trajectory is physically safe. Always inspect the requested positions and the current physical excavator configuration before execution.
+
+---
+
+# 5. Run a Task
+
+Send a trajectory to Excavator 3 with:
 
 ```bash
 ros2 run excavator_control \
   excavator_trajectory_client \
-  operations/excavator/trajectories/example_task.yaml \
+  operations/excavator/trajectories/<TRAJECTORY_FILE>.yaml \
+  --robot excavator3 \
   --seconds-per-waypoint 5.0
+```
+
+The `--robot excavator3` argument targets:
+
+```text
+/excavator3/upper_arm_controller/follow_joint_trajectory
 ```
 
 `--seconds-per-waypoint` controls the requested duration between waypoints.
 
-For initial testing, use relatively slow movements such as:
-
-```bash
---seconds-per-waypoint 5.0
-```
+For initial physical testing, use conservative motions and sufficient time between waypoints.
 
 ---
 
-# 5. Example — Boom Only
+# 6. Example — Boom Only
 
 ```yaml
 trajectory_name: boom_test
@@ -194,7 +264,6 @@ joints:
   - boom
 
 waypoints:
-
   - name: boom_position_1
     positions:
       boom: -40.0
@@ -210,12 +279,13 @@ Run:
 ros2 run excavator_control \
   excavator_trajectory_client \
   operations/excavator/trajectories/boom_test.yaml \
+  --robot excavator3 \
   --seconds-per-waypoint 5.0
 ```
 
 ---
 
-# 6. Example — Arm Only
+# 7. Example — Arm Only
 
 ```yaml
 trajectory_name: arm_test
@@ -227,7 +297,6 @@ joints:
   - arm
 
 waypoints:
-
   - name: arm_position_1
     positions:
       arm: 100.0
@@ -237,9 +306,19 @@ waypoints:
       arm: 95.0
 ```
 
+Run:
+
+```bash
+ros2 run excavator_control \
+  excavator_trajectory_client \
+  operations/excavator/trajectories/arm_test.yaml \
+  --robot excavator3 \
+  --seconds-per-waypoint 5.0
+```
+
 ---
 
-# 7. Example — Bucket Only
+# 8. Example — Bucket Only
 
 ```yaml
 trajectory_name: bucket_test
@@ -251,7 +330,6 @@ joints:
   - bucket
 
 waypoints:
-
   - name: bucket_position_1
     positions:
       bucket: 15.0
@@ -261,9 +339,19 @@ waypoints:
       bucket: 10.0
 ```
 
+Run:
+
+```bash
+ros2 run excavator_control \
+  excavator_trajectory_client \
+  operations/excavator/trajectories/bucket_test.yaml \
+  --robot excavator3 \
+  --seconds-per-waypoint 5.0
+```
+
 ---
 
-# 8. Example — Boom + Arm + Bucket
+# 9. Example — Boom + Arm + Bucket
 
 Multiple joints can be included in the same task.
 
@@ -280,7 +368,6 @@ joints:
   - bucket
 
 waypoints:
-
   - name: pose_1
     positions:
       boom: -40.0
@@ -306,14 +393,15 @@ Run:
 ros2 run excavator_control \
   excavator_trajectory_client \
   operations/excavator/trajectories/three_joint_test.yaml \
+  --robot excavator3 \
   --seconds-per-waypoint 5.0
 ```
 
 ---
 
-# 9. Creating a Multi-Step Excavation Task
+# 10. Creating a Multi-Step Excavation Task
 
-More complex tasks can be created by adding additional waypoints.
+More complex tasks can be created by adding waypoints.
 
 For example:
 
@@ -322,6 +410,7 @@ trajectory_name: excavation_demo
 
 description: >
   Example multi-step excavator motion using boom, arm, and bucket.
+  Swing is intentionally excluded.
 
 joints:
   - boom
@@ -329,7 +418,6 @@ joints:
   - bucket
 
 waypoints:
-
   - name: ready
     positions:
       boom: -40.0
@@ -361,16 +449,18 @@ waypoints:
       bucket: 15.0
 ```
 
-These values are only an example structure. Verify that every requested position is appropriate for the physical configuration before running a new task.
+These values are examples only.
+
+Verify every requested position against the current physical configuration before running a new trajectory.
 
 ---
 
-# 10. Check Current Joint Positions
+# 11. Check Current Joint Positions
 
-Before creating a new trajectory, check the current excavator configuration:
+Check the current Excavator 3 joint feedback with:
 
 ```bash
-ros2 topic echo /joint_states
+ros2 topic echo /excavator3/joint_states --once
 ```
 
 The joint order is:
@@ -384,46 +474,47 @@ bucket_joint
 
 The reported positions are in **radians**.
 
-For quick conversion:
+For conversion:
 
 ```text
 degrees = radians × 180 / π
 ```
 
-When developing a new task, start from the current physical configuration and use small changes first.
+When developing a new task, compare the current physical position with the requested trajectory and begin with small changes.
 
 ---
 
-# 11. Recommended Workflow for a New Task
+# 12. Recommended Workflow for a New Task
 
-When testing a new task:
+For a new physical Excavator 3 trajectory:
 
-1. Start the Excavator 3 ROS server.
-2. Confirm `/joint_states`.
-3. Check the current physical position of the excavator.
-4. Create a new YAML trajectory.
-5. Start with small joint changes (approximately 5°).
-6. Run the trajectory slowly.
-7. Verify that each joint moves in the expected direction.
-8. Increase the motion range gradually.
-9. Add additional waypoints only after the individual motions are confirmed.
+1. Start the Excavator 3 trajectory server.
+2. Confirm `/excavator3/joint_states`.
+3. Inspect the current physical position.
+4. Create or edit the trajectory YAML.
+5. Confirm that `swing` is not included.
+6. Validate the trajectory against `excavator3.yaml`.
+7. Begin with small joint changes.
+8. Run the trajectory with conservative waypoint timing.
+9. Verify the expected direction and behavior of each joint.
+10. Increase motion range or complexity only after the initial motion is confirmed.
 
-Do not start with a large multi-joint motion on an untested trajectory.
+Do not begin with a large coordinated motion when testing a new trajectory.
 
 ---
 
-# 12. Safety
+# 13. Safety
 
-Always keep the excavator workspace clear before sending a trajectory.
+Always keep the excavator workspace clear before sending a physical trajectory.
 
-Immediately stop execution if:
+Immediately stop testing if:
 
-- a joint moves in the wrong direction;
-- an unexpected joint moves;
-- the excavator begins oscillating;
-- a joint approaches a mechanical limit;
-- abnormal motor or mechanical noise occurs;
-- the commanded motion does not stop as expected.
+- a joint moves in the wrong direction
+- an unexpected joint moves
+- the excavator begins oscillating
+- a joint approaches a mechanical limit
+- abnormal motor or mechanical noise occurs
+- motion does not stop as expected
 
 Use:
 
@@ -431,7 +522,7 @@ Use:
 Ctrl+C
 ```
 
-to stop the running trajectory/client when necessary.
+to interrupt the running process when necessary.
 
 For the current Excavator 3 configuration:
 
@@ -439,92 +530,136 @@ For the current Excavator 3 configuration:
 
 ---
 
-# 13. Useful ROS 2 Commands
+# 14. Useful ROS 2 Commands
 
-Check available topics:
-
-```bash
-ros2 topic list
-```
-
-Monitor joint positions:
+Check the Excavator 3 node:
 
 ```bash
-ros2 topic echo /joint_states
+ros2 node list | grep excavator3
 ```
 
-Check the trajectory action:
+Check Excavator 3 topics:
 
 ```bash
-ros2 action list
+ros2 topic list | grep excavator3
 ```
 
-Expected action:
+Check joint feedback:
+
+```bash
+ros2 topic echo /excavator3/joint_states --once
+```
+
+Check Excavator 3 Actions:
+
+```bash
+ros2 action list | grep excavator3
+```
+
+Expected:
 
 ```text
-/upper_arm_controller/follow_joint_trajectory
+/excavator3/upper_arm_controller/follow_joint_trajectory
 ```
 
-Inspect it:
+Inspect the Action:
 
 ```bash
-ros2 action info /upper_arm_controller/follow_joint_trajectory
+ros2 action info \
+  /excavator3/upper_arm_controller/follow_joint_trajectory
 ```
+
+With the physical server running, the Action should report:
+
+```text
+Action servers: 1
+```
+
+---
+
+# 15. Current Excavator 3 Joint Configuration
+
+| Joint | ADC Channel | Physical Validation |
+|---|---:|---|
+| Boom | A1 | ✅ Closed-loop tested |
+| Arm | A2 | ✅ Closed-loop tested |
+| Bucket | A0 | ✅ Closed-loop tested with ADC filtering |
+| Swing | A3 | ⚠️ Not validated |
+
+Current physical ADC mapping:
+
+```text
+A0 → Bucket
+A1 → Boom
+A2 → Arm
+A3 → Swing
+```
+
+> The Swing channel is listed for configuration reference only. Swing motion has not yet been physically validated.
 
 ---
 
 # Quick Start
 
-### Excavator03
+## Excavator03 Raspberry Pi
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
+
 source network/setup_zenoh.sh client excavator3
+
+sudo pigpiod
 
 ros2 launch excavator_control \
   excavator.launch.py \
   mode:=pi \
+  robot_name:=excavator3 \
   config:=$(ros2 pkg prefix excavator_control)/share/excavator_control/config/excavator3.yaml
 ```
 
-### ROS PC
+## ROS PC
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
+
 source network/setup_zenoh.sh client ros-pc
 ```
 
-Check feedback:
+Check communication:
 
 ```bash
-ros2 topic echo /joint_states
+ros2 action info \
+  /excavator3/upper_arm_controller/follow_joint_trajectory
+
+ros2 topic echo \
+  /excavator3/joint_states \
+  --once
 ```
 
-Run a trajectory:
+Validate a trajectory:
+
+```bash
+ros2 run excavator_control \
+  validate_excavator_trajectory \
+  robots/excavator/excavator_control/config/excavator3.yaml \
+  operations/excavator/trajectories/<TRAJECTORY_FILE>.yaml
+```
+
+Run it:
 
 ```bash
 ros2 run excavator_control \
   excavator_trajectory_client \
   operations/excavator/trajectories/<TRAJECTORY_FILE>.yaml \
+  --robot excavator3 \
   --seconds-per-waypoint 5.0
 ```
-
----
-
-## Current Excavator 3 Joint Configuration
-
-| Joint | ADC Channel | Validated |
-|---|---:|---:|
-| Boom | A1 | ✅ |
-| Arm | A2 | ✅ |
-| Bucket | A0 | ✅ |
-| Swing | A3 | ⚠️ Not yet |
 
 **Validated operating joints: Boom + Arm + Bucket**
 
