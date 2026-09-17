@@ -35,10 +35,23 @@ EXCAVATOR_JOINT_NAMES = {
     'bucket': 'bucket_joint',
 }
 
-DEFAULT_EXCAVATOR_ACTION = (
-    '/upper_arm_controller/'
-    'follow_joint_trajectory'
-)
+def get_excavator_action_name(
+    robot_name,
+):
+    robot_name = str(
+        robot_name
+    ).strip().strip('/')
+
+    if not robot_name:
+        raise RuntimeError(
+            'Excavator robot name cannot be empty.'
+        )
+
+    return (
+        f'/{robot_name}/'
+        'upper_arm_controller/'
+        'follow_joint_trajectory'
+    )
 
 
 def resolve_scenario_yaml(scenario_name):
@@ -1167,12 +1180,26 @@ class ScenarioManager(Node):
             )
         ).strip()
 
-        action_name = str(
+        explicit_action_name = str(
             step.get(
                 'action_name',
-                DEFAULT_EXCAVATOR_ACTION,
+                '',
             )
         ).strip()
+
+        if explicit_action_name:
+
+            action_name = (
+                explicit_action_name
+            )
+
+        else:
+
+            action_name = (
+                get_excavator_action_name(
+                    robot_name
+                )
+            )
 
         try:
 

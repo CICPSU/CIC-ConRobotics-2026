@@ -1,0 +1,14 @@
+scenario_name: truck1_excavator3_integration_test
+
+steps:
+  - id: truck1_short_move
+    type: task
+    robot: truck1
+    task_type: waypoint
+    task_file: truck1_integration_test.yaml
+
+  - id: excavator3_move
+    type: excavator_trajectory
+    robot: excavator3
+    task_file: three_joint_Mason.yaml
+    seconds_per_waypoint: 5.0

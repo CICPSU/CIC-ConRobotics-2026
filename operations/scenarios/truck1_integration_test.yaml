@@ -1,0 +1,8 @@
+scenario_name: truck1_integration_test
+
+steps:
+  - id: truck1_short_move
+    type: task
+    robot: truck1
+    task_type: waypoint
+    task_file: truck1_integration_test.yaml

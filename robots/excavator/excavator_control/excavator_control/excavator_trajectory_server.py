@@ -516,8 +516,8 @@ class SimTrajectoryServer(Node):
     def __init__(self) -> None:
         super().__init__("excavator_trajectory_server_sim")
 
-        self.declare_parameter("action_name",       "/upper_arm_controller/follow_joint_trajectory")
-        self.declare_parameter("command_topic",     "/joint_command")
+        self.declare_parameter("action_name",       "upper_arm_controller/follow_joint_trajectory")
+        self.declare_parameter("command_topic",     "joint_command")
         self.declare_parameter("publish_hz",        60.0)
         self.declare_parameter("hold_last_seconds", 0.30)
         self.declare_parameter("feedback_hz",       10.0)
@@ -1381,7 +1381,7 @@ class PiExcavatorTrajectoryServer(Node):
         # YAML values are defaults. ROS parameters can still override them.
         self.declare_parameter(
             "action_name",
-            "/upper_arm_controller/follow_joint_trajectory",
+            "upper_arm_controller/follow_joint_trajectory",
         )
         self.declare_parameter("publish_hz", float(control.get("publish_hz", 10.0)))
         self.declare_parameter("control_hz", float(control.get("control_hz", 50.0)))
@@ -1718,7 +1718,7 @@ class PiExcavatorTrajectoryServer(Node):
             reliability=ReliabilityPolicy.RELIABLE,
         )
         #this creates a ros publisher and pushes the current joint states to ROS so it can see the joints position in radians 
-        self.joint_state_pub = self.create_publisher(JointState, "/joint_states", qos)
+        self.joint_state_pub = self.create_publisher(JointState, "joint_states", qos)
         # creates the server that listens for movement commands
         #actually run the command, decide if valid, and stop if canceled
         self.action_server = ActionServer(

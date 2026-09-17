@@ -29,14 +29,55 @@ ROS_JOINT_NAMES = {
     'bucket': 'bucket_joint',
 }
 
-DEFAULT_ACTION_NAME = (
-    '/upper_arm_controller/'
-    'follow_joint_trajectory'
-)
-
 
 class ExcavatorTaskError(RuntimeError):
     """Raised when an excavator task cannot be executed."""
+
+
+def normalize_robot_name(robot_name):
+    """
+    Normalize a robot name for use in ROS names.
+
+    Examples:
+        excavator3   -> excavator3
+        /excavator3 -> excavator3
+    """
+
+    normalized = str(
+        robot_name
+    ).strip().strip('/')
+
+    if not normalized:
+        raise ExcavatorTaskError(
+            'Robot name cannot be empty.'
+        )
+
+    return normalized
+
+
+def get_excavator_action_name(
+    robot_name,
+):
+    """
+    Build the namespaced FollowJointTrajectory
+    Action name for an excavator.
+
+    Example:
+        excavator3
+        ->
+        /excavator3/upper_arm_controller/
+        follow_joint_trajectory
+    """
+
+    robot_name = normalize_robot_name(
+        robot_name
+    )
+
+    return (
+        f'/{robot_name}/'
+        'upper_arm_controller/'
+        'follow_joint_trajectory'
+    )
 
 
 def resolve_trajectory_yaml(
@@ -102,8 +143,9 @@ def load_trajectory(
 
     This loader intentionally keeps the Command Center
     independent from the excavator_control Python package.
+
     The excavator Action Server remains responsible for
-    final goal validation against machine limits.
+    final machine-specific goal validation.
     """
 
     with open(
@@ -303,22 +345,54 @@ class ExcavatorTaskClient(Node):
 
     def __init__(
         self,
-        action_name=DEFAULT_ACTION_NAME,
+        robot_name,
+        action_name=None,
     ):
+        self.robot_name = normalize_robot_name(
+            robot_name
+        )
+
+        node_name = (
+            f'{self.robot_name}_task_client'
+        )
+
         super().__init__(
-            'excavator_task_client'
+            node_name
         )
 
-        self.action_name = (
-            action_name
-        )
-
-        self.action_client = (
-            ActionClient(
-                self,
-                FollowJointTrajectory,
-                self.action_name,
+        if action_name:
+            self.action_name = str(
+                action_name
+            ).strip()
+        else:
+            self.action_name = (
+                get_excavator_action_name(
+                    self.robot_name
+                )
             )
+
+        if not self.action_name:
+            raise ExcavatorTaskError(
+                'Excavator Action name '
+                'cannot be empty.'
+            )
+
+        self.action_client = ActionClient(
+            self,
+            FollowJointTrajectory,
+            self.action_name,
+        )
+
+        self.get_logger().info(
+            'Excavator Task Client initialized.'
+        )
+
+        self.get_logger().info(
+            f'  Robot  : {self.robot_name}'
+        )
+
+        self.get_logger().info(
+            f'  Action : {self.action_name}'
         )
 
     def feedback_callback(
@@ -354,7 +428,7 @@ class ExcavatorTaskClient(Node):
         ]
 
         self.get_logger().info(
-            'Excavator feedback: '
+            f'{self.robot_name} feedback: '
             f'desired={desired_deg} deg, '
             f'actual={actual_deg} deg'
         )
@@ -436,12 +510,14 @@ class ExcavatorTaskClient(Node):
             raise ExcavatorTaskError(
                 'Excavator Action server '
                 'was not found within '
-                '10 seconds.'
+                '10 seconds: '
+                f'{self.action_name}'
             )
 
         self.get_logger().info(
             'Sending excavator trajectory '
-            f'"{trajectory["trajectory_name"]}"'
+            f'"{trajectory["trajectory_name"]}" '
+            f'to {self.robot_name}'
         )
 
         self.get_logger().info(
@@ -555,6 +631,18 @@ def parse_args():
     )
 
     parser.add_argument(
+        '--robot',
+        default='excavator1',
+        help=(
+            'Excavator robot name. '
+            'The Action name is generated '
+            'automatically from this value. '
+            'Example: excavator3. '
+            'Default: excavator1.'
+        ),
+    )
+
+    parser.add_argument(
         '--seconds-per-waypoint',
         type=float,
         default=3.0,
@@ -566,10 +654,14 @@ def parse_args():
 
     parser.add_argument(
         '--action-name',
-        default=DEFAULT_ACTION_NAME,
+        default=None,
         help=(
-            'Excavator FollowJointTrajectory '
-            'Action name.'
+            'Optional explicit '
+            'FollowJointTrajectory Action name. '
+            'If omitted, the Action name is '
+            'generated as '
+            '/<robot>/upper_arm_controller/'
+            'follow_joint_trajectory.'
         ),
     )
 
@@ -600,6 +692,11 @@ def main(args=None):
         trajectory = load_trajectory(
             trajectory_path
         )
+
+        robot_name = normalize_robot_name(
+            cli_args.robot
+        )
+
     except (
         OSError,
         yaml.YAMLError,
@@ -615,15 +712,17 @@ def main(args=None):
         args=args
     )
 
-    node = ExcavatorTaskClient(
-        action_name=(
-            cli_args.action_name
-        )
-    )
-
+    node = None
     success = False
 
     try:
+        node = ExcavatorTaskClient(
+            robot_name=robot_name,
+            action_name=(
+                cli_args.action_name
+            ),
+        )
+
         success = (
             node.execute_trajectory(
                 trajectory=trajectory,
@@ -634,17 +733,25 @@ def main(args=None):
         )
 
     except ExcavatorTaskError as exc:
-        node.get_logger().error(
-            str(exc)
-        )
+        if node is not None:
+            node.get_logger().error(
+                str(exc)
+            )
+        else:
+            print(
+                f'ERROR: {exc}',
+                file=sys.stderr,
+            )
 
     except KeyboardInterrupt:
-        node.get_logger().warning(
-            'Excavator task interrupted.'
-        )
+        if node is not None:
+            node.get_logger().warning(
+                'Excavator task interrupted.'
+            )
 
     finally:
-        node.destroy_node()
+        if node is not None:
+            node.destroy_node()
 
         if rclpy.ok():
             rclpy.shutdown()

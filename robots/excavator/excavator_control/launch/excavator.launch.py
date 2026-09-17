@@ -10,10 +10,8 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    package_share = (
-        get_package_share_directory(
-            "excavator_control"
-        )
+    package_share = get_package_share_directory(
+        "excavator_control"
     )
 
     default_config = os.path.join(
@@ -22,17 +20,10 @@ def generate_launch_description():
         "excavator1.yaml",
     )
 
-    mode = LaunchConfiguration(
-        "mode"
-    )
-
-    config = LaunchConfiguration(
-        "config"
-    )
-
-    auto_home = LaunchConfiguration(
-        "auto_home_on_startup"
-    )
+    mode = LaunchConfiguration("mode")
+    config = LaunchConfiguration("config")
+    robot_name = LaunchConfiguration("robot_name")
+    auto_home = LaunchConfiguration("auto_home_on_startup")
 
     return LaunchDescription(
         [
@@ -55,24 +46,29 @@ def generate_launch_description():
             ),
 
             DeclareLaunchArgument(
+                "robot_name",
+                default_value="excavator1",
+                description=(
+                    "Robot name used as the ROS 2 namespace. "
+                    "Examples: excavator1, excavator3."
+                ),
+            ),
+
+            DeclareLaunchArgument(
                 "auto_home_on_startup",
                 default_value="false",
                 description=(
-                    "Automatically move the "
-                    "excavator to the configured "
-                    "home position at startup. "
+                    "Automatically move the excavator to the "
+                    "configured home position at startup. "
                     "Default: false."
                 ),
             ),
 
             Node(
                 package="excavator_control",
-                executable=(
-                    "excavator_trajectory_server"
-                ),
-                name=(
-                    "excavator_trajectory_server"
-                ),
+                executable="excavator_trajectory_server",
+                name="excavator_trajectory_server",
+                namespace=robot_name,
                 output="screen",
                 arguments=[
                     "--mode",
@@ -82,9 +78,7 @@ def generate_launch_description():
                 ],
                 parameters=[
                     {
-                        "auto_home_on_startup": (
-                            auto_home
-                        ),
+                        "auto_home_on_startup": auto_home,
                     }
                 ],
             ),
