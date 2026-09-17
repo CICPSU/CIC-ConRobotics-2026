@@ -2012,30 +2012,39 @@ class PiExcavatorTrajectoryServer(Node):
             time.sleep(control_dt)
 
         # Final settle
-        final_target = waypoints[-1].positions # gets the final target positions from the last waypoint 
+        #
+        # Final success is checked PER JOINT using cfg.tolerance_rad.
+        # This allows different final tolerances for boom, arm, and bucket.
+        final_target = waypoints[-1].positions
         settle_start = time.monotonic()
-        while time.monotonic() - settle_start < 1.0: # gives robot one extra second to settle into the final phase 
-            max_err = 0.0 # tracks error from all joints 
+        final_errors: Dict[str, float] = {}
+
+        while time.monotonic() - settle_start < 1.0:
             plans = {}
-            for jn, tgt in zip(joint_names, final_target): # commands each joint until its final target 
+            final_errors = {}
+
+            for jn, tgt in zip(joint_names, final_target):
                 _, err, _, direction, pwm = self.joints[jn].plan_toward_target(tgt)
                 plans[jn] = (direction, pwm, err)
-                max_err = max(max_err, abs(err)) # stores worst joint
+                final_errors[jn] = abs(err)
 
             duty = self._apply_plans(plans)
             swing_raw = getattr(swing, "_last_valid_raw", None) if swing else None
+
+            tolerance_status = ", ".join(
+                f"{jn}: err={math.degrees(final_errors[jn]):.2f}deg "
+                f"tol={math.degrees(self.joints[jn].cfg.tolerance_rad):.2f}deg"
+                for jn in joint_names
+            )
             self.get_logger().info(
-                f"[PI] duty={duty} max_err={max_err:.3f} swing_raw={swing_raw}"
+                f"[PI] duty={duty} final=[{tolerance_status}] "
+                f"swing_raw={swing_raw}"
             )
 
             if swing is not None and "swing_joint" in plans:
                 d, p, e = plans["swing_joint"]
-                requested_target = getattr(
-                    swing, "_last_requested_target_rad", None
-                )
-                effective_target = getattr(
-                    swing, "_last_effective_target_rad", None
-                )
+                requested_target = getattr(swing, "_last_requested_target_rad", None)
+                effective_target = getattr(swing, "_last_effective_target_rad", None)
                 current_pos = swing._last_position_rad
 
                 requested_deg = (
@@ -2056,34 +2065,41 @@ class PiExcavatorTrajectoryServer(Node):
                     f"dir={d:+d} pwm={p} raw={swing_raw} duty={duty}"
                 )
 
-            # The settle loop was reporting SUCCESSFUL even with a latched
-            # fault: plan_toward_target() returns direction 0 once faulted,
-            # so the motor stops, max_err never shrinks, the loop times out
-            # after 1s and falls through to goal_handle.succeed(). Silent
-            # wrong answer. Abort here too.
             if swing is not None and getattr(swing, "_swing_fault", None):
                 self.get_logger().error(f"[PI] SWING WATCHDOG: {swing._swing_fault}")
                 self._stop_all()
                 goal_handle.abort()
                 return FollowJointTrajectory.Result()
 
-            if max_err <= self.goal_tolerance_rad:
+            all_within_tolerance = all(
+                final_errors[jn] <= self.joints[jn].cfg.tolerance_rad
+                for jn in joint_names
+            )
+            if all_within_tolerance:
                 break
+
             time.sleep(control_dt)
 
-        if self.stop_on_goal_finish: # stop the motors if trajectory finises
+        if self.stop_on_goal_finish:
             self._stop_all()
 
-        # Do not report success merely because the settle timer expired.
-        # Success means the physical joints actually reached the final target
-        # within the configured goal tolerance.
-        if max_err > self.goal_tolerance_rad:
+        failed_joints = [
+            jn for jn in joint_names
+            if final_errors.get(jn, float("inf"))
+            > self.joints[jn].cfg.tolerance_rad
+        ]
+
+        if failed_joints:
+            failure_details = "; ".join(
+                f"{jn}: error={math.degrees(final_errors[jn]):.2f} deg, "
+                f"tolerance={math.degrees(self.joints[jn].cfg.tolerance_rad):.2f} deg"
+                for jn in failed_joints
+            )
             goal_handle.abort()
             result.error_code = FollowJointTrajectory.Result.GOAL_TOLERANCE_VIOLATED
             result.error_string = (
                 "Final target not reached within settle timeout: "
-                f"max error {max_err:.3f} rad exceeds "
-                f"goal tolerance {self.goal_tolerance_rad:.3f} rad"
+                + failure_details
             )
             self.get_logger().error(f"[PI] {result.error_string}")
             return result

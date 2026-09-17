@@ -142,8 +142,8 @@ joint_control:
     max_pwm: 255
     kick_pwm: 180
 
-    tolerance_rad: 0.052
-    stop_tolerance_rad: 0.035
+    tolerance_rad: 0.052 # 3 degrees
+    stop_tolerance_rad: 0.035 # 2 degrees
 
   arm:
     kp: 120.0
@@ -160,5 +160,5 @@ joint_control:
     max_pwm: 150
     kick_pwm: 80
 
-    tolerance_rad: 0.105 # 6 degrees
-    stop_tolerance_rad: 0.087 # 5 degrees
+    tolerance_rad: 0.175 # 10 degrees
+    stop_tolerance_rad: 0.140 # 8 degrees
