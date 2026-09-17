@@ -6,27 +6,47 @@
 #
 # Usage:
 #
-#   ROS PC - Zenoh router:
+#   Zenoh router:
 #     source network/setup_zenoh.sh router
+#     source network/setup_zenoh.sh router ros-pc
+#     source network/setup_zenoh.sh router ros-backup-pc
 #
-#   ROS PC - ROS 2 nodes:
-#     source network/setup_zenoh.sh client ros-pc
+#   ROS 2 client:
+#     source network/setup_zenoh.sh client <device>
+#     source network/setup_zenoh.sh client <device> <router-device>
 #
-#   Dump trucks:
-#     source network/setup_zenoh.sh client dumptruck1
-#     source network/setup_zenoh.sh client dumptruck2
-#     source network/setup_zenoh.sh client dumptruck3
-#     source network/setup_zenoh.sh client dumptruck4
-#     source network/setup_zenoh.sh client dumptruck5
+# Examples:
 #
-#   Excavators:
-#     source network/setup_zenoh.sh client excavator1
+#   Normal configuration - ROS PC is router:
+#     source network/setup_zenoh.sh router ros-pc
+#     source network/setup_zenoh.sh client ros-pc ros-pc
+#     source network/setup_zenoh.sh client dumptruck1 ros-pc
+#     source network/setup_zenoh.sh client excavator3 ros-pc
+#
+#   Backup configuration - Backup ROS PC is router:
+#     source network/setup_zenoh.sh router ros-backup-pc
+#     source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
+#     source network/setup_zenoh.sh client dumptruck1 ros-backup-pc
+#     source network/setup_zenoh.sh client excavator3 ros-backup-pc
+#
+# Backward compatibility:
+#
+#   If no router device is specified, ros-pc is used.
+#
+#     source network/setup_zenoh.sh router
+#     source network/setup_zenoh.sh client excavator3
+#
+#   are equivalent to:
+#
+#     source network/setup_zenoh.sh router ros-pc
+#     source network/setup_zenoh.sh client excavator3 ros-pc
 #
 # This script:
 #   1. Loads device addresses from devices.sh
 #   2. Sets ROS_DOMAIN_ID
 #   3. Sets RMW_IMPLEMENTATION=rmw_zenoh_cpp
-#   4. Configures the Zenoh router/client connection
+#   4. Selects the Zenoh router
+#   5. Configures the Zenoh router/client connection
 #
 # IMPORTANT:
 #   This script must be sourced:
@@ -64,34 +84,32 @@ if [ "$#" -lt 1 ]; then
     echo "ERROR: Zenoh role was not specified."
     echo
     echo "Usage:"
-    echo "  source network/setup_zenoh.sh router"
-    echo "  source network/setup_zenoh.sh client <device>"
+    echo "  source network/setup_zenoh.sh router [router-device]"
+    echo "  source network/setup_zenoh.sh client <device> [router-device]"
+    echo
+    echo "Router devices:"
+    echo "  ros-pc"
+    echo "  ros-backup-pc"
     echo
     echo "Examples:"
-    echo "  source network/setup_zenoh.sh router"
-    echo "  source network/setup_zenoh.sh client ros-pc"
-    echo "  source network/setup_zenoh.sh client dumptruck1"
-    echo "  source network/setup_zenoh.sh client excavator1"
+    echo "  source network/setup_zenoh.sh router ros-pc"
+    echo "  source network/setup_zenoh.sh router ros-backup-pc"
+    echo "  source network/setup_zenoh.sh client excavator3 ros-pc"
+    echo "  source network/setup_zenoh.sh client excavator3 ros-backup-pc"
     return 1 2>/dev/null || exit 1
 fi
 
 
 ROLE="$1"
-DEVICE_NAME="${2:-}"
 
 
 # ------------------------------------------------------------
 # Resolve device name to IP address
 #
-# User-facing names are intentionally simple:
-#
-#   ros-pc
-#   dumptruck1
-#   dumptruck2
-#   excavator1
+# User-facing names are intentionally simple.
 #
 # Existing underscore-style names are also accepted for
-# backward compatibility with setup_network.sh.
+# backward compatibility.
 # ------------------------------------------------------------
 
 resolve_device_ip() {
@@ -106,7 +124,7 @@ resolve_device_ip() {
             echo "${ROS_Laptop}"
             ;;
 
-        ros-laptop-backup|ros_laptop_backup)
+        ros-backup-pc|ros_backup_pc|ros-laptop-backup|ros_laptop_backup)
             echo "${ROS_Laptop_Backup}"
             ;;
 
@@ -155,6 +173,30 @@ resolve_device_ip() {
 
 
 # ------------------------------------------------------------
+# Normalize router device name
+# ------------------------------------------------------------
+
+normalize_router_name() {
+
+    case "$1" in
+
+        ros-pc|ros_pc)
+            echo "ros-pc"
+            ;;
+
+        ros-backup-pc|ros_backup_pc|ros-laptop-backup|ros_laptop_backup)
+            echo "ros-backup-pc"
+            ;;
+
+        *)
+            return 1
+            ;;
+
+    esac
+}
+
+
+# ------------------------------------------------------------
 # Common ROS 2 / Zenoh settings
 # ------------------------------------------------------------
 
@@ -164,10 +206,6 @@ export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 
 # ------------------------------------------------------------
 # Remove DDS-specific environment variables
-#
-# These may remain in the shell if setup_network.sh was sourced
-# previously. They are not used by rmw_zenoh_cpp and should not
-# remain active when switching network backends.
 # ------------------------------------------------------------
 
 unset ROS_STATIC_PEERS
@@ -184,28 +222,59 @@ case "${ROLE}" in
     router)
 
         # ----------------------------------------------------
+        # Arguments
+        #
+        # Default router:
+        #   ros-pc
+        #
+        # Optional:
+        #   ros-backup-pc
+        # ----------------------------------------------------
+
+        ROUTER_NAME="${2:-ros-pc}"
+
+        NORMALIZED_ROUTER_NAME="$(normalize_router_name "${ROUTER_NAME}")"
+
+        if [ $? -ne 0 ] || [ -z "${NORMALIZED_ROUTER_NAME}" ]; then
+            echo "ERROR: Invalid Zenoh router device: ${ROUTER_NAME}"
+            echo
+            echo "Available router devices:"
+            echo "  ros-pc"
+            echo "  ros-backup-pc"
+            return 1 2>/dev/null || exit 1
+        fi
+
+        ROUTER_NAME="${NORMALIZED_ROUTER_NAME}"
+
+        ROUTER_IP="$(resolve_device_ip "${ROUTER_NAME}")"
+
+        if [ $? -ne 0 ] || [ -z "${ROUTER_IP}" ]; then
+            echo "ERROR: Could not resolve router IP: ${ROUTER_NAME}"
+            return 1 2>/dev/null || exit 1
+        fi
+
+
+        # ----------------------------------------------------
         # Zenoh Router
         #
-        # The central router runs on ROS_PC.
+        # rmw_zenohd runs on the selected router machine.
         #
         # No ZENOH_CONFIG_OVERRIDE is required for rmw_zenohd.
-        # ROS nodes running on this same machine should use:
-        #
-        #   source network/setup_zenoh.sh client ros-pc
-        #
-        # in their own terminals.
         # ----------------------------------------------------
 
         unset ZENOH_CONFIG_OVERRIDE
 
         export CIC_ZENOH_ROLE="router"
-        export CIC_ZENOH_DEVICE="ros-pc"
+        export CIC_ZENOH_DEVICE="${ROUTER_NAME}"
+        export CIC_ZENOH_ROUTER="${ROUTER_NAME}"
+        export CIC_ZENOH_ROUTER_IP="${ROUTER_IP}"
+
 
         echo
         echo "Zenoh router environment configured"
         echo "----------------------------------------"
-        echo "Device             : ros-pc"
-        echo "Router IP          : ${ROS_PC}"
+        echo "Router device      : ${ROUTER_NAME}"
+        echo "Router IP          : ${ROUTER_IP}"
         echo "ROS_DOMAIN_ID      : ${ROS_DOMAIN_ID}"
         echo "RMW_IMPLEMENTATION : ${RMW_IMPLEMENTATION}"
         echo "----------------------------------------"
@@ -220,6 +289,17 @@ case "${ROLE}" in
     client)
 
         # ----------------------------------------------------
+        # Client arguments
+        #
+        # $2 = client device
+        # $3 = router device (optional, default ros-pc)
+        # ----------------------------------------------------
+
+        DEVICE_NAME="${2:-}"
+        ROUTER_NAME="${3:-ros-pc}"
+
+
+        # ----------------------------------------------------
         # Client requires a device name
         # ----------------------------------------------------
 
@@ -227,15 +307,20 @@ case "${ROLE}" in
             echo "ERROR: Client device was not specified."
             echo
             echo "Usage:"
-            echo "  source network/setup_zenoh.sh client <device>"
+            echo "  source network/setup_zenoh.sh client <device> [router-device]"
             echo
             echo "Examples:"
-            echo "  source network/setup_zenoh.sh client ros-pc"
-            echo "  source network/setup_zenoh.sh client dumptruck1"
-            echo "  source network/setup_zenoh.sh client excavator1"
+            echo "  source network/setup_zenoh.sh client ros-pc ros-pc"
+            echo "  source network/setup_zenoh.sh client dumptruck1 ros-pc"
+            echo "  source network/setup_zenoh.sh client excavator3 ros-pc"
+            echo "  source network/setup_zenoh.sh client excavator3 ros-backup-pc"
             return 1 2>/dev/null || exit 1
         fi
 
+
+        # ----------------------------------------------------
+        # Resolve client device
+        # ----------------------------------------------------
 
         DEVICE_IP="$(resolve_device_ip "${DEVICE_NAME}")"
 
@@ -245,6 +330,7 @@ case "${ROLE}" in
             echo "Available examples:"
             echo "  ros-pc"
             echo "  ros-laptop"
+            echo "  ros-backup-pc"
             echo "  dumptruck1"
             echo "  dumptruck2"
             echo "  dumptruck3"
@@ -259,40 +345,80 @@ case "${ROLE}" in
 
 
         # ----------------------------------------------------
-        # ROS PC connects to local router.
-        #
-        # All remote machines connect to ROS_PC.
+        # Resolve router device
         # ----------------------------------------------------
+
+        NORMALIZED_ROUTER_NAME="$(normalize_router_name "${ROUTER_NAME}")"
+
+        if [ $? -ne 0 ] || [ -z "${NORMALIZED_ROUTER_NAME}" ]; then
+            echo "ERROR: Invalid Zenoh router device: ${ROUTER_NAME}"
+            echo
+            echo "Available router devices:"
+            echo "  ros-pc"
+            echo "  ros-backup-pc"
+            return 1 2>/dev/null || exit 1
+        fi
+
+        ROUTER_NAME="${NORMALIZED_ROUTER_NAME}"
+
+        ROUTER_IP="$(resolve_device_ip "${ROUTER_NAME}")"
+
+        if [ $? -ne 0 ] || [ -z "${ROUTER_IP}" ]; then
+            echo "ERROR: Could not resolve router IP: ${ROUTER_NAME}"
+            return 1 2>/dev/null || exit 1
+        fi
+
+
+        # ----------------------------------------------------
+        # Determine router endpoint
+        #
+        # If this client is running on the router machine,
+        # connect through localhost.
+        #
+        # Otherwise connect through the router's network IP.
+        # ----------------------------------------------------
+
+        DEVICE_NORMALIZED="${DEVICE_NAME}"
 
         case "${DEVICE_NAME}" in
 
-            ros-pc|ros_pc)
-
-                ROUTER_ENDPOINT="tcp/127.0.0.1:7447"
-
+            ros_pc)
+                DEVICE_NORMALIZED="ros-pc"
                 ;;
 
-            *)
-
-                ROUTER_ENDPOINT="tcp/${ROS_PC}:7447"
-
+            ros_backup_pc|ros-laptop-backup|ros_laptop_backup)
+                DEVICE_NORMALIZED="ros-backup-pc"
                 ;;
 
         esac
 
 
+        if [ "${DEVICE_NORMALIZED}" = "${ROUTER_NAME}" ]; then
+            ROUTER_ENDPOINT="tcp/127.0.0.1:7447"
+        else
+            ROUTER_ENDPOINT="tcp/${ROUTER_IP}:7447"
+        fi
+
+
+        # ----------------------------------------------------
+        # Configure rmw_zenoh_cpp client
+        # ----------------------------------------------------
+
         export ZENOH_CONFIG_OVERRIDE="mode=\"client\";connect/endpoints=[\"${ROUTER_ENDPOINT}\"]"
 
         export CIC_ZENOH_ROLE="client"
         export CIC_ZENOH_DEVICE="${DEVICE_NAME}"
+        export CIC_ZENOH_ROUTER="${ROUTER_NAME}"
+        export CIC_ZENOH_ROUTER_IP="${ROUTER_IP}"
 
 
         echo
         echo "Zenoh client environment configured"
         echo "----------------------------------------"
-        echo "Device             : ${DEVICE_NAME}"
-        echo "Device IP          : ${DEVICE_IP}"
-        echo "Router IP          : ${ROS_PC}"
+        echo "Client device      : ${DEVICE_NAME}"
+        echo "Client IP          : ${DEVICE_IP}"
+        echo "Router device      : ${ROUTER_NAME}"
+        echo "Router IP          : ${ROUTER_IP}"
         echo "Router endpoint    : ${ROUTER_ENDPOINT}"
         echo "ROS_DOMAIN_ID      : ${ROS_DOMAIN_ID}"
         echo "RMW_IMPLEMENTATION : ${RMW_IMPLEMENTATION}"

@@ -8,25 +8,31 @@ The standard ROS 2 communication architecture for the platform uses:
 rmw_zenoh_cpp
 ```
 
-between the ROS PC and robot computers.
+between the ROS application computers and robot computers.
 
-The network is organized around one shared Zenoh router:
+The network is organized around **one active Zenoh router**.
+
+The router can run on either:
+
+- the primary ROS PC: `ros-pc`
+- the backup ROS PC: `ros-backup-pc`
 
 ```text
-                              ROS PC
-                                 │
-                           Zenoh Router
-                                 │
-          ┌──────────────────────┼──────────────────────┐
-          │                      │                      │
-          ▼                      ▼                      ▼
-      Dump Truck            Excavator 1            Excavator 3
-          Pi                    Pi                     Pi
+                      ACTIVE ROUTER HOST
+                   ros-pc OR ros-backup-pc
+                              │
+                         Zenoh Router
+                              │
+          ┌───────────────────┼───────────────────┐
+          │                   │                   │
+          ▼                   ▼                   ▼
+      Dump Truck          Excavator 1         Excavator 3
+          Pi                  Pi                  Pi
 ```
 
-Only one Zenoh router is required for the construction robotics system.
+Only one Zenoh router is normally required for the construction robotics system.
 
-All ROS PC applications and physical robot computers communicate through this shared architecture.
+All ROS applications and physical robot computers communicate through the currently selected router.
 
 ---
 
@@ -66,11 +72,25 @@ network/devices.sh
 
 The file defines addresses for:
 
-- ROS PCs
+- ROS computers
 - Dump truck Raspberry Pis
 - Excavator Raspberry Pis
 
-The purpose of this file is to provide a **single source of truth for network addresses**.
+For the current router-capable computers:
+
+| Device profile | Role | IP address |
+|---|---|---|
+| `ros-pc` | Primary ROS PC / primary router host | `10.170.32.181` |
+| `ros-backup-pc` | Backup ROS PC / backup router host | `10.170.32.227` |
+
+The corresponding entries in `devices.sh` are:
+
+```text
+ROS_PC
+ROS_Laptop_Backup
+```
+
+The purpose of `devices.sh` is to provide a **single source of truth for network addresses**.
 
 Do not hard-code device IP addresses into:
 
@@ -97,42 +117,56 @@ The standard ROS 2 middleware for the physical platform is:
 RMW_IMPLEMENTATION=rmw_zenoh_cpp
 ```
 
-The ROS PC hosts one Zenoh router:
+The system uses **one active Zenoh router**:
 
 ```text
 rmw_zenohd
 ```
 
-Robot computers connect to this router as Zenoh clients.
+The router can run on either of the following computers:
 
-ROS 2 applications running on the ROS PC also connect to the local router as clients.
+| Router profile | Role | IP address |
+|---|---|---|
+| `ros-pc` | Primary router host | `10.170.32.181` |
+| `ros-backup-pc` | Backup router host | `10.170.32.227` |
+
+Under normal operation, `ros-pc` is the router.
+
+If the primary ROS PC is unavailable or the system needs to be operated from the backup computer, `ros-backup-pc` can instead host the router.
+
+Only **one router should normally be active at a time**.
 
 ```text
-                         ROS PC
-                            │
-                       rmw_zenohd
-                            │
-                       Zenoh Router
-                            │
-          ┌─────────────────┼─────────────────┐
-          │                 │                 │
-          ▼                 ▼                 ▼
-      Dump Truck        Dump Truck        Excavator
-          Pi                Pi                Pi
+                    ACTIVE ROUTER HOST
+                 ros-pc OR ros-backup-pc
+                           │
+                      rmw_zenohd
+                           │
+                      Zenoh Router
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+          ▼                ▼                ▼
+      Dump Truck       Dump Truck       Excavator
+          Pi               Pi               Pi
 ```
+
+Robot computers connect to the selected router as Zenoh clients.
+
+ROS 2 applications running on the router host also connect to that router as clients through localhost.
 
 The robot computers do not need to be configured as direct ROS peers of one another.
 
 The intended topology is:
 
 ```text
-1 ROS PC
-    │
-    ├── 1 Zenoh Router
-    │
-    ├── ROS PC Applications
-    │
-    └── N Robot Clients
+1 Active Router Host
+        │
+        ├── 1 Zenoh Router
+        │
+        ├── ROS 2 Applications
+        │
+        └── N Robot Clients
 ```
 
 ---
@@ -162,23 +196,66 @@ Do not use:
 The general forms are:
 
 ```bash
+source network/setup_zenoh.sh router [router-device]
+```
+
+and:
+
+```bash
+source network/setup_zenoh.sh client <device> [router-device]
+```
+
+The available router profiles are:
+
+```text
+ros-pc
+ros-backup-pc
+```
+
+If the router device is omitted, the script defaults to:
+
+```text
+ros-pc
+```
+
+Therefore:
+
+```bash
 source network/setup_zenoh.sh router
 ```
 
-for the ROS PC router terminal, and:
+is equivalent to:
 
 ```bash
-source network/setup_zenoh.sh client <device>
+source network/setup_zenoh.sh router ros-pc
 ```
 
-for ROS PC application terminals and physical robot computers.
+Similarly:
+
+```bash
+source network/setup_zenoh.sh client excavator3
+```
+
+is equivalent to:
+
+```bash
+source network/setup_zenoh.sh client excavator3 ros-pc
+```
+
+This preserves the standard `ros-pc` workflow while allowing the entire system to be redirected to the backup router when required.
 
 ---
 
-# 5. ROS PC — Start the Zenoh Router
+# 5. Start the Zenoh Router
 
-**Machine:** ROS PC  
-**Terminal:** T1  
+Only **one Zenoh router** should normally be running for the construction robotics system.
+
+Do not start a separate router for each robot.
+
+## Primary Router — ROS PC
+
+**Machine:** ROS PC (`ros-pc`)
+
 **Keep this terminal running.**
 
 From the repository root:
@@ -189,24 +266,24 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-source network/setup_zenoh.sh router
+source network/setup_zenoh.sh router ros-pc
 
 ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
-Only **one Zenoh router** should normally be running for the construction robotics system.
+The shorter backward-compatible command:
 
-Do not start a separate router for each robot.
+```bash
+source network/setup_zenoh.sh router
+```
 
-The router terminal must remain running while the physical system is being operated.
+also selects `ros-pc`.
 
----
+## Backup Router — Backup ROS PC
 
-# 6. ROS PC — Configure Application Terminals
+**Machine:** Backup ROS PC (`ros-backup-pc`)
 
-ROS 2 nodes running on the ROS PC connect to the local Zenoh router.
-
-In each ROS PC application terminal:
+**Keep this terminal running.**
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -214,10 +291,70 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
+source network/setup_zenoh.sh router ros-backup-pc
+
+ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+When the backup router is used, remote clients must also be configured to connect to:
+
+```text
+ros-backup-pc
+```
+
+The router terminal must remain running while the physical system is being operated.
+
+---
+
+# 6. Configure ROS Application Terminals
+
+ROS 2 application terminals must connect to the currently active Zenoh router.
+
+## Applications on the Primary ROS PC
+
+When `ros-pc` is the router:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client ros-pc ros-pc
+```
+
+Because the application and router are running on the same machine, the client connects through:
+
+```text
+tcp/127.0.0.1:7447
+```
+
+The shorter backward-compatible command is:
+
+```bash
 source network/setup_zenoh.sh client ros-pc
 ```
 
-After this setup, ROS applications can be launched normally.
+## Applications on the Backup ROS PC
+
+When `ros-backup-pc` is the router:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
+```
+
+The backup computer also connects to its local router through:
+
+```text
+tcp/127.0.0.1:7447
+```
+
+After the network environment is configured, ROS applications such as the Command Center can be launched normally.
 
 For example:
 
@@ -235,61 +372,83 @@ ros2 launch construction_site_control command_center.launch.py \
 
 # 7. Robot Computers — Configure Zenoh Clients
 
-Each physical robot computer connects to the same Zenoh router running on the ROS PC.
+Each physical robot computer connects to the **currently active Zenoh router**.
 
-The device name identifies which computer is being configured.
+The command format is:
 
-Examples:
+```bash
+source network/setup_zenoh.sh client <robot-device> [router-device]
+```
 
-## Dump Truck 1
+The first device name identifies the computer being configured.
+
+The optional second device name identifies the router that the computer should connect to.
+
+Conceptually:
+
+```text
+client excavator3 ros-backup-pc
+       │              │
+       │              └── Which router should this client use?
+       │
+       └── Which computer is being configured?
+```
+
+## Normal Operation — Primary ROS PC Router
+
+When `ros-pc` is the router:
 
 ```bash
 source network/setup_zenoh.sh client dumptruck1
-```
-
-## Dump Truck 2
-
-```bash
 source network/setup_zenoh.sh client dumptruck2
-```
-
-## Dump Truck 3
-
-```bash
 source network/setup_zenoh.sh client dumptruck3
-```
-
-## Dump Truck 4
-
-```bash
 source network/setup_zenoh.sh client dumptruck4
-```
-
-## Dump Truck 5
-
-```bash
 source network/setup_zenoh.sh client dumptruck5
-```
 
-## Excavator 1
-
-```bash
 source network/setup_zenoh.sh client excavator1
+source network/setup_zenoh.sh client excavator3
 ```
 
-## Excavator 3
+Because `ros-pc` is the default router, explicitly specifying it is optional.
+
+For example, these are equivalent:
 
 ```bash
 source network/setup_zenoh.sh client excavator3
 ```
 
+```bash
+source network/setup_zenoh.sh client excavator3 ros-pc
+```
+
+Remote clients in this configuration connect to:
+
+```text
+tcp/10.170.32.181:7447
+```
+
+## Backup Operation — Backup ROS PC Router
+
+When `ros-backup-pc` is the router, the backup router must be specified for each remote client:
+
+```bash
+source network/setup_zenoh.sh client dumptruck1 ros-backup-pc
+source network/setup_zenoh.sh client dumptruck2 ros-backup-pc
+source network/setup_zenoh.sh client dumptruck3 ros-backup-pc
+source network/setup_zenoh.sh client dumptruck4 ros-backup-pc
+source network/setup_zenoh.sh client dumptruck5 ros-backup-pc
+
+source network/setup_zenoh.sh client excavator1 ros-backup-pc
+source network/setup_zenoh.sh client excavator3 ros-backup-pc
+```
+
+Remote clients in this configuration connect to:
+
+```text
+tcp/10.170.32.227:7447
+```
+
 Additional configured robots follow the same pattern.
-
-The device name selects the appropriate network configuration.
-
-It does **not** mean that the robot connects directly to its own IP address.
-
-Remote robot clients connect to the Zenoh router running on the ROS PC.
 
 ---
 
@@ -303,7 +462,17 @@ For example, on Excavator 3:
 source network/setup_zenoh.sh client excavator3
 ```
 
-configures the **network connection** for the Excavator 3 computer.
+configures the **network connection** for the Excavator 3 computer using the default `ros-pc` router.
+
+Alternatively:
+
+```bash
+source network/setup_zenoh.sh client excavator3 ros-backup-pc
+```
+
+configures the same Excavator 3 computer to use the backup router.
+
+Neither command creates the ROS namespace.
 
 When the excavator server is launched with:
 
@@ -324,56 +493,51 @@ The resulting ROS interfaces include:
 Conceptually:
 
 ```text
-Zenoh Device Profile
-        │
-        ▼
-How does this computer connect?
-        │
-        ▼
-       Zenoh
+Zenoh Device Profile + Router Selection
+                  │
+                  ▼
+       How does this computer connect?
+                  │
+                  ▼
+                Zenoh
 
 
-ROS robot_name
-        │
-        ▼
-What ROS namespace does this robot use?
-        │
-        ▼
-/excavator3/...
+            ROS robot_name
+                  │
+                  ▼
+      What ROS namespace does it use?
+                  │
+                  ▼
+          /excavator3/...
 ```
 
 The network profile does not automatically create the ROS namespace.
 
-For normal operation, the corresponding robot identity should be used consistently for both.
+For normal operation, the corresponding robot identity should be used consistently.
 
 ---
 
 # 9. Multiple Robots
 
-Multiple robots share the same Zenoh router.
+Multiple robots share the same **active** Zenoh router.
 
 For example:
 
 ```text
-                              ROS PC
-                                 │
-                           Zenoh Router
-                                 │
-       ┌──────────┬──────────┬───┴────┬──────────┐
-       │          │          │        │          │
-       ▼          ▼          ▼        ▼          ▼
-    Truck 1    Truck 3    Truck 4  Truck 5   Excavator 3
-       │          │          │        │          │
-       Pi         Pi         Pi       Pi         Pi
+                       ACTIVE ROUTER HOST
+                    ros-pc OR ros-backup-pc
+                              │
+                         Zenoh Router
+                              │
+       ┌──────────┬───────────┼──────────┬──────────┐
+       │          │           │          │          │
+       ▼          ▼           ▼          ▼          ▼
+    Truck 1    Truck 3     Truck 4    Truck 5   Excavator 3
+       │          │           │          │          │
+       Pi         Pi          Pi         Pi         Pi
 ```
 
-Each robot computer independently runs:
-
-```bash
-source network/setup_zenoh.sh client <device>
-```
-
-For example:
+When the primary router is active, each robot can use the default configuration:
 
 ```bash
 # Dumptruck1 Raspberry Pi
@@ -390,7 +554,24 @@ source network/setup_zenoh.sh client dumptruck3
 source network/setup_zenoh.sh client excavator3
 ```
 
-All clients connect to the same ROS PC router.
+When the backup router is active, each client must identify it:
+
+```bash
+# Dumptruck1 Raspberry Pi
+source network/setup_zenoh.sh client dumptruck1 ros-backup-pc
+```
+
+```bash
+# Dumptruck3 Raspberry Pi
+source network/setup_zenoh.sh client dumptruck3 ros-backup-pc
+```
+
+```bash
+# Excavator3 Raspberry Pi
+source network/setup_zenoh.sh client excavator3 ros-backup-pc
+```
+
+All active clients must connect to the same active router.
 
 The robots do not need to be configured as direct peers of one another.
 
@@ -408,6 +589,15 @@ RMW_IMPLEMENTATION
 ZENOH_CONFIG_OVERRIDE
 ```
 
+The script also exports helper variables describing the selected configuration:
+
+```text
+CIC_ZENOH_ROLE
+CIC_ZENOH_DEVICE
+CIC_ZENOH_ROUTER
+CIC_ZENOH_ROUTER_IP
+```
+
 For the current course system:
 
 ```text
@@ -415,10 +605,22 @@ ROS_DOMAIN_ID=10
 RMW_IMPLEMENTATION=rmw_zenoh_cpp
 ```
 
-Remote robot computers are configured to connect to the Zenoh router defined by the ROS PC address in:
+For a remote client using the primary router:
 
 ```text
-network/devices.sh
+ZENOH_CONFIG_OVERRIDE=mode="client";connect/endpoints=["tcp/10.170.32.181:7447"]
+```
+
+For a remote client using the backup router:
+
+```text
+ZENOH_CONFIG_OVERRIDE=mode="client";connect/endpoints=["tcp/10.170.32.227:7447"]
+```
+
+For a ROS application running on the active router host:
+
+```text
+ZENOH_CONFIG_OVERRIDE=mode="client";connect/endpoints=["tcp/127.0.0.1:7447"]
 ```
 
 Users should normally **not manually export these variables**.
@@ -441,6 +643,10 @@ After sourcing the Zenoh setup script, inspect the environment with:
 echo $RMW_IMPLEMENTATION
 echo $ROS_DOMAIN_ID
 echo $ZENOH_CONFIG_OVERRIDE
+echo $CIC_ZENOH_ROLE
+echo $CIC_ZENOH_DEVICE
+echo $CIC_ZENOH_ROUTER
+echo $CIC_ZENOH_ROUTER_IP
 ```
 
 Expected middleware:
@@ -455,9 +661,23 @@ Expected ROS domain:
 10
 ```
 
-For a remote robot client, the Zenoh configuration should indicate client mode and an endpoint for the ROS PC router.
+For a remote client using the primary router, the endpoint should contain:
 
-For a ROS PC application terminal, the client connects to the router running locally on the ROS PC.
+```text
+tcp/10.170.32.181:7447
+```
+
+For a remote client using the backup router, the endpoint should contain:
+
+```text
+tcp/10.170.32.227:7447
+```
+
+For a client running on the selected router host, the endpoint should contain:
+
+```text
+tcp/127.0.0.1:7447
+```
 
 ---
 
@@ -580,9 +800,11 @@ This is different from a network discovery problem.
 
 # 15. Standard Multi-Robot Startup Pattern
 
-A typical physical multi-robot session uses the following terminal arrangement.
+A typical physical multi-robot session uses one active router host, ROS application terminals, and multiple robot clients.
 
-## ROS PC T1 — Router
+## Option A — Primary ROS PC as Router
+
+### ROS PC T1 — Router
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -590,16 +812,14 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-source network/setup_zenoh.sh router
+source network/setup_zenoh.sh router ros-pc
 
 ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
 **Keep running.**
 
----
-
-## ROS PC T2 — Applications / Command Center
+### ROS PC T2 — Applications / Command Center
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -607,7 +827,7 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-source network/setup_zenoh.sh client ros-pc
+source network/setup_zenoh.sh client ros-pc ros-pc
 
 ros2 launch construction_site_control command_center.launch.py \
   trucks:=truck1,truck3,truck4,truck5 \
@@ -620,9 +840,7 @@ ros2 launch construction_site_control command_center.launch.py \
 
 **Keep running.**
 
----
-
-## Dumptruck1 Raspberry Pi
+### Dumptruck1 Raspberry Pi
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -637,9 +855,7 @@ ros2 launch dump_truck_bringup truck1_pi.launch.py
 
 **Keep running.**
 
----
-
-## Excavator3 Raspberry Pi
+### Excavator3 Raspberry Pi
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -660,7 +876,81 @@ ros2 launch excavator_control \
 
 **Keep running.**
 
-Other robot computers follow the same pattern using their corresponding device profile and launch configuration.
+## Option B — Backup ROS PC as Router
+
+### Backup ROS PC T1 — Router
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh router ros-backup-pc
+
+ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+**Keep running.**
+
+### Backup ROS PC T2 — Applications / Command Center
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
+
+ros2 launch construction_site_control command_center.launch.py \
+  trucks:=truck1,truck3,truck4,truck5 \
+  start_camera:=true \
+  start_apriltag:=true \
+  start_localization:=true \
+  start_action_servers:=true \
+  start_scenario_manager:=false
+```
+
+**Keep running.**
+
+### Dumptruck1 Raspberry Pi
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client dumptruck1 ros-backup-pc
+
+ros2 launch dump_truck_bringup truck1_pi.launch.py
+```
+
+**Keep running.**
+
+### Excavator3 Raspberry Pi
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+
+source network/setup_zenoh.sh client excavator3 ros-backup-pc
+
+sudo pigpiod
+
+ros2 launch excavator_control \
+  excavator.launch.py \
+  mode:=pi \
+  robot_name:=excavator3 \
+  config:=$(ros2 pkg prefix excavator_control)/share/excavator_control/config/excavator3.yaml
+```
+
+**Keep running.**
+
+Other robot computers follow the same pattern using their corresponding device profile and the currently active router.
 
 ---
 
@@ -668,20 +958,19 @@ Other robot computers follow the same pattern using their corresponding device p
 
 Dump trucks and excavators use the same communication backbone.
 
-For example:
-
 ```text
-                              ROS PC
-                                 │
-                ┌────────────────┴────────────────┐
-                │                                 │
-          Zenoh Router                      ROS Applications
-                │                                 │
-       ┌────────┼─────────┐                       │
-       │        │         │                       │
-       ▼        ▼         ▼                       │
-    Truck 1  Truck 3  Excavator 3 ◄───────────────┘
-       Pi       Pi         Pi
+                     ACTIVE ROUTER HOST
+                  ros-pc OR ros-backup-pc
+                            │
+              ┌─────────────┴─────────────┐
+              │                           │
+         Zenoh Router               ROS Applications
+              │                           │
+       ┌──────┼─────────┐                 │
+       │      │         │                 │
+       ▼      ▼         ▼                 │
+    Truck 1 Truck 3 Excavator 3 ◄─────────┘
+       Pi      Pi        Pi
 ```
 
 No robot-specific router is required.
@@ -701,17 +990,40 @@ It does not require another Zenoh router.
 
 If ROS 2 nodes cannot communicate across machines, check the system in this order:
 
-1. Confirm that the ROS PC and robot computer are connected to the required network.
-2. Confirm that the Zenoh router is still running on the ROS PC.
-3. Confirm that the correct `setup_zenoh.sh` client profile was sourced.
-4. Confirm that `RMW_IMPLEMENTATION` is `rmw_zenoh_cpp`.
-5. Confirm that all machines use the same `ROS_DOMAIN_ID`.
-6. Confirm that the required ROS 2 message packages exist and are sourced.
-7. Check `ros2 node list`, `ros2 topic list`, and `ros2 action list`.
-8. Check actual topic data using `ros2 topic echo` or `ros2 topic hz`.
-9. For Action-based robots, inspect the expected Action with `ros2 action info`.
+1. Confirm that the active router host and robot computers are connected to the required network.
+2. Confirm that exactly one intended Zenoh router is running.
+3. Confirm whether the active router is `ros-pc` or `ros-backup-pc`.
+4. Confirm that every client was configured for that same router.
+5. Confirm that `RMW_IMPLEMENTATION` is `rmw_zenoh_cpp`.
+6. Confirm that all machines use the same `ROS_DOMAIN_ID`.
+7. Inspect `CIC_ZENOH_ROUTER` and `CIC_ZENOH_ROUTER_IP`.
+8. Inspect `ZENOH_CONFIG_OVERRIDE` and confirm that it points to the expected router.
+9. Confirm that the required ROS 2 message packages exist and are sourced.
+10. Check `ros2 node list`, `ros2 topic list`, and `ros2 action list`.
+11. Check actual topic data using `ros2 topic echo` or `ros2 topic hz`.
+12. For Action-based robots, inspect the expected Action with `ros2 action info`.
 
-For Excavator 3, for example:
+For example:
+
+```bash
+echo $CIC_ZENOH_ROUTER
+echo $CIC_ZENOH_ROUTER_IP
+echo $ZENOH_CONFIG_OVERRIDE
+```
+
+A remote client using the primary router should point to:
+
+```text
+tcp/10.170.32.181:7447
+```
+
+A remote client using the backup router should point to:
+
+```text
+tcp/10.170.32.227:7447
+```
+
+For Excavator 3:
 
 ```bash
 ros2 action info \
@@ -803,7 +1115,9 @@ This allows robot software, perception, and the Command Center to remain largely
 The intended operational rule is:
 
 ```text
-Configure the network once.
+Select one active router.
+
+Configure all clients for that router.
 
 Then run normal ROS 2 commands.
 ```
@@ -811,11 +1125,23 @@ Then run normal ROS 2 commands.
 At the system level:
 
 ```text
-ONE ROS PC
-    +
-ONE Zenoh Router
-    +
-ONE Command Center
-    +
-N Robot Clients
+ONE ACTIVE ROUTER HOST
+          +
+    ONE Zenoh Router
+          +
+   ONE Command Center
+          +
+    N Robot Clients
+```
+
+The primary configuration uses:
+
+```text
+ros-pc
+```
+
+The backup configuration uses:
+
+```text
+ros-backup-pc
 ```
