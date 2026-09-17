@@ -95,63 +95,9 @@ your_psu_id
 
 ---
 
-## Step 2 — Enable SSH
-
-SSH allows you to remotely access the ROS computer from your own laptop.
-
-First, check whether SSH is enabled:
-
-```bash
-systemctl is-enabled ssh
-```
-
-If the output is:
-
-```text
-enabled
-```
-
-SSH is already enabled. Continue to the next step.
-
-If the output is:
-
-```text
-disabled
-```
-
-enable SSH:
-
-```bash
-sudo systemctl enable ssh
-```
-
-Enter your Penn State password if prompted.
-
-Then start SSH:
-
-```bash
-sudo systemctl start ssh
-```
-
-Check that SSH is running:
-
-```bash
-systemctl status ssh
-```
-
-Look for:
-
-```text
-active (running)
-```
-
-You will also use SSH later to access Raspberry Pi computers remotely.
-
----
-
 # Part B — Remote Development Setup
 
-## Step 3 — Create an SSH Key
+## Step 2 — Create an SSH Key
 
 You will now configure your laptop so that you can remotely access the ROS computer without entering your Penn State password every time.
 
@@ -225,7 +171,7 @@ you already have an SSH key.
 Continue to:
 
 ```text
-Step 3.5 — Connect to the PSU VPN
+Step 2.5 — Connect to the PSU VPN
 ```
 
 If you see a message similar to:
@@ -278,7 +224,7 @@ Your SSH key has been successfully created.
 
 ---
 
-## Step 3.5 — Connect to the PSU VPN
+## Step 2.5 — Connect to the PSU VPN
 
 > **IMPORTANT:** Before attempting to connect to the ROS computer remotely, connect your laptop to the Penn State VPN.
 
@@ -296,7 +242,7 @@ Before continuing, confirm that:
 
 ---
 
-## Step 4 — Copy Your SSH Key to the ROS Computer
+## Step 3 — Copy Your SSH Key to the ROS Computer
 
 Next, copy your SSH key to the ROS computer.
 
@@ -313,8 +259,8 @@ Use the ROS computer assigned to you for the lab.
 Current course ROS computers include:
 
 ```text
-ROS-PC-1    10.170.32.181
-ROS-PC-2    10.170.32.227
+ROS-PC-1    will be provided
+ROS-PC-2    will be provided
 ```
 
 > **Important:** Use the ROS computer assigned by the instructor.
@@ -337,7 +283,7 @@ Replace:
 Example:
 
 ```bash
-ssh-copy-id 'abc123@AD.PSU.EDU'@10.170.32.181
+ssh-copy-id 'abc123@AD.PSU.EDU'@10.170.xx.xxx
 ```
 
 ### Windows Users
@@ -353,7 +299,7 @@ Do **not** use PowerShell for the `ssh-copy-id` step.
 Example:
 
 ```bash
-ssh-copy-id 'abc123@AD.PSU.EDU'@10.170.32.181
+ssh-copy-id 'abc123@AD.PSU.EDU'@xx.xxx.xx.xxx
 ```
 
 ---
@@ -363,7 +309,7 @@ ssh-copy-id 'abc123@AD.PSU.EDU'@10.170.32.181
 If this is your first connection, you may see:
 
 ```text
-The authenticity of host '10.170.32.181 (10.170.32.181)' can't be established.
+The authenticity of host '10.170.xx.xxx (10.170.xx.xxx)' can't be established.
 
 ED25519 key fingerprint is SHA256:...
 
@@ -400,7 +346,7 @@ asterisks
 
 This is normal.
 
-<img src="iimages/step04_ssh_first_connection.png" width="900">
+<img src="images/step04_ssh_first_connection.png" width="900">
 
 If the SSH key was copied successfully, you should see:
 
@@ -422,7 +368,7 @@ ssh 'YOUR_PSU_ID@AD.PSU.EDU'@ROS_COMPUTER_IP
 Example:
 
 ```bash
-ssh 'abc123@AD.PSU.EDU'@10.170.32.181
+ssh 'abc123@AD.PSU.EDU'@10.170.xx.xxx
 ```
 
 If configured correctly, you should connect without entering your Penn State password.
@@ -451,7 +397,7 @@ exit
 
 ---
 
-## Step 5 — Configure VS Code Remote SSH
+## Step 4 — Configure VS Code Remote SSH
 
 You will now configure **Visual Studio Code (VS Code)** to remotely access the ROS computer.
 
@@ -466,13 +412,13 @@ After completing this setup, you will be able to edit files and run commands dir
 ### 1. Open VS Code
 
 Open **Visual Studio Code**.
-
+<img src="images/open_VS_Code.png" width="900">
 ---
 
 ### 2. Install Remote - SSH
 
 Open the **Extensions** panel.
-
+<img src="images/VS_Code_Extenion.png" width="900">
 Search for:
 
 ```text
@@ -506,6 +452,7 @@ Search for:
 ```text
 Remote-SSH: Open SSH Configuration File...
 ```
+<img src="images/Command_Palette.png" width="900">
 
 Select your user SSH configuration file.
 
@@ -529,47 +476,47 @@ Add the following configuration:
 
 ```text
 Host dumptruck1
-    HostName 10.170.32.192
+    HostName 10.170.xx.xxx
     User besure
     IdentityFile ~/.ssh/id_ed25519
 
 Host dumptruck3
-    HostName 10.170.32.194
+    HostName 10.170.xx.xxx
     User besure
     IdentityFile ~/.ssh/id_ed25519
 
 Host dumptruck4
-    HostName 10.170.32.45
+    HostName 10.170.xx.xx
     User besure
     IdentityFile ~/.ssh/id_ed25519
 
 Host dumptruck5
-    HostName 10.170.32.219
+    HostName 10.170.xx.xxx
     User besure
     IdentityFile ~/.ssh/id_ed25519
 
 Host excavator1
-    HostName 10.170.32.182
+    HostName 10.170.xx.xxx
     User besure
     IdentityFile ~/.ssh/id_ed25519
 
 Host excavator2
-    HostName 10.170.32.191
+    HostName 10.170.xx.xxx
     User besure
     IdentityFile ~/.ssh/id_ed25519
 
 Host excavator3
-    HostName 10.170.32.222
+    HostName 10.170.xx.xxx
     User besure
     IdentityFile ~/.ssh/id_ed25519
 
 Host ROS-PC-1
-    HostName 10.170.32.181
+    HostName 10.170.xx.xxx
     User YOUR_PSU_ID@AD.PSU.EDU
     IdentityFile ~/.ssh/id_ed25519
 
 Host ROS-PC-2
-    HostName 10.170.32.227
+    HostName 10.170.xx.xxx
     User YOUR_PSU_ID@AD.PSU.EDU
     IdentityFile ~/.ssh/id_ed25519
 ```
@@ -649,7 +596,7 @@ Confirm that:
 
 # Part C — Course Repository Setup
 
-## Step 6 — Clone the Course Repository
+## Step 5 — Clone the Course Repository
 
 You will now download the course GitHub repository to the ROS computer.
 
@@ -756,7 +703,7 @@ Confirm that:
 
 ---
 
-## Step 7 — Build the ROS 2 Workspace
+## Step 6 — Build the ROS 2 Workspace
 
 Next, build the ROS 2 packages used by the course.
 
@@ -813,7 +760,7 @@ Confirm that:
 
 # Part D — Connect to the Raspberry Pi
 
-## Step 8 — Connect to Your Assigned Raspberry Pi
+## Step 7 — Connect to Your Assigned Raspberry Pi
 
 You will now connect to a Raspberry Pi used in the course robotics system.
 
@@ -907,7 +854,7 @@ Confirm that:
 
 # Part E — Configure ROS 2 Communication
 
-## Step 9 — Install Zenoh Support
+## Step 8 — Install Zenoh Support
 
 The CIC ConRobotics system uses **Zenoh** for ROS 2 communication between computers.
 
@@ -939,7 +886,7 @@ sudo apt install ros-jazzy-rmw-zenoh-cpp
 
 ---
 
-## Step 10 — Prepare the Repository on the Raspberry Pi
+## Step 9 — Prepare the Repository on the Raspberry Pi
 
 The Raspberry Pi also needs the course repository because the network setup script is stored in the repository.
 
@@ -985,7 +932,7 @@ source install/setup.bash
 
 ---
 
-## Step 11 — Start the Zenoh Router
+## Step 10 — Start the Zenoh Router
 
 The Zenoh router runs on the ROS computer.
 
@@ -1059,7 +1006,7 @@ You should see:
 
 ---
 
-## Step 13 — Start the ROS 2 Listener
+## Step 12 — Start the ROS 2 Listener
 
 Go to your Raspberry Pi VS Code window.
 
@@ -1148,7 +1095,7 @@ If communication is working, you should see:
 
 ---
 
-## Step 14 — Understand What Just Happened
+## Step 13 — Understand What Just Happened
 
 Your system now looks like this:
 
@@ -1205,7 +1152,7 @@ You do **not** manually configure a list of ROS peers.
 
 # Part F — Verify ROS 2 Communication
 
-## Step 15 — Inspect the ROS Network
+## Step 14 — Inspect the ROS Network
 
 While the talker and listener are running, open another Zenoh-configured ROS PC terminal.
 
@@ -1278,7 +1225,7 @@ If all items are complete:
 
 # Part G — Lab Submission
 
-## Step 16 — Submit Your Result
+## Step 15 — Submit Your Result
 
 Submit **one screenshot** showing successful ROS 2 communication between the ROS computer and Raspberry Pi.
 
