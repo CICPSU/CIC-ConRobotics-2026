@@ -929,7 +929,12 @@ class ExternalSwingJointMotor:
 
     def reset_swing_fault(self) -> None:
         self._swing_fault = None
+        self.start_new_target()
+
+    def start_new_target(self) -> None:
+        """Clear target-local state when advancing to a new waypoint."""
         self._goal_reached_latched = False
+        self._swing_pulse_tick = 0
         self._reset_progress_watch()
 
     def plan_toward_target(
@@ -1629,6 +1634,7 @@ class PiExcavatorTrajectoryServer(Node):
         feedback = FollowJointTrajectory.Feedback() #
         feedback.joint_names = joint_names
         start = time.monotonic()
+        active_swing_waypoint_index = None
         
         while rclpy.ok(): # while ROS alive keep running, check cancel, check if done, calculate desired joint angles, tell each joint to move toward its target, wai 0.02 sec, repeat 
             elapsed = time.monotonic() - start # how far into the trajectory we are 
@@ -1654,12 +1660,24 @@ class PiExcavatorTrajectoryServer(Node):
 
                     # Default to final swing target
                     swing_target = waypoints[-1].positions[i]
+                    swing_waypoint_index = len(waypoints) - 1
 
                      #Hold the next commanded waypoint as the target
-                    for wp in waypoints:
+                    for waypoint_index, wp in enumerate(waypoints):
                         if wp.t > elapsed + 1e-9:
                             swing_target = wp.positions[i]
+                            swing_waypoint_index = waypoint_index
                             break
+
+                    if swing_waypoint_index != active_swing_waypoint_index:
+                        swing = self.joints.get("swing_joint")
+                        if swing is not None and hasattr(swing, "start_new_target"):
+                            swing.start_new_target()
+                        active_swing_waypoint_index = swing_waypoint_index
+                        self.get_logger().info(
+                            f"[PI] Swing waypoint {swing_waypoint_index}: "
+                            f"target={math.degrees(swing_target):+.2f} deg"
+                        )
 
                     desired[i] = swing_target
 

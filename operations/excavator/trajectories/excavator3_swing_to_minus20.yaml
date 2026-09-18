@@ -1,0 +1,10 @@
+trajectory_name: excavator3_swing_to_20
+description: Swing integration test using AprilTag feedback.
+
+joints:
+  - swing
+
+waypoints:
+  - name: swing_to_20
+    positions:
+      swing: -20.0
