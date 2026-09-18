@@ -53,7 +53,7 @@ gpio:
   swing:
     in1_pin: 16
     in2_pin: 20
-    invert_motor: false
+    invert_motor: true
 
   boom:
     in1_pin: 8
