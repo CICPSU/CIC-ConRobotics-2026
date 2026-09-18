@@ -489,6 +489,11 @@ class PotentiometerJointMotor: #preparing everything the controller will need. w
         # exactly where a commanded 0 deg might turn into another value.
         self._last_requested_target_rad = None
         self._last_effective_target_rad = None
+        # Once this goal first enters the stop tolerance, keep the swing
+        # stopped.  The upper structure has enough inertia to coast through
+        # the target; allowing an immediate reversal causes violent hunting.
+        # A new action goal clears this latch through reset_swing_fault().
+        self._goal_reached_latched = False
 
         pi.set_mode(cfg.in1_pin, pigpio.OUTPUT)
         pi.set_mode(cfg.in2_pin, pigpio.OUTPUT)
@@ -924,6 +929,7 @@ class ExternalSwingJointMotor:
 
     def reset_swing_fault(self) -> None:
         self._swing_fault = None
+        self._goal_reached_latched = False
         self._reset_progress_watch()
 
     def plan_toward_target(
@@ -943,6 +949,10 @@ class ExternalSwingJointMotor:
         if self._swing_fault is not None:
             return pos, err, False, 0, 0
 
+        if self._goal_reached_latched:
+            self._reset_progress_watch()
+            return pos, err, True, 0, 0
+
         if not self.sensor_valid():
             self._swing_fault = (
                 f"swing feedback stale or missing: age="
@@ -961,6 +971,7 @@ class ExternalSwingJointMotor:
             return pos, err, False, 0, 0
 
         if abs_err <= self.cfg.stop_tolerance_rad:
+            self._goal_reached_latched = True
             self._reset_progress_watch()
             return pos, err, True, 0, 0
 

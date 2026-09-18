@@ -114,9 +114,9 @@ joint_control:
     tolerance_rad: 0.0873 # 5 degrees
     stop_tolerance_rad: 0.0873 # 5 degrees
 
-    pulse_err_deg: 5.0
-    pulse_on_cycles: 1
-    pulse_off_cycles: 2
+    pulse_err_deg: 15.0
+    pulse_on_cycles: 2
+    pulse_off_cycles: 3
 
     progress_timeout_sec: 0.35
     min_progress_deg: 1.0
