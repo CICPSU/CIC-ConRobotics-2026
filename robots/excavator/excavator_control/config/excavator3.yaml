@@ -3,7 +3,7 @@
 # ================================================================
 # Physical machine configuration for Excavator 3.
 #
-# Calibration convention:
+# Potentiometer calibration convention for boom, arm, and bucket:
 #   raw_at_min_angle = ADC raw value at min_angle_deg
 #   raw_at_max_angle = ADC raw value at max_angle_deg
 #
@@ -36,31 +36,11 @@ joints:
     raw_at_max_angle: 25200
 
   swing:
-    adc_channel: 3
-    min_angle_deg: -90.0
-    max_angle_deg: 90.0
-
-    angle_deg_table:
-      - -90.0
-      - -45.0
-      - -30.0
-      - 0.0
-      - 30.0
-      - 45.0
-      - 60.0
-      - 75.0
-      - 90.0
-
-    raw_table:
-      - 1600
-      - 1800
-      - 3955
-      - 6968
-      - 9943
-      - 11410
-      - 14282
-      - 17497
-      - 21447
+    # Swing position comes from a sensor adapter publishing JointState.
+    # The controller is deliberately independent of AprilTag or any future
+    # replacement sensor.
+    min_angle_deg: -95.0
+    max_angle_deg: 95.0
 
 # ================================================================
 # GPIO
@@ -124,17 +104,22 @@ home:
 joint_control:
 
   swing:
-    kp: 120.0
-    min_pwm: 220
-    max_pwm: 255
-    kick_pwm: 255
+    position_topic: /excavator3/swing_joint_state
+    sensor_timeout_sec: 0.30
 
-    tolerance_rad: 0.04
-    stop_tolerance_rad: 0.05
+    far_error_deg: 15.0
+    far_pwm: 255
+    near_pwm: 220
+
+    tolerance_rad: 0.0873 # 5 degrees
+    stop_tolerance_rad: 0.0873 # 5 degrees
 
     pulse_err_deg: 5.0
     pulse_on_cycles: 1
     pulse_off_cycles: 2
+
+    progress_timeout_sec: 0.35
+    min_progress_deg: 1.0
 
   boom:
     kp: 120.0

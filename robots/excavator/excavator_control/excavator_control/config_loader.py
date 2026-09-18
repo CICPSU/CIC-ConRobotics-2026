@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import yaml
 
@@ -22,13 +22,10 @@ class LinearJointCalibration:
 
 
 @dataclass(frozen=True)
-class SwingCalibration:
+class SwingJointConfig:
     name: str
-    adc_channel: int
     min_angle_deg: float
     max_angle_deg: float
-    angle_deg_table: List[float]
-    raw_table: List[float]
 
 
 @dataclass(frozen=True)
@@ -38,7 +35,7 @@ class ExcavatorConfig:
     boom: LinearJointCalibration
     arm: LinearJointCalibration
     bucket: LinearJointCalibration
-    swing: SwingCalibration
+    swing: SwingJointConfig
 
     gpio: Dict[str, Any]
     control: Dict[str, Any]
@@ -136,12 +133,7 @@ def _load_linear_joint(
 def _load_swing(
     name: str,
     data: Dict[str, Any],
-) -> SwingCalibration:
-    adc_channel = _as_int(
-        _require(data, "adc_channel", name),
-        f"{name}.adc_channel",
-    )
-
+) -> SwingJointConfig:
     min_angle_deg = _as_float(
         _require(data, "min_angle_deg", name),
         f"{name}.min_angle_deg",
@@ -158,93 +150,10 @@ def _load_swing(
         name,
     )
 
-    angle_deg_table_raw = _require(
-        data,
-        "angle_deg_table",
-        name,
-    )
-
-    raw_table_raw = _require(
-        data,
-        "raw_table",
-        name,
-    )
-
-    if not isinstance(angle_deg_table_raw, list):
-        raise ExcavatorConfigError(
-            f"{name}.angle_deg_table must be a list"
-        )
-
-    if not isinstance(raw_table_raw, list):
-        raise ExcavatorConfigError(
-            f"{name}.raw_table must be a list"
-        )
-
-    angle_deg_table = [
-        _as_float(v, f"{name}.angle_deg_table")
-        for v in angle_deg_table_raw
-    ]
-
-    raw_table = [
-        _as_float(v, f"{name}.raw_table")
-        for v in raw_table_raw
-    ]
-
-    if len(angle_deg_table) != len(raw_table):
-        raise ExcavatorConfigError(
-            f"{name}: angle_deg_table and raw_table must "
-            f"have the same length. Got "
-            f"{len(angle_deg_table)} and {len(raw_table)}"
-        )
-
-    if len(angle_deg_table) < 2:
-        raise ExcavatorConfigError(
-            f"{name}: at least two calibration points are required"
-        )
-
-    for index in range(len(angle_deg_table) - 1):
-        if angle_deg_table[index] >= angle_deg_table[index + 1]:
-            raise ExcavatorConfigError(
-                f"{name}.angle_deg_table must be strictly increasing"
-            )
-
-    raw_increasing = all(
-        raw_table[i] < raw_table[i + 1]
-        for i in range(len(raw_table) - 1)
-    )
-
-    raw_decreasing = all(
-        raw_table[i] > raw_table[i + 1]
-        for i in range(len(raw_table) - 1)
-    )
-
-    if not (raw_increasing or raw_decreasing):
-        raise ExcavatorConfigError(
-            f"{name}.raw_table must be strictly monotonic "
-            "(either increasing or decreasing)"
-        )
-
-    if angle_deg_table[0] < min_angle_deg:
-        raise ExcavatorConfigError(
-            f"{name}: first calibration angle "
-            f"{angle_deg_table[0]} is below min_angle_deg "
-            f"{min_angle_deg}"
-        )
-
-    if angle_deg_table[-1] > max_angle_deg:
-        raise ExcavatorConfigError(
-            f"{name}: last calibration angle "
-            f"{angle_deg_table[-1]} is above max_angle_deg "
-            f"{max_angle_deg}"
-        )
-
-    return SwingCalibration(
+    return SwingJointConfig(
         name=name,
-        adc_channel=adc_channel,
         min_angle_deg=min_angle_deg,
         max_angle_deg=max_angle_deg,
-        angle_deg_table=angle_deg_table,
-        raw_table=raw_table,
     )
 
 
@@ -419,59 +328,6 @@ def linear_angle_to_raw(
     )
 
     return raw_value
-
-
-def swing_raw_to_angle(
-    raw_value: float,
-    calibration: SwingCalibration,
-) -> float:
-    raw_table = calibration.raw_table
-    angle_table = calibration.angle_deg_table
-
-    increasing = raw_table[-1] > raw_table[0]
-
-    if increasing:
-        if raw_value <= raw_table[0]:
-            return angle_table[0]
-
-        if raw_value >= raw_table[-1]:
-            return angle_table[-1]
-    else:
-        if raw_value >= raw_table[0]:
-            return angle_table[0]
-
-        if raw_value <= raw_table[-1]:
-            return angle_table[-1]
-
-    for index in range(len(raw_table) - 1):
-        raw_a = raw_table[index]
-        raw_b = raw_table[index + 1]
-
-        if increasing:
-            inside = raw_a <= raw_value <= raw_b
-        else:
-            inside = raw_a >= raw_value >= raw_b
-
-        if not inside:
-            continue
-
-        angle_a = angle_table[index]
-        angle_b = angle_table[index + 1]
-
-        ratio = (
-            raw_value - raw_a
-        ) / (
-            raw_b - raw_a
-        )
-
-        return (
-            angle_a
-            + ratio * (angle_b - angle_a)
-        )
-
-    raise ExcavatorConfigError(
-        f"Could not interpolate swing raw value: {raw_value}"
-    )
 
 
 def clamp_angle(

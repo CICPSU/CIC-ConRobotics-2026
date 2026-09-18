@@ -58,6 +58,8 @@ from typing import Dict, List, Optional, Protocol, Sequence, Tuple
 
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from ament_index_python.packages import get_package_share_directory
@@ -120,43 +122,6 @@ def _linear_pot_endpoints(calibration):
     return int(round(raw_at_max)), int(round(raw_at_min)), max_angle, min_angle
 
 
-def _configure_swing_from_yaml(config) -> None:
-    """Populate the legacy swing lookup globals from ExcavatorConfig."""
-    global SWING_RAW_MIN, SWING_RAW_MAX
-    global SWING_RAW_PHYS_MIN, SWING_RAW_PHYS_MAX
-    global SWING_RAW_REJECT_LO, SWING_RAW_REJECT_HI
-    global SWING_RAW_TRUSTED_MAX
-    global SWING_RAW_TABLE, SWING_SWEEP_DEG, SWING_ANGLE_TABLE
-    global SWING_ANGLE_MIN_RAD, SWING_ANGLE_MAX_RAD
-    global SWING_USABLE_MAX_DEG, SWING_USABLE_MAX_RAD
-    global SWING_RAW_ZERO
-
-    raw_table = [int(round(v)) for v in config.swing.raw_table]
-    angle_table = [float(v) for v in config.swing.angle_deg_table]
-
-    if len(raw_table) < 2 or len(raw_table) != len(angle_table):
-        raise RuntimeError("Swing calibration table is invalid")
-
-    SWING_RAW_TABLE = raw_table
-    SWING_SWEEP_DEG = angle_table
-    SWING_ANGLE_TABLE = [math.radians(v) for v in SWING_SWEEP_DEG]
-
-    SWING_RAW_MIN = min(SWING_RAW_TABLE)
-    SWING_RAW_MAX = max(SWING_RAW_TABLE)
-    SWING_RAW_PHYS_MIN = SWING_RAW_MIN
-    SWING_RAW_PHYS_MAX = SWING_RAW_MAX
-    SWING_RAW_REJECT_LO = SWING_RAW_PHYS_MIN - SWING_RAW_MARGIN
-    SWING_RAW_REJECT_HI = SWING_RAW_PHYS_MAX + SWING_RAW_MARGIN
-    SWING_RAW_TRUSTED_MAX = SWING_RAW_MAX
-
-    SWING_ANGLE_MIN_RAD = math.radians(float(config.swing.min_angle_deg))
-    SWING_ANGLE_MAX_RAD = math.radians(float(config.swing.max_angle_deg))
-    SWING_USABLE_MAX_DEG = float(config.swing.max_angle_deg)
-    SWING_USABLE_MAX_RAD = math.radians(SWING_USABLE_MAX_DEG)
-
-    SWING_RAW_ZERO = swing_rad_to_raw(0.0)
-
-
 # ================================================================
 # Platform detection
 # ================================================================
@@ -215,245 +180,6 @@ def seconds_to_duration(t: float) -> Duration:
 
 def clamp(value: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, value))
-
-
-# ================================================================
-# SWING PHOTO-REFLECTOR CALIBRATION  (ADS1115 channel 3)
-# ================================================================
-# THIS IS THE ONLY SWING CALIBRATION IN THE FILE.
-# The swing does NOT use PotJointConfig.adc_min / adc_center / adc_max.
-#
-# Measured sweep after the gradient was changed (raw ADC / voltage @
-# gain=1), monotonic. Labels are SWEEP degrees along the physical travel.
-#     0 sweep-deg -> 10848 / 1.356 V
-#    15 sweep-deg -> 11472 / 1.434 V
-#    45 sweep-deg -> 14224 / 1.778 V
-#    75 sweep-deg -> 18368 / 2.296 V
-#    90 sweep-deg -> 18736 / 2.342 V
-#
-# WARNING - THIS GRADIENT IS MUCH WEAKER THAN THE PREVIOUS ONE.
-# Total span is 7888 counts over 90 deg, down from 15072. Worse, the
-# sensitivity is wildly uneven:
-#     0-15 deg:  41.6 counts/deg
-#    15-45 deg:  91.7 counts/deg
-#    45-75 deg: 138.1 counts/deg
-#    75-90 deg:  24.5 counts/deg   <-- nearly saturated
-#
-# At 90 deg the observed sample spread is 80 counts, which at 24.5
-# counts/deg is +/-3.3 deg of apparent noise -- wider than the 2.9 deg
-# stop deadband. Closed-loop settling above ~75 deg will chatter.
-# See SWING_USABLE_MAX_DEG below.
-#
-# TODO: 30 and 60 sweep-deg were not measured. The 15->45 and 45->75
-# gaps are interpolated linearly across regions where the slope is known
-# to change by 50%+. Measure them.
-
-SWING_RAW_MIN = 1600     # CW end / start position
-SWING_RAW_MAX = 21447     # CCW end
-
-# ----------------------------------------------------------------
-# REPORTING CONVENTION
-# ----------------------------------------------------------------
-# Which sweep position reports 0 rad on /joint_states and in trajectory
-# goals. 0.0 => end-referenced: the start position is 0, angle increases
-# CCW to +90. Set to 45.0 for a centred -45..+45 convention instead.
-#
-# CHANGING THIS CHANGES THE UNITS OF EVERY SWING TRAJECTORY GOAL.
-# degrees.yaml and the URDF joint limits must be updated to match.
-SWING_ZERO_DEG = 0.0
-
-# ----------------------------------------------------------------
-# MEASURED PHYSICAL TRAVEL (open-loop sweep, pwm 230)
-# ----------------------------------------------------------------
-# The joint actually reaches raw 8864..25440 -- about 189 deg of travel,
-# roughly twice what SWING_RAW_TABLE covers. The calibrated band is a
-# SOFT limit (where positioning is trusted), not the physical range.
-#
-# The reject window must span the PHYSICAL range, not the calibrated one.
-# When it was derived from the table (8848..20736), 56% of the samples in
-# a real sweep fell outside it and would have been discarded as glitches,
-# freezing the reported position while the motor kept driving -- the exact
-# runaway mechanism the watchdog exists to catch.
-#
-# TRADE-OFF: this window is now wide enough that it no longer catches the
-# ~22800-count bus glitch seen earlier, because that value is inside the
-# real travel. Glitch rejection now rests on the median-of-5 read and the
-# progress watchdog, not on this range check.
-SWING_RAW_PHYS_MIN = 1600
-SWING_RAW_PHYS_MAX = 21447
-SWING_RAW_MARGIN = 500
-SWING_RAW_REJECT_LO = SWING_RAW_PHYS_MIN - SWING_RAW_MARGIN
-SWING_RAW_REJECT_HI = SWING_RAW_PHYS_MAX + SWING_RAW_MARGIN
-
-# ----------------------------------------------------------------
-# SENSOR VALIDITY CEILING
-# ----------------------------------------------------------------
-# Above this raw count the photo-reflector is NOT single-valued. In the
-# open-loop sweep, driving steadily in one direction produced reversals of
-# -1280, -2832 and -272 going up, and +704, +240, +2640 coming down. Every
-# reversal occurred above ~19000; below it the trace is clean and
-# monotonic. Closed-loop positioning against a sensor that moves backwards
-# while the joint moves forwards is not possible -- the controller will
-# reverse, hunt, and trip the watchdog.
-SWING_RAW_TRUSTED_MAX = 21447
-
-# How many times to re-sample before giving up on a control cycle.
-SWING_READ_RETRIES = 3
-
-
-# ----------------------------------------------------------------
-# RUNAWAY WATCHDOG
-# ----------------------------------------------------------------
-# The hard limits in plan_toward_target() are written in terms of the
-# SEMANTIC direction (+1 = increase angle). That is correct once the sign
-# convention is right, but it means they provide ZERO protection when the
-# sign is wrong: commanding +1 while the motor physically drives raw down
-# never satisfies "raw >= SWING_RAW_MAX", so the swing drives into the CW
-# stop and stalls there. Same story for a frozen sensor -- a stale raw
-# value never crosses either limit.
-#
-# These watchdogs close both holes by checking that the raw count is
-# actually moving the way the commanded direction says it should.
-
-# Consecutive cycles with no in-range sample before the swing is declared
-# blind and refuses to move.
-SWING_MAX_STALE_CYCLES = 5
-
-# Cycles of continuous drive in one direction before progress is checked.
-SWING_PROGRESS_WINDOW = 30
-
-# Raw counts of progress required over that window, in the direction the
-# controller intended. Must clear the sensor noise floor (~80 counts
-# peak-to-peak at the flat top of the curve) or noise alone decides the
-# outcome. At the flattest slope, 100 counts is ~4 deg of real motion --
-# so this WILL false-trip on slow moves above 75 deg. That is a sensor
-# problem, not a tuning problem; fix the gradient rather than lowering
-# this below the noise floor.
-SWING_MIN_PROGRESS_COUNTS = 100
-
-# ----------------------------------------------------------------
-# SWING PWM LADDER
-# ----------------------------------------------------------------
-# full_extest.py moves this joint at 220 and 255. The old ladder here
-# topped out at 180 and gave 155 for a 10 deg error -- roughly 30% below
-# the lowest speed the swing has ever been observed to move at. That is
-# why the watchdog reported "NOT MOVING": the controller was commanding a
-# duty the motor cannot break stiction at, so raw never changed.
-#
-# The gap between the slowest usable speed (~220) and full scale (255) is
-# narrow, so there is very little proportional authority here. Expect
-# coarse, near-bang-bang motion. If it overshoots, the fix is pulsing
-# (short bursts at 220+ with gaps) rather than lowering these numbers
-# back below the stiction threshold.
-SWING_PWM_FAR   = 255   # err > 0.50 rad
-SWING_PWM_MID   = 240   # err > 0.25 rad
-SWING_PWM_NEAR  = 230   # err > 0.10 rad
-SWING_PWM_FINAL = 220   # everything above the stop tolerance
-
-SWING_RAW_TABLE = [
-    1600,     # -90
-    1800,     # -45°
-    3955,     # -30°
-    6968,     #   0°
-    9943,     # +30°
-    11410,    # +45°
-    14282,    # +60°
-    17497,    # +75°
-    21447,    # +90°
-]
-
-SWING_SWEEP_DEG = [
-    -90,
-    -45.0,
-    -30.0,
-    0.0,
-    30.0,
-    45.0,
-    60.0,
-    75.0,
-    90.0,
-]
-
-# Reported angle = sweep position - SWING_ZERO_DEG.
-SWING_ANGLE_TABLE = [
-    math.radians(d - SWING_ZERO_DEG) for d in SWING_SWEEP_DEG
-]
-
-# Derived travel limits in the reporting convention.
-SWING_ANGLE_MIN_RAD = SWING_ANGLE_TABLE[0]
-SWING_ANGLE_MAX_RAD = SWING_ANGLE_TABLE[-1]
-
-# ----------------------------------------------------------------
-# USABLE RANGE
-# ----------------------------------------------------------------
-# Above this sweep position the gradient is too flat to position against
-# (24.5 counts/deg vs 138 lower down, with a noise floor of ~80 counts).
-# Set to 75.0 to clamp goals into the region the sensor can actually
-# resolve; set to 90.0 to allow the full travel and accept chatter there.
-SWING_USABLE_MAX_DEG = 90.0
-SWING_USABLE_MAX_RAD = math.radians(SWING_USABLE_MAX_DEG - SWING_ZERO_DEG)
-
-# Fail loudly at import time rather than silently interpolating garbage.
-assert len(SWING_RAW_TABLE) == len(SWING_SWEEP_DEG), \
-    "SWING_RAW_TABLE and SWING_SWEEP_DEG must be the same length"
-assert all(
-    SWING_RAW_TABLE[i] < SWING_RAW_TABLE[i + 1]
-    for i in range(len(SWING_RAW_TABLE) - 1)
-), "SWING_RAW_TABLE must be strictly increasing"
-assert all(
-    SWING_SWEEP_DEG[i] < SWING_SWEEP_DEG[i + 1]
-    for i in range(len(SWING_SWEEP_DEG) - 1)
-), "SWING_SWEEP_DEG must be strictly increasing"
-assert SWING_SWEEP_DEG[0] <= SWING_ZERO_DEG <= SWING_SWEEP_DEG[-1], \
-    "SWING_ZERO_DEG must lie inside the calibrated travel"
-
-
-def swing_raw_to_rad(raw: int) -> float:
-    """Piecewise-linear lookup: raw ADC counts -> swing angle in radians."""
-    if raw <= SWING_RAW_TABLE[0]:
-        return SWING_ANGLE_TABLE[0]
-    if raw >= SWING_RAW_TABLE[-1]:
-        return SWING_ANGLE_TABLE[-1]
-
-    for i in range(len(SWING_RAW_TABLE) - 1):
-        raw0 = SWING_RAW_TABLE[i]
-        raw1 = SWING_RAW_TABLE[i + 1]
-        if raw0 <= raw <= raw1:
-            a0 = SWING_ANGLE_TABLE[i]
-            a1 = SWING_ANGLE_TABLE[i + 1]
-            u = (raw - raw0) / float(raw1 - raw0)
-            return a0 + u * (a1 - a0)
-
-    # Unreachable given the strictly-increasing assertions above.
-    return SWING_ANGLE_TABLE[-1]
-
-
-def swing_rad_to_raw(angle_rad: float) -> int:
-    """Inverse of swing_raw_to_rad(). Used to report the centre raw count."""
-    if angle_rad <= SWING_ANGLE_TABLE[0]:
-        return SWING_RAW_TABLE[0]
-    if angle_rad >= SWING_ANGLE_TABLE[-1]:
-        return SWING_RAW_TABLE[-1]
-
-    for i in range(len(SWING_ANGLE_TABLE) - 1):
-        a0 = SWING_ANGLE_TABLE[i]
-        a1 = SWING_ANGLE_TABLE[i + 1]
-        if a0 <= angle_rad <= a1:
-            u = (angle_rad - a0) / float(a1 - a0)
-            return int(round(
-                SWING_RAW_TABLE[i]
-                + u * (SWING_RAW_TABLE[i + 1] - SWING_RAW_TABLE[i])
-            ))
-
-    return SWING_RAW_TABLE[-1]
-
-
-# Raw count at the reported zero. With SWING_ZERO_DEG=0 this equals
-# SWING_RAW_MIN; it only diverges if the reporting zero is moved off the
-# start position. Note this is the reported ZERO, not the centre of
-# travel -- unlike the old adc_center=22380, which came from a previous
-# sensor mounting and meant neither.
-SWING_RAW_ZERO = swing_rad_to_raw(0.0)
 
 
 @dataclass
@@ -756,20 +482,6 @@ class PotentiometerJointMotor: #preparing everything the controller will need. w
         self._raw_jump_candidate = None
         self._raw_jump_candidate_count = 0
 
-        # False until at least one in-range sample has been read. The
-        # controller refuses to drive the swing while this is False.
-        self._swing_raw_valid = False
-        self._swing_stale_cycles = 0
-        # Raw count when the swing is parked outside SWING_RAW_MIN..MAX,
-        # where the reported angle is a clamped endpoint and not a real
-        # measurement. None when in band.
-        self._swing_out_of_cal = None
-        self._swing_pulse_tick = 0
-        # Runaway watchdog state
-        self._swing_watch_dir = 0
-        self._swing_watch_raw = None
-        self._swing_watch_cycles = 0
-        self._swing_fault = None
         self.requested_pwm = 0
 
         # Debug trace: keep both the target received by the controller and
@@ -846,67 +558,7 @@ class PotentiometerJointMotor: #preparing everything the controller will need. w
     def read_position_rad(self) -> float:
         c = self.cfg
 
-        # ==========================================================
-        # SWING
-        # ==========================================================
-        if c.name == "swing_joint":
-
-            # Read a trustworthy swing ADC sample
-            raw = None
-
-            for _ in range(SWING_READ_RETRIES):
-
-                candidate = self.adc.read_median3(c.adc_channel)
-
-                # Reject only values completely outside the physical sensor range
-                if candidate < SWING_RAW_REJECT_LO or candidate > SWING_RAW_REJECT_HI:
-                    continue
-
-
-
-                # Candidate passed all checks
-                raw = candidate
-                break
-
-            if raw is None:
-                self._swing_stale_cycles += 1
-
-                if (self._last_valid_raw is None
-                        or self._swing_stale_cycles > SWING_MAX_STALE_CYCLES):
-                    # Either no trustworthy sample has EVER arrived, or the
-                    # sensor has gone quiet while we were driving. The old
-                    # code substituted the table minimum in the first case and held the
-                    # last value forever in the second -- both let the motor
-                    # keep driving on a position that is not real.
-                    self._swing_raw_valid = False
-                    with self._lock:
-                        self._last_velocity_rad_s = 0.0
-                        self._last_time = time.monotonic()
-                    return self._last_position_rad
-
-                # Brief glitch. Hold the last good sample for this cycle.
-                raw = self._last_valid_raw
-            else:
-                self._last_valid_raw = raw
-                self._swing_stale_cycles = 0
-
-            self._swing_raw_valid = True
-
-            # The lookup clamps out-of-band raw to the table endpoints, so a
-            # joint parked below SWING_RAW_MIN reports exactly 0.0 rad and
-            # looks perfectly healthy. Record the real raw so the controller
-            # can say so rather than acting on a clamped reading.
-            if raw < SWING_RAW_MIN or raw > SWING_RAW_MAX:
-                self._swing_out_of_cal = raw
-            else:
-                self._swing_out_of_cal = None
-
-            angle = swing_raw_to_rad(raw)
-
-        # ==========================================================
-        # OTHER JOINTS WITH CENTER
-        # ==========================================================
-        elif c.adc_center is not None:
+        if c.adc_center is not None:
             raw = self.adc.read(c.adc_channel)
 
             if raw <= c.adc_center:
@@ -1027,155 +679,6 @@ class PotentiometerJointMotor: #preparing everything the controller will need. w
         """
         pos = self.read_position_rad()
 
-        # ==========================================================
-        # SWING - SIMPLE CLOSED LOOP
-        # ==========================================================
-        if self.cfg.name == "swing_joint":
-
-            # Preserve the exact target passed into this controller before
-            # applying any safety clamp. These values are only for diagnosis.
-            self._last_requested_target_rad = target_rad
-
-            target_rad = clamp(
-                target_rad,
-                self.cfg.angle_min_rad,
-                min(self.cfg.angle_max_rad, SWING_USABLE_MAX_RAD),
-            )
-            self._last_effective_target_rad = target_rad
-
-            err = target_rad - pos
-            abs_err = abs(err)
-
-            # Latched fault: something is physically wrong. Stay stopped
-            # until reset_swing_fault() is called.
-            if self._swing_fault is not None:
-                self._swing_watch_dir = 0
-                return pos, err, False, 0, 0
-
-            # No trustworthy sensor reading -> do not move.
-            if not self._swing_raw_valid:
-                self._swing_watch_dir = 0
-                return pos, err, False, 0, 0
-
-            # Close enough
-            if abs_err <= self.cfg.stop_tolerance_rad:
-                self._swing_watch_dir = 0
-                return pos, err, True, 0, 0
-
-            # Direction from CURRENT error only
-            direction = 1 if err > 0.0 else -1
-
-            raw_now = self._last_valid_raw
-
-            # HARD SAFETY LIMITS. These only work once the sign convention
-            # is correct -- see the watchdog below for the case where it
-            # is not.
-            if direction > 0 and raw_now >= SWING_RAW_MAX:
-                self._swing_watch_dir = 0
-                return pos, err, True, 0, 0
-
-            if direction < 0 and raw_now <= SWING_RAW_MIN:
-                self._swing_watch_dir = 0
-                return pos, err, True, 0, 0
-
-            # SENSOR VALIDITY CEILING. Above SWING_RAW_TRUSTED_MAX the
-            # photo-reflector is not single-valued, so the reported angle
-            # is meaningless. Allow driving back down out of that region,
-            # never further into it.
-            if raw_now >= SWING_RAW_TRUSTED_MAX and direction > 0:
-                self._swing_watch_dir = 0
-                self._swing_fault = (
-                    f"swing at raw {raw_now}, above the trusted ceiling "
-                    f"{SWING_RAW_TRUSTED_MAX}. The photo-reflector is not "
-                    f"single-valued up here; position cannot be trusted. "
-                    f"Jog it back down below {SWING_RAW_TRUSTED_MAX}."
-                )
-                return pos, err, False, 0, 0
-
-            # ------------------------------------------------------
-            # PULSED APPROACH
-            # ------------------------------------------------------
-            # At 220+ PWM this joint covers ~3.4 deg per 20 ms control
-            # cycle -- more than the whole 2.9 deg stop tolerance. It
-            # literally cannot stop inside the deadband, so it overshoots,
-            # reverses, overshoots back: the shaking.
-            #
-            # Lowering the PWM is not an option (below ~220 it does not
-            # move at all), so lower the DUTY IN TIME instead: drive one
-            # cycle, coast several. Instantaneous torque stays above
-            # stiction, average speed drops by the on/off ratio.
-            #
-            # Returns pwm 0 while preserving `direction`, so the pins stay
-            # set and the watchdog window is not reset by coast cycles.
-            if (self.cfg.pulse_off_cycles > 0
-                    and abs_err <= self.cfg.pulse_err_rad):
-                period = self.cfg.pulse_on_cycles + self.cfg.pulse_off_cycles
-                phase = self._swing_pulse_tick % period
-                self._swing_pulse_tick += 1
-                if phase >= self.cfg.pulse_on_cycles:
-                    return pos, err, False, direction, 0
-            else:
-                self._swing_pulse_tick = 0
-
-            # ------------------------------------------------------
-            # RUNAWAY WATCHDOG
-            # ------------------------------------------------------
-            # raw is defined to increase with the reported angle, so after
-            # a window of continuous drive, (raw_now - raw_at_window_start)
-            # must have the same sign as `direction` and some magnitude.
-            # Wrong invert_motor gives a negative product; a stall or a
-            # frozen sensor gives roughly zero. Both latch a fault.
-            if direction != self._swing_watch_dir:
-                self._swing_watch_dir = direction
-                self._swing_watch_raw = raw_now
-                self._swing_watch_cycles = 0
-            else:
-                self._swing_watch_cycles += 1
-
-                if self._swing_watch_cycles >= SWING_PROGRESS_WINDOW:
-                    progress = (raw_now - self._swing_watch_raw) * direction
-
-                    if progress < SWING_MIN_PROGRESS_COUNTS:
-                        if progress < -SWING_MIN_PROGRESS_COUNTS:
-                            self._swing_fault = (
-                                f"swing moving BACKWARDS: commanded direction "
-                                f"{direction:+d} but raw went "
-                                f"{self._swing_watch_raw} -> {raw_now} over "
-                                f"{SWING_PROGRESS_WINDOW} cycles. "
-                                f"invert_motor is almost certainly wrong."
-                            )
-                        else:
-                            self._swing_fault = (
-                                f"swing NOT MOVING: commanded direction "
-                                f"{direction:+d}, raw stuck near {raw_now} over "
-                                f"{SWING_PROGRESS_WINDOW} cycles. "
-                                f"Stalled against a stop, PWM too low, or the "
-                                f"photo-reflector is not tracking."
-                            )
-                        self._swing_watch_dir = 0
-                        return pos, err, False, 0, 0
-
-                    # Progress is real. Start a fresh window.
-                    self._swing_watch_raw = raw_now
-                    self._swing_watch_cycles = 0
-
-            # Swing PWM ladder. This only has any effect now that the
-            # shared PWM pin is arbitrated -- previously max() across all
-            # joints overrode it on any multi-joint trajectory.
-            if abs_err > 0.50:
-                pwm = SWING_PWM_FAR
-            elif abs_err > 0.25:
-                pwm = SWING_PWM_MID
-            elif abs_err > 0.10:
-                pwm = SWING_PWM_NEAR
-            else:
-                pwm = SWING_PWM_FINAL
-
-            return pos, err, False, direction, pwm
-
-        # ==========================================================
-        # BOOM / ARM / BUCKET
-        # ==========================================================
         err = target_rad - pos
         abs_err = abs(err)
 
@@ -1199,13 +702,6 @@ class PotentiometerJointMotor: #preparing everything the controller will need. w
             )
 
         return pos, err, abs_err <= self.cfg.tolerance_rad, direction, pwm
-
-    def reset_swing_fault(self) -> None:
-        """Clear a latched watchdog fault. Fix the cause first."""
-        self._swing_fault = None
-        self._swing_watch_dir = 0
-        self._swing_watch_raw = None
-        self._swing_watch_cycles = 0
 
     def apply_plan(self, direction: int, pwm: int) -> None:
         """Commit a plan produced by plan_toward_target()."""
@@ -1315,45 +811,217 @@ class OpenLoopEstimatedJointMotor: # can disregard the open loop stuff, maybe we
 
 
 @dataclass
-class PhotoReflectorConfig:
+class ExternalSwingConfig:
     name: str
-    adc_channel: int
-    adc_min: int
-    adc_max: int
+    in1_pin: int
+    in2_pin: int
+    pwm_pin: int
     angle_min_rad: float
     angle_max_rad: float
-    invert_sensor: bool = False 
-    #adc_channel: int = 3
-    #threshold_raw: int = 16000
-    #active_when_above_threshold: bool = True
+    invert_motor: bool
+    tolerance_rad: float
+    stop_tolerance_rad: float
+    far_error_rad: float
+    far_pwm: int
+    near_pwm: int
+    sensor_timeout_sec: float
+    progress_timeout_sec: float
+    min_progress_rad: float
+    pulse_err_rad: float
+    pulse_on_cycles: int
+    pulse_off_cycles: int
+    pwm_frequency_hz: int = 1000
 
 
-class PhotoReflector:
-    def __init__(self, adc: ADS1115Reader, cfg: PhotoReflectorConfig):
-        self.adc = adc
+class ExternalSwingJointMotor:
+    """Swing motor controlled from a sensor-independent JointState stream."""
+
+    def __init__(self, pi, cfg: ExternalSwingConfig):
+        self.pi = pi
         self.cfg = cfg
+        self.name = cfg.name
+        self.requested_pwm = 0
+        self._lock = threading.Lock()
+        self._last_position_rad = 0.0
+        self._last_velocity_rad_s = 0.0
+        self._last_sensor_receive = None
+        self._last_sensor_position = None
+        self._last_sensor_time = None
+        self._swing_fault = None
+        self._swing_pulse_tick = 0
+        self._watch_direction = 0
+        self._watch_position = None
+        self._watch_started = None
+        self._last_requested_target_rad = None
+        self._last_effective_target_rad = None
 
-    def raw(self) -> int:
-        return self.adc.read(self.cfg.adc_channel)
-        
-    def voltage(self) -> float:
-        return self.adc.voltage_(self.cfg.adc_channel)
-    
-    def position_rad(self) ->float:
-        raw = self.raw()
-        c = self.cfg
-    
-        span = max(1, c.adc_max - c.adc_min)
-        u = clamp((raw - c.adc_min) / span, 0.0, 1.0)
-        
-        if c.invert_sensor:
-            u = 1.0 - u
-        
-        return c.angle_min_rad + u * (c.angle_max_rad - c.angle_min_rad)
+        pi.set_mode(cfg.in1_pin, pigpio.OUTPUT)
+        pi.set_mode(cfg.in2_pin, pigpio.OUTPUT)
+        pi.set_mode(cfg.pwm_pin, pigpio.OUTPUT)
+        pi.set_PWM_frequency(cfg.pwm_pin, cfg.pwm_frequency_hz)
+        pi.set_PWM_dutycycle(cfg.pwm_pin, 0)
 
-    #def active(self) -> bool:
-        #value = self.raw()
-        # return value >= self.cfg.threshold_raw if self.cfg.active_when_above_threshold else value <= self.cfg.threshold_raw
+    def update_position(self, position_rad: float) -> None:
+        if not math.isfinite(position_rad):
+            return
+        now = time.monotonic()
+        with self._lock:
+            if self._last_sensor_position is not None and self._last_sensor_time is not None:
+                dt = max(1e-6, now - self._last_sensor_time)
+                self._last_velocity_rad_s = (
+                    position_rad - self._last_sensor_position
+                ) / dt
+            else:
+                self._last_velocity_rad_s = 0.0
+            self._last_position_rad = position_rad
+            self._last_sensor_position = position_rad
+            self._last_sensor_time = now
+            self._last_sensor_receive = now
+
+    def sensor_age_sec(self) -> float:
+        with self._lock:
+            received = self._last_sensor_receive
+        if received is None:
+            return float("inf")
+        return max(0.0, time.monotonic() - received)
+
+    def sensor_valid(self) -> bool:
+        return self.sensor_age_sec() <= self.cfg.sensor_timeout_sec
+
+    def read_position_rad(self) -> float:
+        with self._lock:
+            return float(self._last_position_rad)
+
+    def read_velocity_rad_s(self) -> float:
+        if not self.sensor_valid():
+            return 0.0
+        with self._lock:
+            return float(self._last_velocity_rad_s)
+
+    def stop(self) -> None:
+        self.pi.write(self.cfg.in1_pin, 0)
+        self.pi.write(self.cfg.in2_pin, 0)
+        self.requested_pwm = 0
+
+    def drive_direction(self, desired_direction: int, pwm: int) -> None:
+        if desired_direction == 0:
+            self.stop()
+            return
+        motor_dir = -desired_direction if self.cfg.invert_motor else desired_direction
+        pwm = int(clamp(pwm, 0, 255))
+        if motor_dir > 0:
+            self.pi.write(self.cfg.in1_pin, 1)
+            self.pi.write(self.cfg.in2_pin, 0)
+        else:
+            self.pi.write(self.cfg.in1_pin, 0)
+            self.pi.write(self.cfg.in2_pin, 1)
+        self.requested_pwm = pwm
+
+    def _reset_progress_watch(self) -> None:
+        self._watch_direction = 0
+        self._watch_position = None
+        self._watch_started = None
+
+    def reset_swing_fault(self) -> None:
+        self._swing_fault = None
+        self._reset_progress_watch()
+
+    def plan_toward_target(
+        self, target_rad: float
+    ) -> Tuple[float, float, bool, int, int]:
+        pos = self.read_position_rad()
+        self._last_requested_target_rad = target_rad
+        target_rad = clamp(
+            target_rad,
+            self.cfg.angle_min_rad,
+            self.cfg.angle_max_rad,
+        )
+        self._last_effective_target_rad = target_rad
+        err = target_rad - pos
+        abs_err = abs(err)
+
+        if self._swing_fault is not None:
+            return pos, err, False, 0, 0
+
+        if not self.sensor_valid():
+            self._swing_fault = (
+                f"swing feedback stale or missing: age="
+                f"{self.sensor_age_sec():.3f}s, limit="
+                f"{self.cfg.sensor_timeout_sec:.3f}s"
+            )
+            self._reset_progress_watch()
+            return pos, err, False, 0, 0
+
+        if pos < self.cfg.angle_min_rad or pos > self.cfg.angle_max_rad:
+            self._swing_fault = (
+                f"swing feedback outside configured range: "
+                f"{math.degrees(pos):.2f} deg"
+            )
+            self._reset_progress_watch()
+            return pos, err, False, 0, 0
+
+        if abs_err <= self.cfg.stop_tolerance_rad:
+            self._reset_progress_watch()
+            return pos, err, True, 0, 0
+
+        direction = 1 if err > 0.0 else -1
+
+        if direction > 0 and pos >= self.cfg.angle_max_rad:
+            self._reset_progress_watch()
+            return pos, err, True, 0, 0
+        if direction < 0 and pos <= self.cfg.angle_min_rad:
+            self._reset_progress_watch()
+            return pos, err, True, 0, 0
+
+        if direction != self._watch_direction:
+            self._watch_direction = direction
+            self._watch_position = pos
+            self._watch_started = time.monotonic()
+        elif (
+            self._watch_started is not None
+            and time.monotonic() - self._watch_started
+            >= self.cfg.progress_timeout_sec
+        ):
+            progress = (pos - self._watch_position) * direction
+            if progress < self.cfg.min_progress_rad:
+                if progress < -self.cfg.min_progress_rad:
+                    reason = "moving opposite the commanded direction"
+                else:
+                    reason = "not making sufficient progress"
+                self._swing_fault = (
+                    f"swing {reason}: progress="
+                    f"{math.degrees(progress):.2f} deg in "
+                    f"{self.cfg.progress_timeout_sec:.2f}s"
+                )
+                self._reset_progress_watch()
+                return pos, err, False, 0, 0
+            self._watch_position = pos
+            self._watch_started = time.monotonic()
+
+        if (
+            self.cfg.pulse_off_cycles > 0
+            and abs_err <= self.cfg.pulse_err_rad
+        ):
+            period = self.cfg.pulse_on_cycles + self.cfg.pulse_off_cycles
+            phase = self._swing_pulse_tick % period
+            self._swing_pulse_tick += 1
+            if phase >= self.cfg.pulse_on_cycles:
+                return pos, err, False, direction, 0
+        else:
+            self._swing_pulse_tick = 0
+
+        pwm = (
+            self.cfg.far_pwm
+            if abs_err > self.cfg.far_error_rad
+            else self.cfg.near_pwm
+        )
+        return pos, err, False, direction, pwm
+
+    def apply_plan(self, direction: int, pwm: int) -> None:
+        if direction == 0:
+            self.stop()
+        else:
+            self.drive_direction(direction, pwm)
 
 
 class PiExcavatorTrajectoryServer(Node):
@@ -1375,8 +1043,6 @@ class PiExcavatorTrajectoryServer(Node):
         control = _require_mapping(runtime_yaml, "control")
         home = _require_mapping(runtime_yaml, "home")
         joint_control = _require_mapping(runtime_yaml, "joint_control")
-
-        _configure_swing_from_yaml(self.excavator_config)
 
         # YAML values are defaults. ROS parameters can still override them.
         self.declare_parameter(
@@ -1414,6 +1080,17 @@ class PiExcavatorTrajectoryServer(Node):
         )
 
         swing_control = _require_mapping(joint_control, "swing")
+        self.declare_parameter(
+            "swing_position_topic",
+            str(swing_control.get(
+                "position_topic",
+                f"/{self.excavator_config.excavator_name}/swing_joint_state",
+            )),
+        )
+        self.declare_parameter(
+            "swing_sensor_timeout_sec",
+            float(swing_control.get("sensor_timeout_sec", 0.30)),
+        )
         self.declare_parameter(
             "swing_pulse_err_deg",
             float(swing_control.get("pulse_err_deg", 5.0)),
@@ -1457,6 +1134,12 @@ class PiExcavatorTrajectoryServer(Node):
         swing_pulse_off = max(
             0,
             int(self.get_parameter("swing_pulse_off").value),
+        )
+        swing_position_topic = str(
+            self.get_parameter("swing_position_topic").value
+        )
+        swing_sensor_timeout_sec = float(
+            self.get_parameter("swing_sensor_timeout_sec").value
         )
 
         if self.pwm_arbitration not in ("exclusive", "max"):
@@ -1538,36 +1221,42 @@ class PiExcavatorTrajectoryServer(Node):
         )
 
         self.joints: Dict[str, object] = {
-            "swing_joint": PotentiometerJointMotor(
+            "swing_joint": ExternalSwingJointMotor(
                 self.pi,
-                self.adc,
-                PotJointConfig(
+                ExternalSwingConfig(
                     name="swing_joint",
                     in1_pin=int(swing_gpio["in1_pin"]),
                     in2_pin=int(swing_gpio["in2_pin"]),
                     pwm_pin=self.shared_pwm_pin,
-                    adc_channel=int(self.excavator_config.swing.adc_channel),
-                    adc_min=SWING_RAW_MIN,
-                    adc_center=SWING_RAW_ZERO,
-                    adc_max=SWING_RAW_MAX,
-                    angle_min_rad=SWING_ANGLE_MIN_RAD,
-                    angle_max_rad=SWING_ANGLE_MAX_RAD,
-                    invert_pot=False,
+                    angle_min_rad=math.radians(
+                        float(self.excavator_config.swing.min_angle_deg)
+                    ),
+                    angle_max_rad=math.radians(
+                        float(self.excavator_config.swing.max_angle_deg)
+                    ),
                     invert_motor=swing_invert_motor,
-                    kp=float(swing_control.get("kp", 120.0)),
-                    min_pwm=int(swing_control.get("min_pwm", 220)),
-                    max_pwm=int(swing_control.get("max_pwm", 255)),
-                    kick_pwm=int(swing_control.get("kick_pwm", 255)),
-                    pwm_frequency_hz=pwm_frequency_hz,
                     tolerance_rad=float(
-                        swing_control.get("tolerance_rad", 0.04)
+                        swing_control.get("tolerance_rad", 0.0873)
                     ),
                     stop_tolerance_rad=float(
-                        swing_control.get("stop_tolerance_rad", 0.05)
+                        swing_control.get("stop_tolerance_rad", 0.0873)
+                    ),
+                    far_error_rad=math.radians(
+                        float(swing_control.get("far_error_deg", 15.0))
+                    ),
+                    far_pwm=int(swing_control.get("far_pwm", 255)),
+                    near_pwm=int(swing_control.get("near_pwm", 220)),
+                    sensor_timeout_sec=swing_sensor_timeout_sec,
+                    progress_timeout_sec=float(
+                        swing_control.get("progress_timeout_sec", 0.35)
+                    ),
+                    min_progress_rad=math.radians(
+                        float(swing_control.get("min_progress_deg", 1.0))
                     ),
                     pulse_err_rad=swing_pulse_err_rad,
                     pulse_on_cycles=swing_pulse_on,
                     pulse_off_cycles=swing_pulse_off,
+                    pwm_frequency_hz=pwm_frequency_hz,
                 ),
             ),
             "boom_joint": PotentiometerJointMotor(
@@ -1719,6 +1408,19 @@ class PiExcavatorTrajectoryServer(Node):
         )
         #this creates a ros publisher and pushes the current joint states to ROS so it can see the joints position in radians 
         self.joint_state_pub = self.create_publisher(JointState, "joint_states", qos)
+        self._sensor_callback_group = MutuallyExclusiveCallbackGroup()
+        sensor_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=5,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+        )
+        self.swing_position_sub = self.create_subscription(
+            JointState,
+            swing_position_topic,
+            self._swing_position_cb,
+            sensor_qos,
+            callback_group=self._sensor_callback_group,
+        )
         # creates the server that listens for movement commands
         #actually run the command, decide if valid, and stop if canceled
         self.action_server = ActionServer(
@@ -1735,21 +1437,13 @@ class PiExcavatorTrajectoryServer(Node):
         self.get_logger().info("[PI MODE] PiExcavatorTrajectoryServer ready")
         self.get_logger().info(f"  Action  : {self.action_name}")
         self.get_logger().info("  Publishes feedback: /joint_states")
+        self.get_logger().info(
+            f"  Swing feedback: {swing_position_topic} "
+            f"(timeout {swing_sensor_timeout_sec:.2f}s)"
+        )
         self.get_logger().warn("  Calibrate adc_min/adc_max for boom/arm/bucket before real operation!")
         self.get_logger().warn(
-            "  swing_joint range: "
-            f"{math.degrees(SWING_ANGLE_MIN_RAD):+.1f} deg (raw {SWING_RAW_MIN}) .. "
-            f"{math.degrees(SWING_ANGLE_MAX_RAD):+.1f} deg (raw {SWING_RAW_MAX}), "
-            f"0 deg = sweep {SWING_ZERO_DEG:.1f} (raw {SWING_RAW_ZERO})"
-        )
-        self.get_logger().warn(
-            f"  swing reject window: {SWING_RAW_REJECT_LO}..{SWING_RAW_REJECT_HI} "
-            f"(physical travel {SWING_RAW_PHYS_MIN}..{SWING_RAW_PHYS_MAX}), "
-            f"sensor trusted below {SWING_RAW_TRUSTED_MAX}, "
-            f"goals clamped to {SWING_USABLE_MAX_DEG:.0f} deg"
-        )
-        self.get_logger().warn(
-            "  swing trajectory goals must use THIS convention - check degrees.yaml and the URDF"
+            "  Swing remains disabled until fresh external feedback arrives."
         )
 
         if self.auto_home_on_startup:
@@ -1761,6 +1455,21 @@ class PiExcavatorTrajectoryServer(Node):
             self.get_logger().info(
                 "  auto_home_on_startup=false: startup homing is disabled; hardware will remain stationary."
             )
+    def _swing_position_cb(self, msg: JointState) -> None:
+        try:
+            index = list(msg.name).index("swing_joint")
+        except ValueError:
+            return
+        if index >= len(msg.position):
+            return
+        position = float(msg.position[index])
+        if not math.isfinite(position):
+            self.get_logger().error("Ignoring non-finite swing position")
+            return
+        swing = self.joints.get("swing_joint")
+        if swing is not None:
+            swing.update_position(position)
+
     # ── Action callbacks ─────────────────────────────────────────
     def move_to_home(self):
         self.get_logger().info("[HOME] Moving excavator to starting position...")
@@ -1968,8 +1677,6 @@ class PiExcavatorTrajectoryServer(Node):
             if elapsed >= next_fb:
                 if swing is not None and "swing_joint" in plans:
                     d, p, e = plans["swing_joint"]
-                    ooc = getattr(swing, "_swing_out_of_cal", None)
-                    flag = f" OUT-OF-CAL(raw={ooc})" if ooc is not None else ""
                     requested_target = getattr(
                         swing, "_last_requested_target_rad", None
                     )
@@ -1977,7 +1684,7 @@ class PiExcavatorTrajectoryServer(Node):
                         swing, "_last_effective_target_rad", None
                     )
                     current_pos = actual_positions[joint_names.index("swing_joint")]
-                    raw_now = getattr(swing, "_last_valid_raw", None)
+                    sensor_age = swing.sensor_age_sec()
 
                     requested_deg = (
                         math.degrees(requested_target)
@@ -1994,7 +1701,8 @@ class PiExcavatorTrajectoryServer(Node):
                         f"effective={effective_deg:+.2f}deg "
                         f"current={math.degrees(current_pos):+.2f}deg "
                         f"error={math.degrees(e):+.2f}deg "
-                        f"dir={d:+d} pwm={p} raw={raw_now}{flag}"
+                        f"dir={d:+d} pwm={p} "
+                        f"sensor_age={sensor_age:.3f}s"
                     )
                 dp = JointTrajectoryPoint()
                 ap = JointTrajectoryPoint()
@@ -2029,7 +1737,7 @@ class PiExcavatorTrajectoryServer(Node):
                 final_errors[jn] = abs(err)
 
             duty = self._apply_plans(plans)
-            swing_raw = getattr(swing, "_last_valid_raw", None) if swing else None
+            swing_sensor_age = swing.sensor_age_sec() if swing else float("nan")
 
             tolerance_status = ", ".join(
                 f"{jn}: err={math.degrees(final_errors[jn]):.2f}deg "
@@ -2038,7 +1746,7 @@ class PiExcavatorTrajectoryServer(Node):
             )
             self.get_logger().info(
                 f"[PI] duty={duty} final=[{tolerance_status}] "
-                f"swing_raw={swing_raw}"
+                f"swing_sensor_age={swing_sensor_age:.3f}s"
             )
 
             if swing is not None and "swing_joint" in plans:
@@ -2062,7 +1770,8 @@ class PiExcavatorTrajectoryServer(Node):
                     f"effective={effective_deg:+.2f}deg "
                     f"current={math.degrees(current_pos):+.2f}deg "
                     f"error={math.degrees(e):+.2f}deg "
-                    f"dir={d:+d} pwm={p} raw={swing_raw} duty={duty}"
+                    f"dir={d:+d} pwm={p} "
+                    f"sensor_age={swing_sensor_age:.3f}s duty={duty}"
                 )
 
             if swing is not None and getattr(swing, "_swing_fault", None):
@@ -2230,12 +1939,15 @@ def main() -> None:
         )
         rclpy.init()
         node = PiExcavatorTrajectoryServer(config_path=config_path)
+        executor = MultiThreadedExecutor(num_threads=2)
+        executor.add_node(node)
         try:
-            rclpy.spin(node)
+            executor.spin()
         except KeyboardInterrupt:
             pass
         finally:
             try:
+                executor.shutdown()
                 node.cleanup()
                 node.destroy_node()
             except Exception:

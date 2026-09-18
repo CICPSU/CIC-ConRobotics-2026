@@ -8,7 +8,6 @@ from excavator_control.config_loader import (
     linear_angle_to_raw,
     linear_raw_to_angle,
     load_excavator_config,
-    swing_raw_to_angle,
 )
 
 
@@ -59,23 +58,8 @@ def make_valid_config() -> dict:
             },
 
             "swing": {
-                "adc_channel": 3,
-                "min_angle_deg": -90.0,
-                "max_angle_deg": 90.0,
-                "angle_deg_table": [
-                    -90.0,
-                    -45.0,
-                    0.0,
-                    45.0,
-                    90.0,
-                ],
-                "raw_table": [
-                    1000,
-                    1500,
-                    2000,
-                    2500,
-                    3000,
-                ],
+                "min_angle_deg": 0.0,
+                "max_angle_deg": 95.0,
             },
         },
 
@@ -139,8 +123,8 @@ def test_load_valid_config(
     assert config.bucket.min_angle_deg == 0.0
     assert config.bucket.max_angle_deg == 90.0
 
-    assert config.swing.min_angle_deg == -90.0
-    assert config.swing.max_angle_deg == 90.0
+    assert config.swing.min_angle_deg == 0.0
+    assert config.swing.max_angle_deg == 95.0
 
 
 def test_reject_identical_linear_raw_endpoints(
@@ -217,7 +201,7 @@ def test_linear_angle_to_raw(
     assert raw == pytest.approx(1500.0)
 
 
-def test_swing_interpolation(
+def test_swing_does_not_require_adc_calibration(
     tmp_path: Path,
 ) -> None:
     path = write_yaml(
@@ -227,9 +211,7 @@ def test_swing_interpolation(
 
     config = load_excavator_config(path)
 
-    angle = swing_raw_to_angle(
-        2250,
-        config.swing,
-    )
-
-    assert angle == pytest.approx(22.5)
+    assert config.swing.min_angle_deg == 0.0
+    assert config.swing.max_angle_deg == 95.0
+    assert not hasattr(config.swing, "adc_channel")
+    assert not hasattr(config.swing, "raw_table")
