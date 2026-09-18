@@ -109,7 +109,7 @@ joint_control:
 
     far_error_deg: 15.0
     far_pwm: 255
-    near_pwm: 220
+    near_pwm: 255
 
     tolerance_rad: 0.0873 # 5 degrees
     stop_tolerance_rad: 0.0873 # 5 degrees
