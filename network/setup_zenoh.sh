@@ -164,6 +164,17 @@ resolve_device_ip() {
             echo "${EXCAVATOR_04}"
             ;;
 
+        excavator5|excavator_05)
+            echo "${EXCAVATOR_05}"
+            ;;
+
+        excavator6|excavator_06)
+            echo "${EXCAVATOR_06}"
+            ;;
+
+        excavator7|excavator_07)
+            echo "${EXCAVATOR_07}"
+            ;;
         *)
             return 1
             ;;
@@ -340,6 +351,10 @@ case "${ROLE}" in
             echo "  excavator2"
             echo "  excavator3"
             echo "  excavator4"
+            echo "  excavator5"
+            echo "  excavator6"
+            echo "  excavator7"
+
             return 1 2>/dev/null || exit 1
         fi
 

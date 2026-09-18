@@ -88,6 +88,17 @@ resolve_device_ip() {
             echo "${EXCAVATOR_04}"
             ;;
 
+        excavator_05)
+            echo "${EXCAVATOR_05}"
+            ;;
+
+        excavator_06)
+            echo "${EXCAVATOR_06}"
+            ;;
+
+        excavator_07)
+            echo "${EXCAVATOR_07}"
+            ;;
         *)
             return 1
             ;;
