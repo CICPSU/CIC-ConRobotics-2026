@@ -6,8 +6,8 @@
     max_hamming: 0
 
     detector:
-      threads: 2
-      decimate: 1.0
+      threads: 4
+      decimate: 1.5
       blur: 0.0
       refine: true
       sharpening: 0.25
@@ -16,8 +16,8 @@
     pose_estimation_method: "pnp"
 
     tag:
-      # 0,1,2 = trucks. 16,17,18 = fixed floor landmarks.
-      ids: [0, 1, 2, 3, 4, 16, 17, 18]
+      # 0,1,2 = trucks. 9 =excavator. 16,17,18 = fixed floor landmarks.
+      ids: [0, 1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 16, 17, 18]
 
       frames:
         [
@@ -26,10 +26,16 @@
           "tag36h11_2",
           "tag36h11_3",
           "tag36h11_4",
+          "tag36h11_7",
+          "tag36h11_8",
+          "tag36h11_9",
+          "tag36h11_10",
+          "tag36h11_11",
+          "tag36h11_12",
           "tag36h11_16",
           "tag36h11_17",
           "tag36h11_18"
         ]
 
-      # Truck tags are 8.0 cm. Landmark tags are 10.8 cm.
-      sizes: [0.080, 0.080, 0.080, 0.080, 0.080, 0.108, 0.108, 0.108]
+      # Truck and Excavator tags are 8.0 cm. Landmark tags are 10.8 cm.
+      sizes: [0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.108, 0.108, 0.108]
