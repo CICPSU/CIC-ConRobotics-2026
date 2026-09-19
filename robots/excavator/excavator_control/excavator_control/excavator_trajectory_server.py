@@ -1000,6 +1000,16 @@ class ExternalSwingJointMotor:
         ):
             progress = (pos - self._watch_position) * direction
             if progress < self.cfg.min_progress_rad:
+                # The controller aims for stop_tolerance_rad, but a joint
+                # already inside tolerance_rad is operationally acceptable.
+                # Do not turn a small residual error, backlash, or a brief
+                # opposite coast into an Action abort. Large residual errors
+                # still fall through to the watchdog fault below.
+                if abs_err <= self.cfg.tolerance_rad:
+                    self._goal_reached_latched = True
+                    self._reset_progress_watch()
+                    return pos, err, True, 0, 0
+
                 if progress < -self.cfg.min_progress_rad:
                     reason = "moving opposite the commanded direction"
                 else:
