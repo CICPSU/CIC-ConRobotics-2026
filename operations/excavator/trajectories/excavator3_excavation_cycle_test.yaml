@@ -1,0 +1,59 @@
+trajectory_name: excavator3_excavation_cycle_test
+description: Combined excavation, swing, dumping, and return cycle for excavator 3.
+
+joints:
+  - swing
+  - boom
+  - arm
+  - bucket
+
+waypoints:
+
+  - name: open_bucket_for_approach
+    positions:
+      swing: 90.0
+      boom: -10.0
+      arm: 60.0
+      bucket: 0.0
+
+  - name: lower_boom_to_dig
+    positions:
+      swing: 90.0
+      boom: -40.0
+      arm: 60.0
+      bucket: 0.0
+
+  - name: curl_bucket_and_arm_in
+    positions:
+      swing: 90.0
+      boom: -40.0
+      arm: 90.0
+      bucket: 90.0
+
+  - name: lift_boom
+    positions:
+      swing: 90.0
+      boom: -20.0
+      arm: 90.0
+      bucket: 90.0
+
+  - name: swing_to_dump
+    positions:
+      swing: 0.0
+      boom: -20.0
+      arm: 90.0
+      bucket: 90.0
+
+  - name: dump_bucket
+    positions:
+      swing: 0.0
+      boom: -10.0
+      arm: 60.0
+      bucket: 0.0
+
+  - name: swing_back
+    positions:
+      swing: 90.0
+      boom: -10.0
+      arm: 60.0
+      bucket: 0.0
