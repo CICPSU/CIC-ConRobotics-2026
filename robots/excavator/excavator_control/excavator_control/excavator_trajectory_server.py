@@ -1175,6 +1175,43 @@ class PiExcavatorTrajectoryServer(Node):
             )
             self.pwm_arbitration = "exclusive"
 
+        swing_hard_min_deg = float(
+            self.excavator_config.swing.min_angle_deg
+        )
+        swing_hard_max_deg = float(
+            self.excavator_config.swing.max_angle_deg
+        )
+        swing_command_min_deg = float(
+            swing_control.get("command_min_angle_deg", swing_hard_min_deg)
+        )
+        swing_command_max_deg = float(
+            swing_control.get("command_max_angle_deg", swing_hard_max_deg)
+        )
+
+        if swing_hard_min_deg > swing_hard_max_deg:
+            raise RuntimeError(
+                "Invalid swing hard range: "
+                f"{swing_hard_min_deg:.3f} deg > "
+                f"{swing_hard_max_deg:.3f} deg"
+            )
+        if swing_command_min_deg > swing_command_max_deg:
+            raise RuntimeError(
+                "Invalid swing command range: "
+                f"{swing_command_min_deg:.3f} deg > "
+                f"{swing_command_max_deg:.3f} deg"
+            )
+        if (
+            swing_command_min_deg < swing_hard_min_deg
+            or swing_command_max_deg > swing_hard_max_deg
+        ):
+            raise RuntimeError(
+                "Swing command range must be inside hard observed range: "
+                f"command=[{swing_command_min_deg:.3f}, "
+                f"{swing_command_max_deg:.3f}] deg, "
+                f"hard=[{swing_hard_min_deg:.3f}, "
+                f"{swing_hard_max_deg:.3f}] deg"
+            )
+
         # Home targets are human-readable degrees in YAML.
         self.home_position = {
             "boom_joint": math.radians(float(home["boom_deg"])),
@@ -1182,13 +1219,14 @@ class PiExcavatorTrajectoryServer(Node):
             "bucket_joint": math.radians(float(home["bucket_deg"])),
         }
 
-        # Safety limits used to validate every FollowJointTrajectory goal
-        # before the hardware is allowed to move. Values come directly from
-        # excavator1.yaml through config_loader.py.
+        # Command limits validate every FollowJointTrajectory goal before
+        # hardware can move. Swing deliberately uses a narrower command
+        # range than its hard observed range so normal coast is measurable
+        # without allowing goals near the physical boundary.
         self.joint_limits_rad = {
             "swing_joint": (
-                math.radians(float(self.excavator_config.swing.min_angle_deg)),
-                math.radians(float(self.excavator_config.swing.max_angle_deg)),
+                math.radians(swing_command_min_deg),
+                math.radians(swing_command_max_deg),
             ),
             "boom_joint": (
                 math.radians(float(self.excavator_config.boom.min_angle_deg)),
@@ -1466,6 +1504,13 @@ class PiExcavatorTrajectoryServer(Node):
         self.get_logger().info(
             f"  Swing feedback: {swing_position_topic} "
             f"(timeout {swing_sensor_timeout_sec:.2f}s)"
+        )
+        self.get_logger().info(
+            "  Swing ranges: "
+            f"command=[{swing_command_min_deg:.1f}, "
+            f"{swing_command_max_deg:.1f}] deg, "
+            f"hard=[{swing_hard_min_deg:.1f}, "
+            f"{swing_hard_max_deg:.1f}] deg"
         )
         self.get_logger().warn("  Calibrate adc_min/adc_max for boom/arm/bucket before real operation!")
         self.get_logger().warn(

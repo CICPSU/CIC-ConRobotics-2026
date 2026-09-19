@@ -26,11 +26,23 @@ class SwingPositionAdapter(Node):
             "/excavator3/swing_joint_state",
         )
         self.declare_parameter("print_rate_hz", 5.0)
+        # Fixed transform from the ceiling camera yaw convention to the
+        # site convention used by operations: left=0 deg and up=+90 deg.
+        # This is not automatic zeroing and does not depend on startup pose.
+        self.declare_parameter("camera_to_site_yaw_offset_deg", -90.0)
 
         self.tag_frame = str(self.get_parameter("tag_frame").value).lstrip("/")
         self.output_topic = str(self.get_parameter("output_topic").value)
         print_rate_hz = max(0.1, float(self.get_parameter("print_rate_hz").value))
+        self.camera_to_site_yaw_offset_rad = math.radians(
+            float(
+                self.get_parameter(
+                    "camera_to_site_yaw_offset_deg"
+                ).value
+            )
+        )
 
+        self._last_raw_yaw_rad = None
         self._last_yaw_rad = None
         self._last_receive = None
         self._last_source_stamp = None
@@ -67,7 +79,11 @@ class SwingPositionAdapter(Node):
         self.get_logger().info(
             f"Converting {self.tag_frame} TF to {self.output_topic}"
         )
-        self.get_logger().info("Publishing raw TF yaw; no automatic zeroing.")
+        self.get_logger().info(
+            "Publishing site-frame swing yaw with fixed camera-to-site "
+            f"offset {math.degrees(self.camera_to_site_yaw_offset_rad):+.2f} deg; "
+            "no automatic zeroing."
+        )
 
     @staticmethod
     def _quaternion_to_yaw(x: float, y: float, z: float, w: float) -> float:
@@ -81,11 +97,19 @@ class SwingPositionAdapter(Node):
                 continue
 
             rotation = transform.transform.rotation
-            yaw_rad = self._quaternion_to_yaw(
+            raw_yaw_rad = self._quaternion_to_yaw(
                 rotation.x,
                 rotation.y,
                 rotation.z,
                 rotation.w,
+            )
+            yaw_rad = math.atan2(
+                math.sin(
+                    raw_yaw_rad + self.camera_to_site_yaw_offset_rad
+                ),
+                math.cos(
+                    raw_yaw_rad + self.camera_to_site_yaw_offset_rad
+                ),
             )
 
             output = JointState()
@@ -94,6 +118,7 @@ class SwingPositionAdapter(Node):
             output.position = [yaw_rad]
             self.publisher.publish(output)
 
+            self._last_raw_yaw_rad = raw_yaw_rad
             self._last_yaw_rad = yaw_rad
             self._last_receive = time.monotonic()
             self._last_source_stamp = transform.header.stamp
@@ -111,7 +136,8 @@ class SwingPositionAdapter(Node):
         )
         source_age_ms = max(0.0, (now_ns - source_ns) / 1_000_000.0)
         self.get_logger().info(
-            f"swing={math.degrees(self._last_yaw_rad):7.2f} deg | "
+            f"camera_yaw={math.degrees(self._last_raw_yaw_rad):7.2f} deg | "
+            f"site_swing={math.degrees(self._last_yaw_rad):7.2f} deg | "
             f"source_age={source_age_ms:6.1f} ms | "
             f"receive_age={receive_age * 1000.0:5.1f} ms"
         )

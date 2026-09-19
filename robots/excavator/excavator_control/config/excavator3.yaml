@@ -39,8 +39,9 @@ joints:
     # Swing position comes from a sensor adapter publishing JointState.
     # The controller is deliberately independent of AprilTag or any future
     # replacement sensor.
-    min_angle_deg: -95.0
-    max_angle_deg: 95.0
+    # Hard observed range. This includes expected coast after motor stop.
+    min_angle_deg: -105.0
+    max_angle_deg: 105.0
 
 # ================================================================
 # GPIO
@@ -101,26 +102,26 @@ home:
 # PER-JOINT CONTROL PARAMETERS
 # ================================================================
 
-
 joint_control:
 
   swing:
     position_topic: /excavator3/swing_joint_state
     sensor_timeout_sec: 0.30
 
-    far_error_deg: 15.0
+    # Normal commanded range stays inside the hard observed range.
+    command_min_angle_deg: -95.0
+    command_max_angle_deg: 95.0
+
+    far_error_deg: 30.0
     far_pwm: 255
     near_pwm: 255
 
-    # Stop driving after entering ±8°.
     stop_tolerance_rad: 0.1396 # 8 degrees
-
-    # Accept the completed action within ±15°.
     tolerance_rad: 0.2618 # 15 degrees
 
-    pulse_err_deg: 15.0
+    pulse_err_deg: 30.0
     pulse_on_cycles: 2
-    pulse_off_cycles: 3
+    pulse_off_cycles: 4
 
     progress_timeout_sec: 0.35
     min_progress_deg: 1.0
@@ -131,9 +132,8 @@ joint_control:
     max_pwm: 255
     kick_pwm: 180
 
-    # Control target: ±3°. Completion acceptance: ±10°.
     stop_tolerance_rad: 0.0524 # 3 degrees
-    tolerance_rad: 0.1745      # 10 degrees
+    tolerance_rad: 0.1745 # 10 degrees
 
   arm:
     kp: 120.0
@@ -141,9 +141,8 @@ joint_control:
     max_pwm: 220
     kick_pwm: 180
 
-    # Control target: ±8°. Completion acceptance: ±15°.
     stop_tolerance_rad: 0.1396 # 8 degrees
-    tolerance_rad: 0.2618      # 15 degrees
+    tolerance_rad: 0.2618 # 15 degrees
 
   bucket:
     kp: 70.0
@@ -151,6 +150,5 @@ joint_control:
     max_pwm: 150
     kick_pwm: 80
 
-    # Control target: ±10°. Completion acceptance: ±15°.
     stop_tolerance_rad: 0.1745 # 10 degrees
-    tolerance_rad: 0.2618      # 15 degrees
+    tolerance_rad: 0.2618 # 15 degrees
