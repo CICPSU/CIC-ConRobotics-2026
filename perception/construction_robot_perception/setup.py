@@ -33,7 +33,10 @@ setup(
     zip_safe=True,
     maintainer='njh5734',
     maintainer_email='njh5734@psu.edu',
-    description='ROS 2 perception bringup for overhead camera and AprilTag detection',
+    description=(
+        'ROS 2 perception bringup for overhead camera, AprilTag detection, '
+        'and excavator swing feedback'
+    ),
     license='Apache-2.0',
     extras_require={
         'test': [
@@ -41,6 +44,9 @@ setup(
         ],
     },
     entry_points={
-        'console_scripts': [],
+        'console_scripts': [
+            'swing_position_adapter = '
+            'construction_robot_perception.swing_position_adapter:main',
+        ],
     },
 )

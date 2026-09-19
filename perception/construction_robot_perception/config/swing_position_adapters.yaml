@@ -1,0 +1,41 @@
+swing_position_adapter_excavator1:
+  ros__parameters:
+    tag_frame: "tag36h11_7"
+    output_topic: "/excavator1/swing_joint_state"
+    camera_to_site_yaw_offset_deg: -90.0
+    print_rate_hz: 5.0
+
+swing_position_adapter_excavator2:
+  ros__parameters:
+    tag_frame: "tag36h11_8"
+    output_topic: "/excavator2/swing_joint_state"
+    camera_to_site_yaw_offset_deg: -90.0
+    print_rate_hz: 5.0
+
+swing_position_adapter_excavator3:
+  ros__parameters:
+    tag_frame: "tag36h11_9"
+    output_topic: "/excavator3/swing_joint_state"
+    camera_to_site_yaw_offset_deg: -90.0
+    print_rate_hz: 5.0
+
+swing_position_adapter_excavator4:
+  ros__parameters:
+    tag_frame: "tag36h11_10"
+    output_topic: "/excavator4/swing_joint_state"
+    camera_to_site_yaw_offset_deg: -90.0
+    print_rate_hz: 5.0
+
+swing_position_adapter_excavator5:
+  ros__parameters:
+    tag_frame: "tag36h11_11"
+    output_topic: "/excavator5/swing_joint_state"
+    camera_to_site_yaw_offset_deg: -90.0
+    print_rate_hz: 5.0
+
+swing_position_adapter_excavator6:
+  ros__parameters:
+    tag_frame: "tag36h11_12"
+    output_topic: "/excavator6/swing_joint_state"
+    camera_to_site_yaw_offset_deg: -90.0
+    print_rate_hz: 5.0

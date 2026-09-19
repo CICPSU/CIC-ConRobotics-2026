@@ -10,7 +10,8 @@
   <version>0.0.0</version>
 
   <description>
-    ROS 2 perception bringup for overhead camera and AprilTag detection.
+    ROS 2 perception bringup for overhead camera, AprilTag detection,
+    and excavator swing feedback.
   </description>
 
   <maintainer email="njh5734@psu.edu">
@@ -23,9 +24,12 @@
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rclpy</exec_depend>
 
   <exec_depend>usb_cam</exec_depend>
   <exec_depend>apriltag_ros</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>tf2_msgs</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
