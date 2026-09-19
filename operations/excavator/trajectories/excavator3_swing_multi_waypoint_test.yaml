@@ -5,9 +5,9 @@ joints:
   - swing
 
 waypoints:
-  - name: swing_to_minus20
+  - name: swing_to_minus40
     positions:
-      swing: -20.0
+      swing: -40.0
 
   - name: swing_to_plus20
     positions:
