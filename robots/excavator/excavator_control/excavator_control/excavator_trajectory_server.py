@@ -1785,7 +1785,8 @@ class PiExcavatorTrajectoryServer(Node):
                         f"effective={effective_deg:+.2f}deg "
                         f"current={math.degrees(current_pos):+.2f}deg "
                         f"error={math.degrees(e):+.2f}deg "
-                        f"dir={d:+d} pwm={p} "
+                        f"dir={d:+d} requested_pwm={p} "
+                        f"pwm_owner={getattr(self, '_last_pwm_winner', None)} "
                         f"sensor_age={sensor_age:.3f}s"
                     )
                 dp = JointTrajectoryPoint()
@@ -1854,7 +1855,8 @@ class PiExcavatorTrajectoryServer(Node):
                     f"effective={effective_deg:+.2f}deg "
                     f"current={math.degrees(current_pos):+.2f}deg "
                     f"error={math.degrees(e):+.2f}deg "
-                    f"dir={d:+d} pwm={p} "
+                    f"dir={d:+d} requested_pwm={p} "
+                    f"pwm_owner={getattr(self, '_last_pwm_winner', None)} "
                     f"sensor_age={swing_sensor_age:.3f}s duty={duty}"
                 )
 
@@ -1928,6 +1930,7 @@ class PiExcavatorTrajectoryServer(Node):
         movers = {jn: p for jn, p in plans.items() if p[0] != 0}
 
         if not movers:
+            self._last_pwm_winner = None
             for j in self.joints.values():
                 j.stop()
             self.pi.set_PWM_dutycycle(self.shared_pwm_pin, 0)
@@ -1936,6 +1939,7 @@ class PiExcavatorTrajectoryServer(Node):
         if self.pwm_arbitration == "exclusive":
             # Serve the joint furthest from its target; hold the rest.
             winner = max(movers, key=lambda jn: abs(movers[jn][2]))
+            self._last_pwm_winner = winner
             for jn, j in self.joints.items():
                 if jn == winner:
                     direction, pwm, _ = plans[jn]
@@ -1943,6 +1947,19 @@ class PiExcavatorTrajectoryServer(Node):
                 else:
                     j.stop()
             duty = plans[winner][1]
+
+            # The swing watchdog must measure progress only while swing is
+            # actually receiving the shared PWM. A non-winning swing plan
+            # may still request pwm=255, but no swing motor power is applied.
+            # Pausing the watch here prevents false "no progress" faults
+            # while another joint owns the shared PWM or during a coast pulse.
+            swing = self.joints.get("swing_joint")
+            if (
+                swing is not None
+                and hasattr(swing, "_reset_progress_watch")
+                and (winner != "swing_joint" or duty <= 0)
+            ):
+                swing._reset_progress_watch()
         else:
             # Legacy: everyone moves, everyone gets the highest duty asked for.
             for jn, j in self.joints.items():
@@ -1952,6 +1969,7 @@ class PiExcavatorTrajectoryServer(Node):
                 else:
                     j.stop()
             duty = max(p[1] for p in movers.values())
+            self._last_pwm_winner = "shared"
 
         self.pi.set_PWM_dutycycle(self.shared_pwm_pin, duty)
         return duty
