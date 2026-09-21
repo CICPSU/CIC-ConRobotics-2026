@@ -1781,9 +1781,9 @@ class PiExcavatorTrajectoryServer(Node):
         """Plan startup corrections without energizing any motor.
 
         Current feedback is validated against physical limits. Targets are
-        validated against command limits. A target at a command boundary is
-        allowed only when the joint is already within startup tolerance, so an
-        initialization never drives farther into a physical endpoint.
+        validated against command limits. Boundary targets are permitted; the
+        guarded correction loop is responsible for stopping on tolerance,
+        target crossing, physical limits, wrong-way motion, travel, or timeout.
         """
         self._stop_all()
         self.get_logger().warn(
@@ -1823,9 +1823,6 @@ class PiExcavatorTrajectoryServer(Node):
                 and abs(error) <= self.initialization_tolerance_rad
             )
 
-            margin = min(target - cmd_lower, cmd_upper - target)
-            margin_ok = margin >= self.initialization_limit_margin_rad
-
             if not current_ok:
                 plan = "BLOCKED_CURRENT_OUTSIDE_PHYSICAL_LIMIT"
             elif not target_ok:
@@ -1846,7 +1843,7 @@ class PiExcavatorTrajectoryServer(Node):
                 f"plan={plan}"
             )
 
-            if not current_ok or not target_ok or not boundary_ok:
+            if not current_ok or not target_ok:
                 ok = False
 
         if ok:
