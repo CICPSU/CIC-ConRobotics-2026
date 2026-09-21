@@ -586,13 +586,15 @@ Trajectory validation can detect problems such as:
 
 - Joint targets outside configured limits
 
-> ****Current Excavator 3 restriction:**** Swing has not yet been physically validated and should not be commanded.
+> **Excavator 3 swing status:** Swing has been physically validated using external AprilTag feedback published as a `JointState`. Physical commands are restricted to ±95 degrees, with ±105 degrees reserved as the observed hard safety range.
 
 Detailed excavator instructions are provided in:
 
 ```text
 
 robots/excavator/README.md
+
+docs/operations/excavator3_truck1_integration.md
 
 ```
 
@@ -790,7 +792,7 @@ In a scenario:
 
   robot: excavator3
 
-  task_file: three_joint_Mason.yaml
+  task_file: excavator3_excavation_cycle_test.yaml
 
   seconds_per_waypoint: 5.0
 
@@ -1015,7 +1017,7 @@ The explicit equivalent is:
 
 ```bash
 source network/setup_zenoh.sh router ros-pc
-source network/setup_zenoh.sh client ros-pc ros-pc
+source network/setup_zenoh.sh client ros-pc
 source network/setup_zenoh.sh client dumptruck1 ros-pc
 source network/setup_zenoh.sh client excavator3 ros-pc
 ```
@@ -1030,7 +1032,7 @@ ros2 run rmw_zenoh_cpp rmw_zenohd
 
 ```bash
 # ROS applications running on ros-backup-pc
-source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
+source network/setup_zenoh.sh client ros-backup-pc
 ```
 
 ```bash
@@ -1300,7 +1302,7 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-source network/setup_zenoh.sh client ros-pc ros-pc
+source network/setup_zenoh.sh client ros-pc
 
 ros2 launch construction_site_control command_center.launch.py \
   trucks:=truck1 \
@@ -1440,7 +1442,7 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
+source network/setup_zenoh.sh client ros-backup-pc
 
 ros2 launch construction_site_control command_center.launch.py \
   trucks:=truck1 \
@@ -1540,7 +1542,7 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-source network/setup_zenoh.sh client ros-pc ros-pc
+source network/setup_zenoh.sh client ros-pc
 
 ros2 launch construction_site_control command_center.launch.py \
   trucks:=truck1 \
@@ -1559,7 +1561,7 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
+source network/setup_zenoh.sh client ros-backup-pc
 
 ros2 launch construction_site_control command_center.launch.py \
   trucks:=truck1 \
@@ -1578,12 +1580,12 @@ The scenario contains robot-specific tasks such as:
   type: task
   robot: truck1
   task_type: waypoint
-  task_file: truck1_integration_test.yaml
+  task_file: truck1_waypoints3.yaml
 
 - id: excavator3_move
   type: excavator_trajectory
   robot: excavator3
-  task_file: three_joint_Mason.yaml
+  task_file: excavator3_excavation_cycle_test.yaml
   seconds_per_waypoint: 5.0
 ```
 
@@ -2030,11 +2032,11 @@ The excavator platform currently supports:
 
 - Mixed scenarios with dump trucks
 
-Excavator 3 has been physically tested for closed-loop Boom, Arm, and Bucket control.
+Excavator 3 has been physically tested using coordinated closed-loop Swing, Boom, Arm, and Bucket control.
 
-Final Arm and Bucket tuning remains ongoing.
+Swing feedback is generated from overhead AprilTag tracking and published through the packaged multi-excavator swing position adapter. The validated workflow completed a seven-waypoint excavation cycle followed by Truck 1 waypoint travel and dumping.
 
-Swing has not yet been validated and should not be commanded.
+Final joint tuning and continued physical safety validation remain ongoing.
 
 ---
 ## Perception and Localization

@@ -302,7 +302,7 @@ An excavator scenario step looks like:
 
   robot: excavator3
 
-  task_file: three_joint_Mason.yaml
+  task_file: excavator3_excavation_cycle_test.yaml
 
   seconds_per_waypoint: 5.0
 
@@ -414,6 +414,16 @@ scenario_name: truck1_excavator3_integration_test
 
 steps:
 
+  - id: excavator3_move
+
+    type: excavator_trajectory
+
+    robot: excavator3
+
+    task_file: excavator3_excavation_cycle_test.yaml
+
+    seconds_per_waypoint: 5.0
+
   - id: truck1_short_move
 
     type: task
@@ -422,17 +432,7 @@ steps:
 
     task_type: waypoint
 
-    task_file: truck1_integration_test.yaml
-
-  - id: excavator3_move
-
-    type: excavator_trajectory
-
-    robot: excavator3
-
-    task_file: three_joint_Mason.yaml
-
-    seconds_per_waypoint: 5.0
+    task_file: truck1_waypoints3.yaml
 
 ```
 
@@ -688,7 +688,7 @@ ros2 run construction_site_control \\
 
   excavator_task_client \\
 
-  operations/excavator/trajectories/three_joint_Mason.yaml \\
+  operations/excavator/trajectories/excavator3_excavation_cycle_test.yaml \\
 
   --robot excavator3 \\
 
@@ -1313,7 +1313,7 @@ Executes an excavator trajectory through `FollowJointTrajectory`.
 
   robot: excavator3
 
-  task_file: three_joint_Mason.yaml
+  task_file: excavator3_excavation_cycle_test.yaml
 
   seconds_per_waypoint: 5.0
 
@@ -1371,7 +1371,7 @@ Example:
 
       robot: excavator3
 
-      task_file: three_joint_Mason.yaml
+      task_file: excavator3_excavation_cycle_test.yaml
 
       seconds_per_waypoint: 5.0
 
@@ -1516,27 +1516,23 @@ Scenario abort following robot Action failure
 
 ```
 
-The physical Excavator 3 Boom, Arm, and Bucket joints have been individually exercised using closed-loop position control.
+Excavator 3 has completed physical coordinated trajectories using closed-loop Swing, Boom, Arm, and Bucket control.
 
-Swing has not yet been validated.
+Swing position is supplied by the overhead AprilTag system through `/excavator3/swing_joint_state`. The validated integration scenario runs the Excavator 3 excavation cycle and then executes the Truck 1 waypoint and dumping task.
 
 ---
 ## Remaining Excavator Hardware Work
 Remaining Excavator 3 work includes:
 
-- final Arm tracking/tolerance tuning
-
-- final Bucket feedback/control tuning
+- continued joint tracking and tolerance tuning
 
 - continued coordinated multi-joint trajectory validation
 
-- Swing sensing and control validation
+- validation under changing payload and soil resistance
 
 - final physical motion and safety validation
 
-These are robot-level hardware/control items rather than unresolved Command Center routing or Zenoh architecture issues.
-
-> ****Do not command Excavator 3 Swing until it has been separately validated.****
+Swing sensing, Command Center routing, Zenoh communication, multi-joint excavation, and the Truck 1 integration sequence have been physically validated. These remaining items concern continued hardware tuning and operational robustness.
 
 ---
 # 21. Recommended Development Workflow

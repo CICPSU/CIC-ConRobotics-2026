@@ -378,9 +378,9 @@ Before physical execution, confirm:
 
 A structurally correct trajectory is not automatically a physically safe or physically validated trajectory.
 
-For Excavator 3:
+For Excavator 3, all four joints have been physically exercised together. Swing uses external `JointState` feedback produced by the overhead AprilTag system.
 
-> **Do not include `swing` in a physical trajectory until Swing has been separately tested and validated.**
+> **Physical swing commands are limited to ±95 degrees.** The wider ±105-degree range is reserved as a hard observed-position safety range and is not the normal command range.
 
 ---
 
@@ -433,7 +433,7 @@ All trajectory positions are specified in ****degrees****.
 
 The trajectory client converts these values to radians before sending the ROS 2 Action goal.
 
-> ****Current Excavator 3 restriction:**** Swing has not yet been validated. Do not include `swing` in physical Excavator 3 trajectories until Swing has been separately tested and validated.
+> **Excavator 3 swing feedback:** The packaged perception adapter publishes `/excavator3/swing_joint_state` from ceiling-camera AprilTag ID 9. The angle uses the fixed site coordinate frame and does not automatically zero from the startup pose.
 
 ---
 # 7. Subset-Joint Trajectories
@@ -975,7 +975,7 @@ For example:
 
   robot: excavator3
 
-  task_file: three_joint_Mason.yaml
+  task_file: excavator3_excavation_cycle_test.yaml
 
   seconds_per_waypoint: 5.0
 
