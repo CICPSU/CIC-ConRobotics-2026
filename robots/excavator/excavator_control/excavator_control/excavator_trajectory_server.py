@@ -1068,6 +1068,13 @@ class PiExcavatorTrajectoryServer(Node):
         gpio = _require_mapping(runtime_yaml, "gpio")
         control = _require_mapping(runtime_yaml, "control")
         home = _require_mapping(runtime_yaml, "home")
+        initial_position = runtime_yaml.get("initial_position", {})
+        if initial_position is None:
+            initial_position = {}
+        if not isinstance(initial_position, dict):
+            raise RuntimeError(
+                "Missing or invalid 'initial_position' mapping in excavator configuration"
+            )
         joint_control = _require_mapping(runtime_yaml, "joint_control")
 
         # YAML values are defaults. ROS parameters can still override them.
@@ -1212,12 +1219,45 @@ class PiExcavatorTrajectoryServer(Node):
                 f"{swing_hard_max_deg:.3f}] deg"
             )
 
-        # Home targets are human-readable degrees in YAML.
+        # Legacy home targets are retained for backward compatibility.
+        # Startup initialization is a separate concept: it moves the robot to
+        # a known scenario-start pose after all position feedback is available.
         self.home_position = {
             "boom_joint": math.radians(float(home["boom_deg"])),
             "arm_joint": math.radians(float(home["arm_deg"])),
             "bucket_joint": math.radians(float(home["bucket_deg"])),
         }
+
+        self.initialize_on_startup = bool(
+            initial_position.get("enabled", False)
+        )
+        self.initialization_timeout_sec = float(
+            initial_position.get("timeout_sec", 15.0)
+        )
+        initial_positions = initial_position.get("positions", {})
+        if self.initialize_on_startup:
+            if not isinstance(initial_positions, dict):
+                raise RuntimeError(
+                    "initial_position.positions must be a YAML mapping"
+                )
+            required_initial_joints = ("swing", "boom", "arm", "bucket")
+            missing_initial_joints = [
+                name for name in required_initial_joints
+                if name not in initial_positions
+            ]
+            if missing_initial_joints:
+                raise RuntimeError(
+                    "initial_position.positions is missing: "
+                    + ", ".join(missing_initial_joints)
+                )
+
+        self.initial_position = {
+            f"{name}_joint": math.radians(float(value))
+            for name, value in initial_positions.items()
+            if name in ("swing", "boom", "arm", "bucket")
+        }
+        self.initialization_complete = not self.initialize_on_startup
+        self.initialization_failed = False
 
         # Command limits validate every FollowJointTrajectory goal before
         # hardware can move. Swing deliberately uses a narrower command
@@ -1517,14 +1557,33 @@ class PiExcavatorTrajectoryServer(Node):
             "  Swing remains disabled until fresh external feedback arrives."
         )
 
-        if self.auto_home_on_startup:
-            self.get_logger().warn(
-                "  auto_home_on_startup=true: the excavator will move to the configured home pose now."
+        if self.initialize_on_startup:
+            targets_deg = ", ".join(
+                f"{name}={math.degrees(target):.1f} deg"
+                for name, target in self.initial_position.items()
             )
-            self.move_to_home()
+            self.get_logger().warn(
+                "  Startup initialization enabled. Waiting for ROS callbacks "
+                "before moving to the configured initial pose: "
+                + targets_deg
+            )
+            # Do not initialize inside __init__. Swing feedback arrives through
+            # a ROS subscription, so the executor must be spinning first.
+            # The one-shot timer runs in the default callback group while the
+            # swing subscriber has its own callback group.
+            self._initialization_timer = self.create_timer(
+                0.25, self._run_startup_initialization_once
+            )
+        elif self.auto_home_on_startup:
+            self.get_logger().warn(
+                "  auto_home_on_startup=true: using legacy 3-joint home behavior."
+            )
+            self._initialization_timer = self.create_timer(
+                0.25, self._run_legacy_home_once
+            )
         else:
             self.get_logger().info(
-                "  auto_home_on_startup=false: startup homing is disabled; hardware will remain stationary."
+                "  Startup initialization disabled; hardware will remain stationary."
             )
     def _swing_position_cb(self, msg: JointState) -> None:
         try:
@@ -1540,6 +1599,84 @@ class PiExcavatorTrajectoryServer(Node):
         swing = self.joints.get("swing_joint")
         if swing is not None:
             swing.update_position(position)
+
+    def _run_startup_initialization_once(self) -> None:
+        """Run configured four-joint initialization after the executor starts."""
+        self._initialization_timer.cancel()
+        success = self.move_to_initial_position()
+        self.initialization_complete = success
+        self.initialization_failed = not success
+        if success:
+            self.get_logger().info(
+                "[INITIALIZATION] SUCCESS - excavator is READY for trajectory commands."
+            )
+        else:
+            self.get_logger().error(
+                "[INITIALIZATION] FAILED - trajectory commands will be rejected."
+            )
+
+    def _run_legacy_home_once(self) -> None:
+        """Run the old three-joint home routine without blocking ROS startup."""
+        self._initialization_timer.cancel()
+        self.move_to_home()
+
+    def move_to_initial_position(self) -> bool:
+        """Move all four joints to the configured scenario-start pose."""
+        self.get_logger().info(
+            "[INITIALIZATION] Moving excavator to configured initial position..."
+        )
+        control_dt = 1.0 / max(1.0, self.control_hz)
+        start = time.monotonic()
+
+        swing = self.joints.get("swing_joint")
+        if swing is not None and hasattr(swing, "reset_swing_fault"):
+            swing.reset_swing_fault()
+
+        while rclpy.ok():
+            elapsed = time.monotonic() - start
+            if elapsed > self.initialization_timeout_sec:
+                self._stop_all()
+                self.get_logger().error(
+                    "[INITIALIZATION] Timeout after "
+                    f"{self.initialization_timeout_sec:.1f}s - stopping all motors."
+                )
+                return False
+
+            plans: Dict[str, Tuple[int, int, float]] = {}
+            all_ready = True
+
+            for joint_name, target in self.initial_position.items():
+                pos, err, at_goal, direction, pwm = (
+                    self.joints[joint_name].plan_toward_target(target)
+                )
+                plans[joint_name] = (direction, pwm, err)
+                if not at_goal:
+                    all_ready = False
+
+            if swing is not None and getattr(swing, "_swing_fault", None):
+                self._stop_all()
+                self.get_logger().error(
+                    "[INITIALIZATION] Swing fault: "
+                    f"{swing._swing_fault}"
+                )
+                return False
+
+            if all_ready:
+                self._stop_all()
+                status = ", ".join(
+                    f"{name}={math.degrees(self.joints[name].read_position_rad()):.1f} deg"
+                    for name in self.initial_position
+                )
+                self.get_logger().info(
+                    "[INITIALIZATION] Initial position reached: " + status
+                )
+                return True
+
+            self._apply_plans(plans)
+            time.sleep(control_dt)
+
+        self._stop_all()
+        return False
 
     # ── Action callbacks ─────────────────────────────────────────
     def move_to_home(self):
@@ -1589,6 +1726,14 @@ class PiExcavatorTrajectoryServer(Node):
     # once we (the client) sends a trajector of the states, it does things like "is there another trajectory running, are the names correct, etc"
     def _goal_cb(self, goal_request):
         """Validate and accept/reject an incoming hardware trajectory goal."""
+        if not self.initialization_complete:
+            state = "FAILED" if self.initialization_failed else "IN PROGRESS"
+            self.get_logger().warn(
+                f"[GOAL REJECTED] Startup initialization is {state}. "
+                "Excavator is not READY."
+            )
+            return GoalResponse.REJECT
+
         names = list(goal_request.trajectory.joint_names)
         points = goal_request.trajectory.points
 

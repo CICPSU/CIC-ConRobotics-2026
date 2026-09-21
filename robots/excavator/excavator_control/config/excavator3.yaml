@@ -99,6 +99,23 @@ home:
   bucket_deg: 12.245
 
 # ================================================================
+# STARTUP INITIAL POSITION
+# ================================================================
+# Scenario-start pose for Excavator 3. This is intentionally separate
+# from calibration/homing. When enabled, the controller waits until ROS
+# callbacks are active, moves all four joints to this pose, verifies the
+# targets, and only then accepts normal trajectory goals.
+
+initial_position:
+  enabled: true
+  timeout_sec: 15.0
+  positions:
+    swing: 90.0
+    boom: -10.0
+    arm: 60.0
+    bucket: 0.0
+
+# ================================================================
 # PER-JOINT CONTROL PARAMETERS
 # ================================================================
 
