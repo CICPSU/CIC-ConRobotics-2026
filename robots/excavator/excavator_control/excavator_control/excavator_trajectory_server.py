@@ -1067,7 +1067,6 @@ class PiExcavatorTrajectoryServer(Node):
 
         gpio = _require_mapping(runtime_yaml, "gpio")
         control = _require_mapping(runtime_yaml, "control")
-        home = _require_mapping(runtime_yaml, "home")
         initial_position = runtime_yaml.get("initial_position", {})
         if initial_position is None:
             initial_position = {}
@@ -1092,10 +1091,6 @@ class PiExcavatorTrajectoryServer(Node):
         self.declare_parameter(
             "stop_on_goal_finish",
             bool(control.get("stop_on_goal_finish", True)),
-        )
-        self.declare_parameter(
-            "auto_home_on_startup",
-            False,
         )
         self.declare_parameter(
             "ads1115_address",
@@ -1146,9 +1141,6 @@ class PiExcavatorTrajectoryServer(Node):
         )
         self.stop_on_goal_finish = bool(
             self.get_parameter("stop_on_goal_finish").value
-        )
-        self.auto_home_on_startup = bool(
-            self.get_parameter("auto_home_on_startup").value
         )
         ads_addr = int(self.get_parameter("ads1115_address").value)
         self.pwm_arbitration = str(
@@ -1219,14 +1211,6 @@ class PiExcavatorTrajectoryServer(Node):
                 f"{swing_hard_max_deg:.3f}] deg"
             )
 
-        # Legacy home targets are retained for backward compatibility.
-        # Startup initialization is a separate concept: it moves the robot to
-        # a known scenario-start pose after all position feedback is available.
-        self.home_position = {
-            "boom_joint": math.radians(float(home["boom_deg"])),
-            "arm_joint": math.radians(float(home["arm_deg"])),
-            "bucket_joint": math.radians(float(home["bucket_deg"])),
-        }
 
         self.initialize_on_startup = bool(
             initial_position.get("enabled", False)
@@ -1678,13 +1662,6 @@ class PiExcavatorTrajectoryServer(Node):
             self._initialization_timer = self.create_timer(
                 0.25, self._run_startup_initialization_once
             )
-        elif self.auto_home_on_startup:
-            self.get_logger().warn(
-                "  auto_home_on_startup=true: using legacy 3-joint home behavior."
-            )
-            self._initialization_timer = self.create_timer(
-                0.25, self._run_legacy_home_once
-            )
         else:
             self.get_logger().info(
                 "  Startup initialization disabled; hardware will remain stationary."
@@ -1771,11 +1748,6 @@ class PiExcavatorTrajectoryServer(Node):
             self.get_logger().error(
                 "[INITIALIZATION] FAILED - trajectory commands will be rejected."
             )
-
-    def _run_legacy_home_once(self) -> None:
-        """Run the old three-joint home routine without blocking ROS startup."""
-        self._initialization_timer.cancel()
-        self.move_to_home()
 
     def preflight_initial_position(self) -> bool:
         """Plan startup corrections without energizing any motor.
@@ -2348,49 +2320,6 @@ class PiExcavatorTrajectoryServer(Node):
         return True
 
     # ── Action callbacks ─────────────────────────────────────────
-    def move_to_home(self):
-        self.get_logger().info("[HOME] Moving excavator to starting position...")
-
-        control_dt = 1.0 / max(1.0, self.control_hz)
-
-        home_start = time.monotonic()
-        HOME_TIMEOUT = 5.0
-
-        while rclpy.ok():
-
-            if time.monotonic() - home_start > HOME_TIMEOUT:
-                self._stop_all()
-                self.get_logger().error("[HOME] Timeout - stopping all motors.")
-                return
-
-            plans = {}
-            all_home = True
-
-            for joint_name, target in self.home_position.items():
-
-                pos, err, at_goal, direction, pwm = \
-                    self.joints[joint_name].plan_toward_target(target)
-
-                plans[joint_name] = (direction, pwm, err)
-
-                if not at_goal:
-                    all_home = False
-
-                self.get_logger().info(
-                    f"[HOME] {joint_name}: "
-                    f"current={pos:.3f} "
-                    f"target={target:.3f} "
-                    f"error={err:.3f}"
-                )
-
-            if all_home:
-                self._stop_all()
-                self.get_logger().info("[HOME] Starting position reached.")
-                return
-
-            self._apply_plans(plans)
-
-            time.sleep(control_dt)
     # this gets called when the client sends a trajectory. it answers "should i accept this trajectory"
     # once we (the client) sends a trajector of the states, it does things like "is there another trajectory running, are the names correct, etc"
     def _goal_cb(self, goal_request):

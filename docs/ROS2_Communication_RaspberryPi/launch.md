@@ -388,7 +388,9 @@ source network/setup_zenoh.sh client dumptruck1
 
 sudo pigpiod
 
-ros2 launch dump_truck_bringup truck1_pi.launch.py
+ros2 launch dump_truck_bringup \
+  dump_truck_pi.launch.py \
+  truck_name:=truck1
 ```
 
 ## ROS PC — Terminal 2

@@ -19,9 +19,9 @@
 #
 #   Normal configuration - ROS PC is router:
 #     source network/setup_zenoh.sh router ros-pc
-#     source network/setup_zenoh.sh client ros-pc ros-pc
-#     source network/setup_zenoh.sh client dumptruck1 ros-pc
-#     source network/setup_zenoh.sh client excavator3 ros-pc
+#     source network/setup_zenoh.sh client ros-pc
+#     source network/setup_zenoh.sh client dumptruck1
+#     source network/setup_zenoh.sh client excavator3
 #
 #   Backup configuration - Backup ROS PC is router:
 #     source network/setup_zenoh.sh router ros-backup-pc
@@ -321,9 +321,9 @@ case "${ROLE}" in
             echo "  source network/setup_zenoh.sh client <device> [router-device]"
             echo
             echo "Examples:"
-            echo "  source network/setup_zenoh.sh client ros-pc ros-pc"
-            echo "  source network/setup_zenoh.sh client dumptruck1 ros-pc"
-            echo "  source network/setup_zenoh.sh client excavator3 ros-pc"
+            echo "  source network/setup_zenoh.sh client ros-pc"
+            echo "  source network/setup_zenoh.sh client dumptruck1"
+            echo "  source network/setup_zenoh.sh client excavator3"
             echo "  source network/setup_zenoh.sh client excavator3 ros-backup-pc"
             return 1 2>/dev/null || exit 1
         fi

@@ -1292,48 +1292,60 @@ Only one router should normally be running. Do not start one router per robot.
 
 ---
 
-## 16.2 Primary ROS PC T2 — Command Center
+## 16.2 Primary ROS PC T2 — Select the System Launch
 
-Example for operation with Truck 1:
+Configure the application terminal for the primary router:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-
 source network/setup_zenoh.sh client ros-pc
-
-ros2 launch construction_site_control command_center.launch.py \
-  trucks:=truck1 \
-  start_camera:=true \
-  start_apriltag:=true \
-  start_localization:=true \
-  start_action_servers:=true \
-  start_scenario_manager:=false
 ```
 
-The shorter default command is also valid:
+Use one of the following three system-level entry points.
+
+### Excavator Only
 
 ```bash
-source network/setup_zenoh.sh client ros-pc
+ros2 launch construction_site_control \
+  excavator_system.launch.py \
+  excavators:=excavator3
+```
+
+This starts the shared overhead camera, AprilTag detector, and the selected excavator perception adapter. The excavator trajectory server itself runs on the excavator Raspberry Pi.
+
+### Dump Truck Only
+
+```bash
+ros2 launch construction_site_control \
+  dump_truck_system.launch.py \
+  trucks:=truck1
 ```
 
 For multiple dump trucks:
 
 ```bash
-ros2 launch construction_site_control command_center.launch.py \
-  trucks:=truck1,truck3,truck4,truck5 \
-  start_camera:=true \
-  start_apriltag:=true \
-  start_localization:=true \
-  start_action_servers:=true \
-  start_scenario_manager:=false
+ros2 launch construction_site_control \
+  dump_truck_system.launch.py \
+  trucks:=truck1,truck3,truck4,truck5
 ```
 
-The overhead camera and AprilTag detector are shared across the site.
+This starts the shared overhead camera and AprilTag detector, the selected truck localization stacks, and the selected truck waypoint Action Servers.
 
-The excavator Action Server runs on the excavator Raspberry Pi and is discovered by the Command Center through ROS 2.
+### Integrated System
+
+```bash
+ros2 launch construction_site_control \
+  command_center.launch.py \
+  trucks:=truck1 \
+  excavators:=excavator3
+```
+
+The integrated launch uses one shared camera and AprilTag detector for the site, starts the selected dump-truck ROS PC stacks and Action Servers, and starts perception adapters for the selected excavators.
+
+The lower-level launch files `overhead_camera.launch.py`, `excavator_perception.launch.py`, and `dump_truck_ros_pc.launch.py` remain available for debugging and component-level testing, but they are not the normal system startup entry points.
 
 ---
 
@@ -1353,7 +1365,9 @@ source install/setup.bash
 
 source network/setup_zenoh.sh client dumptruck1
 
-ros2 launch dump_truck_bringup truck1_pi.launch.py
+ros2 launch dump_truck_bringup \
+  dump_truck_pi.launch.py \
+  truck_name:=truck1
 ```
 
 The explicit equivalent is:
@@ -1362,7 +1376,7 @@ The explicit equivalent is:
 source network/setup_zenoh.sh client dumptruck1 ros-pc
 ```
 
-Other dump trucks use the corresponding Zenoh device profile and launch file.
+Other dump trucks use the corresponding Zenoh device profile with the same generic `dump_truck_pi.launch.py` launch file and the appropriate `truck_name` argument.
 
 ### Excavator Raspberry Pi
 
@@ -1409,7 +1423,7 @@ The resulting interfaces include:
 /excavator3/joint_states
 ```
 
-> **Excavator 3 Swing is not currently validated and should not be commanded.**
+> **Excavator 3 Swing has been physically validated with overhead AprilTag feedback. Continue to observe configured software limits and physical safety procedures during operation.**
 
 ---
 
@@ -1434,24 +1448,26 @@ source network/setup_zenoh.sh router ros-backup-pc
 ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
-### Backup ROS PC T2 — Command Center
+### Backup ROS PC T2 — Select the System Launch
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-
 source network/setup_zenoh.sh client ros-backup-pc
-
-ros2 launch construction_site_control command_center.launch.py \
-  trucks:=truck1 \
-  start_camera:=true \
-  start_apriltag:=true \
-  start_localization:=true \
-  start_action_servers:=true \
-  start_scenario_manager:=false
 ```
+
+Use the same system-level launch files as on the primary ROS PC. For example, integrated Truck 1 + Excavator 3 operation uses:
+
+```bash
+ros2 launch construction_site_control \
+  command_center.launch.py \
+  trucks:=truck1 \
+  excavators:=excavator3
+```
+
+For dump-truck-only operation, use `dump_truck_system.launch.py`. For excavator-only operation, use `excavator_system.launch.py`.
 
 ### Dump Truck Raspberry Pi
 
@@ -1465,7 +1481,9 @@ source install/setup.bash
 
 source network/setup_zenoh.sh client dumptruck1 ros-backup-pc
 
-ros2 launch dump_truck_bringup truck1_pi.launch.py
+ros2 launch dump_truck_bringup \
+  dump_truck_pi.launch.py \
+  truck_name:=truck1
 ```
 
 ### Excavator Raspberry Pi
@@ -1503,7 +1521,7 @@ A multi-robot system follows the same architecture regardless of which router-ca
                               │
                     ┌─────────┴─────────┐
                     │                   │
-               Zenoh Router        Command Center
+               Zenoh Router        System Launch
                     │                   │
           ┌─────────┼─────────┐         │
           │         │         │         │
@@ -1546,10 +1564,7 @@ source network/setup_zenoh.sh client ros-pc
 
 ros2 launch construction_site_control command_center.launch.py \
   trucks:=truck1 \
-  start_camera:=true \
-  start_apriltag:=true \
-  start_localization:=true \
-  start_action_servers:=true \
+  excavators:=excavator3 \
   start_scenario_manager:=true \
   scenario:=dtex_integration.yaml
 ```
@@ -1565,10 +1580,7 @@ source network/setup_zenoh.sh client ros-backup-pc
 
 ros2 launch construction_site_control command_center.launch.py \
   trucks:=truck1 \
-  start_camera:=true \
-  start_apriltag:=true \
-  start_localization:=true \
-  start_action_servers:=true \
+  excavators:=excavator3 \
   start_scenario_manager:=true \
   scenario:=dtex_integration.yaml
 ```

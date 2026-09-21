@@ -23,7 +23,6 @@ def generate_launch_description():
     mode = LaunchConfiguration("mode")
     config = LaunchConfiguration("config")
     robot_name = LaunchConfiguration("robot_name")
-    auto_home = LaunchConfiguration("auto_home_on_startup")
 
     return LaunchDescription(
         [
@@ -54,16 +53,6 @@ def generate_launch_description():
                 ),
             ),
 
-            DeclareLaunchArgument(
-                "auto_home_on_startup",
-                default_value="false",
-                description=(
-                    "Automatically move the excavator to the "
-                    "configured home position at startup. "
-                    "Default: false."
-                ),
-            ),
-
             Node(
                 package="excavator_control",
                 executable="excavator_trajectory_server",
@@ -75,11 +64,6 @@ def generate_launch_description():
                     mode,
                     "--config",
                     config,
-                ],
-                parameters=[
-                    {
-                        "auto_home_on_startup": auto_home,
-                    }
                 ],
             ),
         ]

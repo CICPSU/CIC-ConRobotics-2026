@@ -1,4 +1,5 @@
 # ROS 2 Dump Truck System
+
 This directory contains the ROS 2 implementation for the physical dump truck robots used in the CIC construction robotics platform.
 
 The system supports both individual robot operation and higher-level multi-robot coordination.
@@ -46,7 +47,9 @@ The current implementation has been physically validated with:
 Truck-specific physical differences are handled primarily through YAML configuration rather than duplicated source code.
 
 ---
+
 # 1. Repository Architecture
+
 The current repository separates robot software, perception, operational data, shared interfaces, and high-level coordination by responsibility.
 
 ```text
@@ -111,11 +114,7 @@ CIC-ConRobotics-2026/
 
 │               ├── dump_truck_pi.launch.py
 
-│               ├── dump_truck_ros_pc.launch.py
-
-│               ├── truck1_pi.launch.py
-
-│               └── truck1_ros_pc.launch.py
+│               └── dump_truck_ros_pc.launch.py
 
 │
 
@@ -165,6 +164,10 @@ CIC-ConRobotics-2026/
 
 │       ├── launch/
 
+│       │   ├── dump_truck_system.launch.py
+
+│       │   ├── excavator_system.launch.py
+
 │       │   └── command_center.launch.py
 
 │       └── construction_site_control/
@@ -206,6 +209,8 @@ CIC-ConRobotics-2026/
 ├── network/
 
 │   ├── devices.sh
+
+│   ├── setup_zenoh.sh
 
 │   └── setup_network.sh
 
@@ -260,7 +265,9 @@ network/
 ```
 
 ---
+
 # 2. Control Architecture
+
 The dump truck system supports several levels of operation.
 
 At the individual robot level:
@@ -279,7 +286,7 @@ Common Motor Drive Node
 
           ▼
 
-/<truck>/wheel_states
+/\<truck>/wheel_states
 
           │
 
@@ -291,7 +298,7 @@ Common Odometry Node
 
           ▼
 
-/<truck>/odom
+/\<truck>/odom
 
           │
 
@@ -303,7 +310,7 @@ Tag/Odom Fusion
 
           ▼
 
-/<truck>/fused_odom
+/\<truck>/fused_odom
 
           │
 
@@ -315,7 +322,7 @@ Waypoint Controller
 
           ▼
 
-/<truck>/cmd_vel
+/\<truck>/cmd_vel
 
           │
 
@@ -355,7 +362,7 @@ Scenario Manager
 
           ▼
 
-/<truck>/execute_robot_task
+/\<truck>/execute_robot_task
 
           │
 
@@ -381,7 +388,7 @@ Waypoint Controller
 
           ▼
 
-/<truck>/cmd_vel
+/\<truck>/cmd_vel
 
           │
 
@@ -408,8 +415,11 @@ This allows the same robot software to be used for:
 - multi-robot construction scenarios
 
 ---
+
 # 3. ROS 2 Packages
+
 ## `dump_truck_hardware`
+
 Location:
 
 ```text
@@ -443,7 +453,9 @@ Primary responsibilities:
 This package normally runs on the Raspberry Pi installed on each truck.
 
 ---
+
 ## `dump_truck_control`
+
 Location:
 
 ```text
@@ -483,7 +495,9 @@ operations/dump_truck/waypoints/
 ```
 
 ---
+
 ## `dump_truck_bringup`
+
 Location:
 
 ```text
@@ -517,7 +531,9 @@ robots/dump_truck/dump_truck_bringup/config/localization/landmarks.yaml
 ```
 
 ---
+
 ## `dump_truck_action_server`
+
 Location:
 
 ```text
@@ -540,12 +556,14 @@ Each selected truck exposes:
 
 ```text
 
-/<truck_name>/execute_robot_task
+/\<truck_name>/execute_robot_task
 
 ```
 
 ---
+
 ## `construction_site_control`
+
 Location:
 
 ```text
@@ -558,16 +576,26 @@ Key files:
 
 ```text
 
+launch/dump_truck_system.launch.py
+
+launch/excavator_system.launch.py
+
 launch/command_center.launch.py
 
 construction_site_control/scenario_manager_node.py
 
 ```
 
+For normal dump-truck-only ROS PC operation, use `dump_truck_system.launch.py`.
+
+`dump_truck_ros_pc.launch.py` remains a lower-level per-truck component used internally by the system-level launches and for focused debugging.
+
 This package provides the higher-level Command Center and Scenario Manager.
 
 ---
+
 # 4. Initial Repository Setup
+
 If the repository has not been cloned:
 
 ```bash
@@ -613,8 +641,11 @@ git pull origin dev
 ```
 
 ---
+
 # 5. Build
+
 ## ROS PC
+
 From the repository root:
 
 ```bash
@@ -654,7 +685,9 @@ source install/setup.bash
 ```
 
 ---
+
 ## Raspberry Pi
+
 ```bash
 
 cd \~/ws_conrobotics/CIC-ConRobotics-2026
@@ -714,37 +747,55 @@ source install/setup.bash
 ```
 
 ---
+
 # 6. ROS 2 Network Setup
 
-The dump truck system uses **Zenoh (`rmw_zenoh_cpp`) as the ROS 2 communication method** between the ROS application computer and the Raspberry Pis installed on the trucks.
+The dump truck system uses \*\*Zenoh (`rmw_zenoh_cpp`) as the ROS 2 communication method\*\* between the ROS application computer and the Raspberry Pis installed on the trucks.
 
 Network configuration is managed through:
 
 ```text
+
 network/
+
 ├── devices.sh
+
 ├── setup_zenoh.sh
+
 └── setup_network.sh
+
 ```
 
 The current Zenoh architecture supports two router hosts:
 
 | Router profile | Role | IP |
+
 |---|---|---|
+
 | `ros-pc` | Primary router host | `10.170.32.181` |
+
 | `ros-backup-pc` | Backup router host | `10.170.32.227` |
 
-Normally, **one router host is active at a time**.
+Normally, \*\*one router host is active at a time\*\*.
 
 ```text
+
                  Active Zenoh Router Host
+
                   ros-pc OR ros-backup-pc
+
                            │
+
           ┌─────────┬──────┼──────┬─────────┐
+
           │         │      │      │         │
+
           ▼         ▼      ▼      ▼         ▼
+
        Truck 1   Truck 2 Truck 3 Truck 4  Truck 5
+
           Pi        Pi      Pi      Pi       Pi
+
 ```
 
 The trucks do not need to be configured as direct peers of one another. Each truck connects independently to the selected Zenoh router.
@@ -754,14 +805,17 @@ The trucks do not need to be configured as direct peers of one another. Each tru
 On the physical primary ROS PC:
 
 ```bash
+
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
+
 source install/setup.bash
 
 source network/setup_zenoh.sh router ros-pc
 
 ros2 run rmw_zenoh_cpp rmw_zenohd
+
 ```
 
 Keep this terminal running while operating the robots.
@@ -769,13 +823,9 @@ Keep this terminal running while operating the robots.
 ROS 2 application terminals on the same primary ROS PC use:
 
 ```bash
-source network/setup_zenoh.sh client ros-pc ros-pc
-```
 
-The shorter backward-compatible command is also valid:
-
-```bash
 source network/setup_zenoh.sh client ros-pc
+
 ```
 
 ## Backup Router — `ros-backup-pc`
@@ -783,20 +833,25 @@ source network/setup_zenoh.sh client ros-pc
 If the backup ROS PC is being used as the active router, run the router on the physical backup machine:
 
 ```bash
+
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
+
 source install/setup.bash
 
 source network/setup_zenoh.sh router ros-backup-pc
 
 ros2 run rmw_zenoh_cpp rmw_zenohd
+
 ```
 
 Application terminals on that same backup machine use:
 
 ```bash
-source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
+
+source network/setup_zenoh.sh client ros-backup-pc
+
 ```
 
 Selecting `ros-backup-pc` in `setup_zenoh.sh` does not remotely start a router on that computer. `rmw_zenohd` must actually be running on the physical backup ROS PC.
@@ -808,40 +863,55 @@ With the normal primary router, each Raspberry Pi uses its existing device profi
 Truck 1:
 
 ```bash
+
 source network/setup_zenoh.sh client dumptruck1
+
 ```
 
 Truck 2:
 
 ```bash
+
 source network/setup_zenoh.sh client dumptruck2
+
 ```
 
 Truck 3:
 
 ```bash
+
 source network/setup_zenoh.sh client dumptruck3
+
 ```
 
 Truck 4:
 
 ```bash
+
 source network/setup_zenoh.sh client dumptruck4
+
 ```
 
 Truck 5:
 
 ```bash
+
 source network/setup_zenoh.sh client dumptruck5
+
 ```
 
 To connect a truck to the backup router, specify `ros-backup-pc` explicitly. For example:
 
 ```bash
+
 source network/setup_zenoh.sh client dumptruck1 ros-backup-pc
+
 source network/setup_zenoh.sh client dumptruck3 ros-backup-pc
+
 source network/setup_zenoh.sh client dumptruck4 ros-backup-pc
+
 source network/setup_zenoh.sh client dumptruck5 ros-backup-pc
+
 ```
 
 All participating ROS 2 terminals must use the same active router.
@@ -849,18 +919,25 @@ All participating ROS 2 terminals must use the same active router.
 Users should normally not manually configure IP addresses or export ROS middleware variables. Device addresses are managed centrally through:
 
 ```text
+
 network/devices.sh
+
 ```
+
+`setup_network.sh` is retained only for legacy DDS troubleshooting. Normal physical operation uses `setup_zenoh.sh`.
 
 For additional details and troubleshooting, see:
 
 ```text
+
 network/README.md
+
 ```
 
 ---
 
 # 7. Truck-Specific Configuration
+
 Truck-specific parameters are stored under:
 
 ```text
@@ -944,7 +1021,9 @@ tag_odom_fusion_landmarks_node:
 ```
 
 ---
+
 # 8. Encoder Mapping
+
 Physical encoder installation is not identical across all trucks.
 
 Important parameters include:
@@ -1006,7 +1085,9 @@ Incorrect encoder mapping can cause:
 - disagreement between physical motion and odometry
 
 ---
+
 # 9. AprilTag Configuration
+
 Current robot AprilTags:
 
 ```text
@@ -1058,20 +1139,24 @@ docs/perception/apriltag/Calibration.md
 ```
 
 ---
+
 # 10. Start Each Raspberry Pi
+
 Each physical dump truck runs its hardware-side ROS 2 nodes on its Raspberry Pi.
 
-All Raspberry Pis connect to the **same active Zenoh router host**.
+All Raspberry Pis connect to the \*\*same active Zenoh router host\*\*.
 
 Before starting a truck, make sure the Zenoh router is already running on the ROS PC.
 
 ---
+
 ## Truck 1
-****Machine:**** Dumptruck1 Raspberry Pi
 
-****Terminal:**** T1
+**\*\\**\*Machine:\*\*\*\* Dumptruck1 Raspberry Pi
 
-****Keep this terminal running.****
+**\*\\**\*Terminal:\*\*\*\* T1
+
+**\*\\**\*Keep this terminal running.\*\*\*\*
 
 ```bash
 
@@ -1085,17 +1170,23 @@ source network/setup_zenoh.sh client dumptruck1
 
 sudo pigpiod
 
-ros2 launch dump_truck_bringup truck1_pi.launch.py
+ros2 launch dump_truck_bringup \
+
+  dump_truck_pi.launch.py \
+
+  truck_name:=truck1
 
 ```
 
 ---
+
 ## Truck 3
-****Machine:**** Dumptruck3 Raspberry Pi
 
-****Terminal:**** T1
+**\*\\**\*Machine:\*\*\*\* Dumptruck3 Raspberry Pi
 
-****Keep this terminal running.****
+**\*\\**\*Terminal:\*\*\*\* T1
+
+**\*\\**\*Keep this terminal running.\*\*\*\*
 
 ```bash
 
@@ -1116,12 +1207,14 @@ ros2 launch dump_truck_bringup dump_truck_pi.launch.py \\
 ```
 
 ---
+
 ## Truck 4
-****Machine:**** Dumptruck4 Raspberry Pi
 
-****Terminal:**** T1
+**\*\\**\*Machine:\*\*\*\* Dumptruck4 Raspberry Pi
 
-****Keep this terminal running.****
+**\*\\**\*Terminal:\*\*\*\* T1
+
+**\*\\**\*Keep this terminal running.\*\*\*\*
 
 ```bash
 
@@ -1142,12 +1235,14 @@ ros2 launch dump_truck_bringup dump_truck_pi.launch.py \\
 ```
 
 ---
+
 ## Truck 5
-****Machine:**** Dumptruck5 Raspberry Pi
 
-****Terminal:**** T1
+**\*\\**\*Machine:\*\*\*\* Dumptruck5 Raspberry Pi
 
-****Keep this terminal running.****
+**\*\\**\*Terminal:\*\*\*\* T1
+
+**\*\\**\*Keep this terminal running.\*\*\*\*
 
 ```bash
 
@@ -1179,9 +1274,9 @@ Expected hardware nodes follow the pattern:
 
 ```text
 
-/<truck_name>/motor_drive
+/\<truck_name>/motor_drive
 
-/<truck_name>/bucket_action
+/\<truck_name>/bucket_action
 
 ```
 
@@ -1189,13 +1284,13 @@ Expected topics include:
 
 ```text
 
-/<truck_name>/cmd_vel
+/\<truck_name>/cmd_vel
 
-/<truck_name>/wheel_states
+/\<truck_name>/wheel_states
 
-/<truck_name>/bucket_action_cmd
+/\<truck_name>/bucket_action_cmd
 
-/<truck_name>/bucket_action_status
+/\<truck_name>/bucket_action_status
 
 ```
 
@@ -1204,80 +1299,95 @@ All trucks communicate through the same selected Zenoh router.
 The commands above use the default primary router. When the backup router is active, replace each client setup command with the explicit backup selection. For example:
 
 ```bash
+
 source network/setup_zenoh.sh client dumptruck1 ros-backup-pc
+
 source network/setup_zenoh.sh client dumptruck3 ros-backup-pc
+
 source network/setup_zenoh.sh client dumptruck4 ros-backup-pc
+
 source network/setup_zenoh.sh client dumptruck5 ros-backup-pc
+
 ```
 
-
-
 ---
-# 11. Individual ROS PC Bringup
-For debugging or isolated robot testing, each truck can be started separately on the ROS PC.
 
-> ****This is not required during normal Command Center operation.****
+# 11. Dump-Truck-Only ROS PC Bringup
 
-> `command_center.launch.py` can start the localization stack for all selected trucks automatically.
-
-Before using the standalone launch, configure the application terminal for the active router.
+For normal dump-truck-only operation, use the system-level launch file on the active ROS PC.
 
 Primary ROS PC:
 
 ```bash
-source network/setup_zenoh.sh client ros-pc ros-pc
+
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+
+source install/setup.bash
+
+source network/setup_zenoh.sh client ros-pc
+
+ros2 launch construction_site_control \
+
+  dump_truck_system.launch.py \
+
+  trucks:=truck1
+
 ```
 
-Backup ROS PC:
+For multiple dump trucks:
 
 ```bash
-source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
+
+ros2 launch construction_site_control \
+
+  dump_truck_system.launch.py \
+
+  trucks:=truck1,truck3,truck4,truck5
+
 ```
 
-Example:
+When the backup ROS PC is the active router, configure the application terminal with:
 
 ```bash
 
-ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \\
-
-  truck_name:=truck1
+source network/setup_zenoh.sh client ros-backup-pc
 
 ```
 
-The same command can be used for:
+and use the same `dump_truck_system.launch.py` command.
+
+The system-level launch starts:
 
 ```text
 
-truck3
+Shared overhead camera
 
-truck4
+AprilTag detector
 
-truck5
+Selected truck odometry nodes
+
+Selected truck Tag/Odom fusion nodes
+
+Selected truck waypoint Action Servers
 
 ```
 
-The launch starts localization components including:
+The lower-level launch:
 
 ```text
 
-/<truck_name>/odometry
-
-/<truck_name>/tag_odom_fusion
+dump_truck_ros_pc.launch.py
 
 ```
 
-and produces:
-
-```text
-
-/<truck_name>/odom
-
-/<truck_name>/fused_odom
-
-```
+is an internal/debugging component and normally does not need to be launched directly.
 
 ---
+
 # 12. Overhead Camera and AprilTag Detection
+
 For standalone perception testing:
 
 ```bash
@@ -1300,305 +1410,258 @@ ros2 run tf2_ros tf2_echo default_cam tag36h11_4
 
 ```
 
-The complete Command Center launch can also start the camera and AprilTag detector automatically.
+`dump_truck_system.launch.py` and `command_center.launch.py` start the shared camera and AprilTag detector automatically during normal operation.
 
 ---
+
 # 13. Complete Multi-Truck System
 
-This is the recommended launch procedure for the integrated dump truck system.
-
-The system uses **one active Zenoh router host** and **one Command Center launch** regardless of the number of dump trucks.
-
-## Primary Configuration
+For a dump-truck-only physical system, the normal ROS PC entry point is:
 
 ```text
-Primary ROS PC (`ros-pc`)
 
-├── T1 → Zenoh Router
-└── T2 → Perception + Localization + Action Servers + Scenario Manager
+dump_truck_system.launch.py
 
-Each Dump Truck Raspberry Pi
-
-└── T1 → Robot Hardware
 ```
 
-## Backup Configuration
-
-```text
-Backup ROS PC (`ros-backup-pc`)
-
-├── T1 → Zenoh Router
-└── T2 → Perception + Localization + Action Servers + Scenario Manager
-
-Each Dump Truck Raspberry Pi
-
-└── T1 → Robot Hardware
-```
-
-Only one of these router hosts should normally be active for the robot system.
+The system uses one active Zenoh router and one system-level ROS PC launch regardless of the number of dump trucks.
 
 ## Step 1 — Start the Zenoh Router
 
-### Primary Router
-
-**Machine:** `ros-pc`
-**Terminal:** T1
-**Keep this terminal running.**
+Primary ROS PC:
 
 ```bash
+
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
+
 source install/setup.bash
 
 source network/setup_zenoh.sh router ros-pc
 
 ros2 run rmw_zenoh_cpp rmw_zenohd
+
 ```
 
-### Backup Router
+Keep this terminal running.
 
-If the backup computer is being used instead:
-
-**Machine:** `ros-backup-pc`
-**Terminal:** T1
-**Keep this terminal running.**
+For backup operation, run the router on the physical backup ROS PC instead:
 
 ```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
 
 source network/setup_zenoh.sh router ros-backup-pc
 
 ros2 run rmw_zenoh_cpp rmw_zenohd
+
 ```
 
-This command must be run on the physical backup ROS PC. Selecting `ros-backup-pc` does not remotely start the router there.
+Only one Zenoh router should normally be active.
 
 ## Step 2 — Start Each Physical Dump Truck
 
-The following commands use the normal primary router.
+On each participating Raspberry Pi, use its Zenoh device profile and the common Pi launch.
 
-Truck 1:
+Example for Truck 1:
 
 ```bash
+
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
 source /opt/ros/jazzy/setup.bash
+
 source install/setup.bash
+
 source network/setup_zenoh.sh client dumptruck1
+
 sudo pigpiod
-ros2 launch dump_truck_bringup truck1_pi.launch.py
+
+ros2 launch dump_truck_bringup \
+
+  dump_truck_pi.launch.py \
+
+  truck_name:=truck1
+
 ```
 
-Truck 3:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_zenoh.sh client dumptruck3
-sudo pigpiod
-ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
-  truck_name:=truck3
-```
-
-Truck 4:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_zenoh.sh client dumptruck4
-sudo pigpiod
-ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
-  truck_name:=truck4
-```
-
-Truck 5:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_zenoh.sh client dumptruck5
-sudo pigpiod
-ros2 launch dump_truck_bringup dump_truck_pi.launch.py \
-  truck_name:=truck5
-```
-
-If `ros-backup-pc` is the active router, use the backup router explicitly on every participating Pi:
-
-```bash
-source network/setup_zenoh.sh client dumptruck1 ros-backup-pc
-source network/setup_zenoh.sh client dumptruck3 ros-backup-pc
-source network/setup_zenoh.sh client dumptruck4 ros-backup-pc
-source network/setup_zenoh.sh client dumptruck5 ros-backup-pc
-```
-
-The robot launch commands remain the same.
-
-## Step 3 — Start the Command Center
-
-### Primary ROS PC
-
-**Machine:** `ros-pc`
-**Terminal:** T2
-**Keep this terminal running.**
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-source network/setup_zenoh.sh client ros-pc ros-pc
-
-ros2 launch construction_site_control command_center.launch.py \
-  trucks:=truck1,truck3,truck4,truck5 \
-  start_camera:=true \
-  start_apriltag:=true \
-  start_localization:=true \
-  start_action_servers:=true \
-  start_scenario_manager:=false
-```
-
-### Backup ROS PC
-
-If `ros-backup-pc` is the active router, start the Command Center on the backup machine with:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-
-source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
-
-ros2 launch construction_site_control command_center.launch.py \
-  trucks:=truck1,truck3,truck4,truck5 \
-  start_camera:=true \
-  start_apriltag:=true \
-  start_localization:=true \
-  start_action_servers:=true \
-  start_scenario_manager:=false
-```
-
-This starts the shared application-side system:
+Use the corresponding profile and ROS robot name for the other trucks:
 
 ```text
-Overhead USB Camera
-AprilTag Detector
-Truck 1 Odometry
-Truck 1 Tag/Odom Fusion
-Truck 1 Action Server
-Truck 3 Odometry
-Truck 3 Tag/Odom Fusion
-Truck 3 Action Server
-Truck 4 Odometry
-Truck 4 Tag/Odom Fusion
-Truck 4 Action Server
-Truck 5 Odometry
-Truck 5 Tag/Odom Fusion
-Truck 5 Action Server
+
+dumptruck3 → truck3
+
+dumptruck4 → truck4
+
+dumptruck5 → truck5
+
 ```
 
-The Scenario Manager is disabled above so that the complete robot system can be verified before a construction scenario is executed.
+When the backup router is active, append `ros-backup-pc` to the Zenoh client setup on every participating Pi.
 
-## Starting Fewer Trucks
+## Step 3 — Start the Dump-Truck ROS PC System
 
-The `trucks` argument determines which truck-specific application-side components are started.
-
-Truck 1 only:
+Primary ROS PC:
 
 ```bash
+
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+
+source install/setup.bash
+
+source network/setup_zenoh.sh client ros-pc
+
+ros2 launch construction_site_control \
+
+  dump_truck_system.launch.py \
+
+  trucks:=truck1,truck3,truck4,truck5
+
+```
+
+Backup ROS PC:
+
+```bash
+
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+
+source install/setup.bash
+
+source network/setup_zenoh.sh client ros-backup-pc
+
+ros2 launch construction_site_control \
+
+  dump_truck_system.launch.py \
+
+  trucks:=truck1,truck3,truck4,truck5
+
+```
+
+The `trucks` argument determines which truck-specific ROS PC components are started.
+
+For example:
+
+```bash
+
 trucks:=truck1
-```
 
-Trucks 1 and 3:
-
-```bash
 trucks:=truck1,truck3
-```
 
-Trucks 1, 3, 4, and 5:
-
-```bash
 trucks:=truck1,truck3,truck4,truck5
+
 ```
 
-The physical Raspberry Pi hardware stack should be running for every truck included in the operation.
+## Step 4 — Integrated or Scenario Operation
 
-## Step 4 — Run a Construction Scenario
-
-Once the robot system has been verified, a scenario can be executed through the Scenario Manager.
+When excavators or the Scenario Manager are part of the operation, use the integrated entry point instead:
 
 ```bash
-ros2 launch construction_site_control command_center.launch.py \
+
+ros2 launch construction_site_control \
+
+  command_center.launch.py \
+
   trucks:=truck1,truck3,truck4,truck5 \
-  start_camera:=true \
-  start_apriltag:=true \
-  start_localization:=true \
-  start_action_servers:=true \
-  start_scenario_manager:=true \
-  scenario:=truck1_3_4_5.yaml
+
+  excavators:=excavator3 \
+
+  start_scenario_manager:=false
+
 ```
+
+To execute a scenario automatically:
+
+```bash
+
+ros2 launch construction_site_control \
+
+  command_center.launch.py \
+
+  trucks:=truck1,truck3,truck4,truck5 \
+
+  excavators:=excavator3 \
+
+  start_scenario_manager:=true \
+
+  scenario:=truck1_3_4_5.yaml
+
+```
+
+If the scenario contains no excavator tasks, `excavators` may be left empty.
 
 Scenario files are stored under:
 
 ```text
+
 operations/scenarios/
-```
 
-Individual robot paths are stored separately under:
-
-```text
-operations/dump_truck/waypoints/
 ```
 
 ## Complete Multi-Truck Architecture
 
 ```text
-                       Active Router / Application Host
-                         ros-pc OR ros-backup-pc
-                                  │
-                    ┌─────────────┴─────────────┐
-                    │                           │
-                 Router                    Command Center
-                                                │
-                           ┌────────────────────┼────────────────────┐
-                           │                    │                    │
-                      Perception          Localization           Actions
-                                                │
-                    ┌───────────┬───────────────┼───────────┐
-                    │           │               │           │
-                    ▼           ▼               ▼           ▼
-                 Truck 1     Truck 3         Truck 4     Truck 5
-                    Pi          Pi              Pi          Pi
-                    │           │               │           │
-                    ▼           ▼               ▼           ▼
-                 Hardware    Hardware         Hardware    Hardware
+
+                    ACTIVE ROUTER / ROS PC
+
+                              │
+
+                ┌─────────────┴─────────────┐
+
+                │                           │
+
+           Zenoh Router            Dump Truck System
+
+                                            │
+
+                           ┌────────────────┼────────────────┐
+
+                           │                │                │
+
+                      Perception       Localization       Actions
+
+                                            │
+
+                    ┌───────────┬───────────┼───────────┐
+
+                    │           │           │           │
+
+                    ▼           ▼           ▼           ▼
+
+                 Truck 1     Truck 3     Truck 4     Truck 5
+
+                    Pi          Pi          Pi          Pi
+
 ```
 
-The important operational rule is:
+The operational rule is:
 
 ```text
-ONE ACTIVE Zenoh Router
-          +
-ONE Command Center
-          +
+
+ONE active Zenoh router
+
+        \+
+
+ONE system-level ROS PC launch
+
+        \+
+
 ONE hardware launch per physical robot
+
 ```
 
-Adding another dump truck does not require another Zenoh router or another Command Center instance.
+Adding another dump truck does not require another Zenoh router.
 
 ---
 
-# 14. Command Center Launch Parameters
-The Command Center launch is intentionally parameterized.
+# 14. Integrated Command Center Launch Parameters
+
+`command_center.launch.py` is the integrated entry point for mixed-robot and scenario operation. It is intentionally parameterized.
 
 ## `trucks`
+
 Comma-separated list of dump trucks.
 
 ```bash
@@ -1616,7 +1679,21 @@ trucks:=truck1
 ```
 
 ---
+
+## `excavators`
+
+Comma-separated list of excavators for integrated operation.
+
+```bash
+excavators:=excavator3
+```
+
+For dump-truck-only integrated testing, leave this empty.
+
+---
+
 ## `start_camera`
+
 Start the overhead USB camera:
 
 ```bash
@@ -1626,7 +1703,9 @@ start_camera:=true
 ```
 
 ---
+
 ## `start_apriltag`
+
 Start the AprilTag detector:
 
 ```bash
@@ -1636,7 +1715,9 @@ start_apriltag:=true
 ```
 
 ---
+
 ## `start_localization`
+
 Start odometry and Tag/Odom fusion for each selected truck:
 
 ```bash
@@ -1646,7 +1727,9 @@ start_localization:=true
 ```
 
 ---
+
 ## `start_action_servers`
+
 Start an Action Server for each selected truck:
 
 ```bash
@@ -1656,7 +1739,9 @@ start_action_servers:=true
 ```
 
 ---
+
 ## `start_scenario_manager`
+
 Automatically execute a scenario YAML:
 
 ```bash
@@ -1674,7 +1759,9 @@ start_scenario_manager:=false
 ```
 
 ---
+
 ## `scenario`
+
 Scenario YAML to execute.
 
 Example:
@@ -1694,22 +1781,20 @@ operations/scenarios/
 ```
 
 ---
-# 15. Command Center Without Automatic Scenario Execution
-To start the system but manually control Action execution:
+
+# 15. Integrated Command Center Without Automatic Scenario Execution
+
+For mixed-robot integration testing without automatically starting a scenario:
 
 ```bash
 
-ros2 launch construction_site_control command_center.launch.py \\
+ros2 launch construction_site_control \
 
-  trucks:="truck1,truck3,truck4,truck5" \\
+  command_center.launch.py \
 
-  start_camera:=true \\
+  trucks:=truck1,truck3,truck4,truck5 \
 
-  start_apriltag:=true \\
-
-  start_localization:=true \\
-
-  start_action_servers:=true \\
+  excavators:=excavator3 \
 
   start_scenario_manager:=false
 
@@ -1723,10 +1808,16 @@ This is useful for:
 
 - waypoint debugging
 
-- integration testing
+- excavator Action testing
+
+- mixed-robot integration testing
+
+For dump-truck-only operation, prefer `dump_truck_system.launch.py`.
 
 ---
+
 # 16. ROS 2 Action Interface
+
 The shared Action definition is located at:
 
 ```text
@@ -1771,7 +1862,7 @@ Each truck exposes:
 
 ```text
 
-/<truck_name>/execute_robot_task
+/\<truck_name>/execute_robot_task
 
 ```
 
@@ -1798,7 +1889,9 @@ ros2 action list | sort
 ```
 
 ---
+
 # 17. Manual Action Test
+
 Start the Command Center with:
 
 ```bash
@@ -1882,7 +1975,9 @@ operations/dump_truck/waypoints/
 ```
 
 ---
+
 # 18. Shared Robot Status
+
 The shared robot status message is located at:
 
 ```text
@@ -1907,7 +2002,7 @@ The general topic convention is:
 
 ```text
 
-/<robot_name>/status
+/\<robot_name>/status
 
 ```
 
@@ -1958,7 +2053,9 @@ fault
 Robot status can be used by the Scenario Manager for state-based synchronization.
 
 ---
+
 # 19. Scenario YAML
+
 Scenario files are stored under:
 
 ```text
@@ -2012,7 +2109,9 @@ topic_publish
 ```
 
 ---
+
 # 20. `task` Step
+
 A `task` executes a robot task through its ROS 2 Action Server.
 
 Example:
@@ -2042,7 +2141,9 @@ The task is sent to:
 The Scenario Manager waits for the Action result before continuing.
 
 ---
+
 # 21. `wait` Step
+
 A `wait` step introduces a timed delay.
 
 Example:
@@ -2084,7 +2185,9 @@ Truck 1 Task
 ```
 
 ---
+
 # 22. `parallel` Step
+
 A `parallel` step starts multiple scenario branches simultaneously.
 
 Example:
@@ -2158,7 +2261,9 @@ Execution:
 The scenario continues after all parallel child tasks complete successfully.
 
 ---
+
 # 23. `condition` Step
+
 A `condition` waits for a ROS topic value to satisfy a specified condition.
 
 The current Scenario Manager supports conditions using:
@@ -2226,7 +2331,9 @@ truck1_complete_then_truck3.yaml
 ```
 
 ---
+
 # 24. `topic_publish` Step
+
 A `topic_publish` step allows a scenario to publish directly to a ROS topic.
 
 This is useful when an operation does not require a complete Action Server abstraction.
@@ -2244,10 +2351,13 @@ Examples include:
 This provides a lightweight path for including direct ROS commands inside higher-level scenarios.
 
 ---
+
 # 25. Manual `cmd_vel` Testing
+
 Direct `cmd_vel` remains useful for validating motor direction, encoder mapping, and odometry.
 
 ## Straight Forward
+
 ```bash
 
 ros2 topic pub -r 10 \\
@@ -2261,6 +2371,7 @@ ros2 topic pub -r 10 \\
 ```
 
 ## Forward + Right
+
 ```bash
 
 ros2 topic pub -r 10 \\
@@ -2282,6 +2393,7 @@ logical LEFT wheel > logical RIGHT wheel
 ```
 
 ## In-Place Right Rotation
+
 ```bash
 
 ros2 topic pub -r 10 \\
@@ -2297,7 +2409,9 @@ ros2 topic pub -r 10 \\
 The truck should rotate clockwise and odometry yaw should change in the corresponding negative ROS yaw direction.
 
 ---
+
 # 26. Manual Waypoint Execution
+
 Waypoint files are stored under:
 
 ```text
@@ -2373,7 +2487,9 @@ ros2 run dump_truck_control waypoint_controller_node \\
 ```
 
 ---
+
 # 27. Runtime Logging
+
 Command Center output can be saved while still being displayed normally using `tee`.
 
 Create the runtime log directory:
@@ -2451,12 +2567,14 @@ runtime_logs/
 ```
 
 ---
+
 # 28. Review the Latest Runtime Log
+
 Find the latest log:
 
 ```bash
 
-LATEST_LOG=$(ls -t runtime_logs/command_center_*.log | head -1)
+LATEST_LOG=$(ls -t runtime_logs/command_center_\*.log | head -1)
 
 echo "$LATEST_LOG"
 
@@ -2511,10 +2629,13 @@ SCENARIO COMPLETE
 ```
 
 ---
+
 # 29. Runtime Logs vs. ROS Bag
+
 Runtime text logs and ROS bags serve different purposes.
 
 ## Runtime Text Log
+
 Useful for:
 
 ```text
@@ -2534,6 +2655,7 @@ Errors
 ```
 
 ## ROS Bag
+
 Useful for time-series ROS data such as:
 
 ```text
@@ -2583,7 +2705,9 @@ Experiment
 ROS bag recording can be added independently from the Command Center launch.
 
 ---
+
 # 30. Verify the Running System
+
 Check nodes:
 
 ```bash
@@ -2693,10 +2817,13 @@ ros2 topic echo \\
 ```
 
 ---
+
 # 31. Adding a New Dump Truck
+
 For a new truck, for example Truck 6:
 
 ## 1. Add the Device
+
 Update:
 
 ```text
@@ -2708,7 +2835,9 @@ network/devices.sh
 Add the Raspberry Pi device entry.
 
 ---
+
 ## 2. Create Hardware Configuration
+
 ```bash
 
 cp \\
@@ -2738,7 +2867,9 @@ Update:
 Do not assume encoder mapping is identical between trucks.
 
 ---
+
 ## 3. Create Waypoints
+
 Create:
 
 ```text
@@ -2748,7 +2879,9 @@ operations/dump_truck/waypoints/truck6_waypoints.yaml
 ```
 
 ---
+
 ## 4. Update the Raspberry Pi
+
 ```bash
 
 cd \~/ws_conrobotics/CIC-ConRobotics-2026
@@ -2776,7 +2909,9 @@ source install/setup.bash
 ```
 
 ---
+
 ## 5. Start Truck 6
+
 ```bash
 
 sudo pigpiod
@@ -2794,22 +2929,64 @@ ros2 launch dump_truck_bringup dump_truck_pi.launch.py \\
 ```
 
 ---
+
 ## 6. Start the ROS PC Stack
+
+Configure the ROS PC for the active Zenoh router.
+
+For the primary ROS PC:
+
 ```bash
 
-ros2 launch dump_truck_bringup dump_truck_ros_pc.launch.py \\
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
-  truck_name:=truck6
+source /opt/ros/jazzy/setup.bash
+
+source install/setup.bash
+
+source network/setup_zenoh.sh client ros-pc
+
+ros2 launch construction_site_control \
+
+  dump_truck_system.launch.py \
+
+  trucks:=truck6
 
 ```
 
-Expected:
+If `ros-backup-pc` is the active router, use:
+
+```bash
+
+source network/setup_zenoh.sh client ros-backup-pc
+
+ros2 launch construction_site_control \
+
+  dump_truck_system.launch.py \
+
+  trucks:=truck6
+
+```
+
+Expected ROS PC nodes include:
 
 ```text
+
+/usb_cam
+
+/apriltag
 
 /truck6/odometry
 
 /truck6/tag_odom_fusion
+
+/truck6/waypoint_action_server
+
+```
+
+The localization stack publishes:
+
+```text
 
 /truck6/odom
 
@@ -2817,8 +2994,12 @@ Expected:
 
 ```
 
+The lower-level `dump_truck_ros_pc.launch.py` is started internally by the system-level launch and normally does not need to be launched directly.
+
 ---
+
 ## 7. Validate Encoder Mapping
+
 ```bash
 
 ros2 topic echo /truck6/wheel_states
@@ -2850,7 +3031,9 @@ logical LEFT wheel > logical RIGHT wheel
 If the opposite occurs, inspect the truck-specific encoder configuration before modifying downstream odometry logic.
 
 ---
+
 # 32. Current Verified Robots
+
 ```text
 
 Truck 1
@@ -2890,7 +3073,9 @@ Encoder swap: true
 All four trucks have been verified with isolated ROS namespaces.
 
 ---
+
 # 33. Where New Files Belong
+
 Use the following rule when extending the system:
 
 ```text
