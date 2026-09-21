@@ -109,15 +109,21 @@ home:
 initial_position:
   enabled: true
   # COMMISSIONING MODE: run the full preflight first, then energize ONLY
-  # swing using short low-duty pulses toward the configured startup target.
-  # Boom/arm/bucket remain OFF and normal trajectory goals stay rejected.
-  mode: swing_test
+  # arm using short low-duty pulses toward the configured startup target.
+  # Swing/boom/bucket remain OFF and normal trajectory goals stay rejected.
+  mode: arm_test
   swing_test_pwm: 160
   swing_test_on_sec: 0.04
   swing_test_off_sec: 0.08
   swing_test_timeout_sec: 4.0
   swing_test_max_travel_deg: 12.0
   swing_test_wrong_way_deg: 1.5
+  arm_test_pwm: 140
+  arm_test_on_sec: 0.03
+  arm_test_off_sec: 0.10
+  arm_test_timeout_sec: 5.0
+  arm_test_max_travel_deg: 15.0
+  arm_test_wrong_way_deg: 1.5
   # A joint within 3 deg of its startup target is treated as already there
   # and will not be selected for a future correction.
   tolerance_deg: 3.0

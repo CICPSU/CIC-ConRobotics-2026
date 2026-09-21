@@ -1237,9 +1237,9 @@ class PiExcavatorTrajectoryServer(Node):
         self.initialization_mode = str(
             initial_position.get("mode", "preflight")
         ).strip().lower()
-        if self.initialization_mode not in ("preflight", "swing_test", "move"):
+        if self.initialization_mode not in ("preflight", "swing_test", "arm_test", "move"):
             raise RuntimeError(
-                "initial_position.mode must be 'preflight', 'swing_test', or 'move'"
+                "initial_position.mode must be 'preflight', 'swing_test', 'arm_test', or 'move'"
             )
         self.initialization_limit_margin_rad = math.radians(
             float(initial_position.get("limit_margin_deg", 3.0))
@@ -1276,6 +1276,26 @@ class PiExcavatorTrajectoryServer(Node):
         )
         self.initialization_swing_test_off_sec = float(
             initial_position.get("swing_test_off_sec", 0.08)
+        )
+        # Arm-only commissioning settings. These are intentionally
+        # independent from normal trajectory control and from the swing test.
+        self.initialization_arm_test_pwm = int(
+            clamp(float(initial_position.get("arm_test_pwm", 140)), 0, 255)
+        )
+        self.initialization_arm_test_timeout_sec = float(
+            initial_position.get("arm_test_timeout_sec", 5.0)
+        )
+        self.initialization_arm_test_max_travel_rad = math.radians(
+            float(initial_position.get("arm_test_max_travel_deg", 15.0))
+        )
+        self.initialization_arm_test_wrong_way_rad = math.radians(
+            float(initial_position.get("arm_test_wrong_way_deg", 1.5))
+        )
+        self.initialization_arm_test_on_sec = float(
+            initial_position.get("arm_test_on_sec", 0.03)
+        )
+        self.initialization_arm_test_off_sec = float(
+            initial_position.get("arm_test_off_sec", 0.10)
         )
         initial_positions = initial_position.get("positions", {})
         if self.initialize_on_startup:
@@ -1703,6 +1723,23 @@ class PiExcavatorTrajectoryServer(Node):
                 )
             return
 
+        if self.initialization_mode == "arm_test":
+            success = self.arm_only_initialization_test()
+            # As with the swing commissioning test, passing one axis does not
+            # make the full excavator operational.
+            self.initialization_complete = False
+            self.initialization_failed = not success
+            if success:
+                self.get_logger().warn(
+                    "[ARM-ONLY TEST] PASSED - arm reached the startup target. "
+                    "Swing/boom/bucket were never energized; trajectory commands remain REJECTED."
+                )
+            else:
+                self.get_logger().error(
+                    "[ARM-ONLY TEST] FAILED - all motors are OFF and trajectory commands remain REJECTED."
+                )
+            return
+
         success = self.move_to_initial_position()
         self.initialization_complete = success
         self.initialization_failed = not success
@@ -1953,6 +1990,163 @@ class PiExcavatorTrajectoryServer(Node):
                 if now - last_log >= 0.25:
                     self.get_logger().info(
                         f"[SWING-ONLY TEST] current={math.degrees(pos):.2f} deg, "
+                        f"error={math.degrees(error):+.2f} deg, "
+                        f"travel={math.degrees(travel):+.2f} deg"
+                    )
+                    last_log = now
+        finally:
+            self._stop_all()
+
+        return False
+
+    def arm_only_initialization_test(self) -> bool:
+        """Commission startup motion using *only* the arm joint.
+
+        The full no-motion preflight must pass first. Only the arm direction
+        pins and shared PWM may then be energized. Swing, boom, and bucket are
+        explicitly stopped on every cycle. Position limits, maximum travel,
+        timeout, and wrong-way motion are checked continuously. Passing this
+        test does not mark the excavator READY.
+        """
+        self._stop_all()
+        if not self.preflight_initial_position():
+            self.get_logger().error(
+                "[ARM-ONLY TEST] Preflight failed; refusing to energize arm."
+            )
+            return False
+
+        arm = self.joints.get("arm_joint")
+        if arm is None:
+            self.get_logger().error("[ARM-ONLY TEST] arm_joint is unavailable.")
+            return False
+
+        target = self.initial_position["arm_joint"]
+        cmd_lower, cmd_upper = self.joint_limits_rad["arm_joint"]
+        phys_lower, phys_upper = self.joint_physical_limits_rad["arm_joint"]
+        start_pos = float(arm.read_position_rad())
+        start_error = target - start_pos
+
+        if not math.isfinite(start_pos):
+            self.get_logger().error(
+                "[ARM-ONLY TEST] Starting arm feedback is not finite."
+            )
+            return False
+        if not (cmd_lower <= target <= cmd_upper):
+            self.get_logger().error(
+                "[ARM-ONLY TEST] Target is outside the arm command range."
+            )
+            return False
+        if not (
+            phys_lower - self.initialization_current_limit_tolerance_rad
+            <= start_pos
+            <= phys_upper + self.initialization_current_limit_tolerance_rad
+        ):
+            self.get_logger().error(
+                f"[ARM-ONLY TEST] Starting feedback is outside the arm physical range: "
+                f"{math.degrees(start_pos):.2f} deg."
+            )
+            return False
+        if abs(start_error) <= self.initialization_tolerance_rad:
+            self.get_logger().warn(
+                f"[ARM-ONLY TEST] SKIP - already at target: "
+                f"current={math.degrees(start_pos):.2f} deg, "
+                f"target={math.degrees(target):.2f} deg."
+            )
+            self._stop_all()
+            return True
+
+        desired_direction = 1 if start_error > 0.0 else -1
+        # If feedback starts on/just outside a physical endpoint, only motion
+        # back toward the interior is permitted.
+        if start_pos <= phys_lower and desired_direction <= 0:
+            self.get_logger().error(
+                "[ARM-ONLY TEST] Refusing motion farther below the arm minimum."
+            )
+            return False
+        if start_pos >= phys_upper and desired_direction >= 0:
+            self.get_logger().error(
+                "[ARM-ONLY TEST] Refusing motion farther above the arm maximum."
+            )
+            return False
+
+        self.get_logger().warn(
+            "[ARM-ONLY TEST] ENERGIZING ARM ONLY: "
+            f"current={math.degrees(start_pos):.2f} deg -> "
+            f"target={math.degrees(target):.2f} deg, "
+            f"PWM={self.initialization_arm_test_pwm}, "
+            f"pulse={self.initialization_arm_test_on_sec:.2f}s ON/"
+            f"{self.initialization_arm_test_off_sec:.2f}s OFF, "
+            f"max_travel={math.degrees(self.initialization_arm_test_max_travel_rad):.1f} deg."
+        )
+
+        start_time = time.monotonic()
+        last_log = 0.0
+        try:
+            while rclpy.ok():
+                now = time.monotonic()
+                if now - start_time > self.initialization_arm_test_timeout_sec:
+                    self.get_logger().error(
+                        "[ARM-ONLY TEST] Timeout; stopping arm."
+                    )
+                    return False
+
+                pos = float(arm.read_position_rad())
+                if not math.isfinite(pos):
+                    self.get_logger().error(
+                        "[ARM-ONLY TEST] Arm feedback became non-finite; stopping immediately."
+                    )
+                    return False
+                error = target - pos
+                travel = pos - start_pos
+
+                if (
+                    pos < phys_lower - self.initialization_current_limit_tolerance_rad
+                    or pos > phys_upper + self.initialization_current_limit_tolerance_rad
+                ):
+                    self.get_logger().error(
+                        f"[ARM-ONLY TEST] PHYSICAL LIMIT violation: {math.degrees(pos):.2f} deg."
+                    )
+                    return False
+                if abs(travel) > self.initialization_arm_test_max_travel_rad:
+                    self.get_logger().error(
+                        f"[ARM-ONLY TEST] Maximum test travel exceeded: "
+                        f"{math.degrees(travel):+.2f} deg."
+                    )
+                    return False
+                if travel * desired_direction < -self.initialization_arm_test_wrong_way_rad:
+                    self.get_logger().error(
+                        f"[ARM-ONLY TEST] WRONG-WAY motion detected: "
+                        f"travel={math.degrees(travel):+.2f} deg; stopping immediately."
+                    )
+                    return False
+
+                crossed_target = error * start_error <= 0.0
+                if abs(error) <= self.initialization_tolerance_rad or crossed_target:
+                    self.get_logger().warn(
+                        f"[ARM-ONLY TEST] Target reached: "
+                        f"current={math.degrees(pos):.2f} deg, "
+                        f"target={math.degrees(target):.2f} deg, "
+                        f"travel={math.degrees(travel):+.2f} deg."
+                    )
+                    return True
+
+                # Hold every non-arm joint OFF.
+                for name, joint in self.joints.items():
+                    if name != "arm_joint":
+                        joint.stop()
+                arm.drive_direction(desired_direction, self.initialization_arm_test_pwm)
+                self.pi.set_PWM_dutycycle(
+                    self.shared_pwm_pin, self.initialization_arm_test_pwm
+                )
+                time.sleep(self.initialization_arm_test_on_sec)
+
+                self.pi.set_PWM_dutycycle(self.shared_pwm_pin, 0)
+                arm.stop()
+                time.sleep(self.initialization_arm_test_off_sec)
+
+                if now - last_log >= 0.25:
+                    self.get_logger().info(
+                        f"[ARM-ONLY TEST] current={math.degrees(pos):.2f} deg, "
                         f"error={math.degrees(error):+.2f} deg, "
                         f"travel={math.degrees(travel):+.2f} deg"
                     )
