@@ -1297,6 +1297,26 @@ class PiExcavatorTrajectoryServer(Node):
         self.initialization_arm_test_off_sec = float(
             initial_position.get("arm_test_off_sec", 0.10)
         )
+        # Production startup correction settings. Every joint uses the same
+        # sequential guarded pulse controller; only tuning values differ.
+        default_prod = {
+            "swing_joint": (160, 0.04, 0.08, 5.0, 20.0, 1.5),
+            "boom_joint": (140, 0.03, 0.10, 5.0, 20.0, 1.5),
+            "arm_joint": (140, 0.03, 0.10, 5.0, 20.0, 1.5),
+            "bucket_joint": (80, 0.03, 0.10, 5.0, 20.0, 1.5),
+        }
+        self.initialization_joint_motion = {}
+        for joint_name, defaults in default_prod.items():
+            short = joint_name.replace("_joint", "")
+            pwm, on_sec, off_sec, timeout_sec, max_travel_deg, wrong_way_deg = defaults
+            self.initialization_joint_motion[joint_name] = {
+                "pwm": int(clamp(float(initial_position.get(f"{short}_pwm", pwm)), 0, 255)),
+                "on_sec": float(initial_position.get(f"{short}_on_sec", on_sec)),
+                "off_sec": float(initial_position.get(f"{short}_off_sec", off_sec)),
+                "timeout_sec": float(initial_position.get(f"{short}_timeout_sec", timeout_sec)),
+                "max_travel_rad": math.radians(float(initial_position.get(f"{short}_max_travel_deg", max_travel_deg))),
+                "wrong_way_rad": math.radians(float(initial_position.get(f"{short}_wrong_way_deg", wrong_way_deg))),
+            }
         initial_positions = initial_position.get("positions", {})
         if self.initialize_on_startup:
             if not isinstance(initial_positions, dict):
@@ -1805,16 +1825,11 @@ class PiExcavatorTrajectoryServer(Node):
 
             margin = min(target - cmd_lower, cmd_upper - target)
             margin_ok = margin >= self.initialization_limit_margin_rad
-            # A boundary target is safe for startup only if no motion toward
-            # that boundary is required. Example: bucket already at 0 deg.
-            boundary_ok = margin_ok or already_at_target
 
             if not current_ok:
                 plan = "BLOCKED_CURRENT_OUTSIDE_PHYSICAL_LIMIT"
             elif not target_ok:
                 plan = "BLOCKED_TARGET_OUTSIDE_COMMAND_LIMIT"
-            elif not boundary_ok:
-                plan = "BLOCKED_TARGET_TOO_CLOSE_TO_LIMIT"
             elif already_at_target:
                 plan = "SKIP_ALREADY_AT_TARGET"
             else:
@@ -2156,63 +2171,184 @@ class PiExcavatorTrajectoryServer(Node):
 
         return False
 
-    def move_to_initial_position(self) -> bool:
-        """Move all four joints to the configured scenario-start pose."""
-        self.get_logger().info(
-            "[INITIALIZATION] Moving excavator to configured initial position..."
+    def _correct_initial_joint(self, joint_name: str) -> bool:
+        """Move exactly one joint toward its startup target using guarded pulses."""
+        self._stop_all()
+        joint = self.joints[joint_name]
+        target = self.initial_position[joint_name]
+        cmd_lower, cmd_upper = self.joint_limits_rad[joint_name]
+        phys_lower, phys_upper = self.joint_physical_limits_rad[joint_name]
+        cfg = self.initialization_joint_motion[joint_name]
+        label = joint_name.replace("_joint", "").upper()
+
+        if joint_name == "swing_joint" and not joint.sensor_valid():
+            self.get_logger().error(f"[INITIALIZATION:{label}] Fresh feedback is required.")
+            return False
+
+        start_pos = float(joint.read_position_rad())
+        if not math.isfinite(start_pos):
+            self.get_logger().error(f"[INITIALIZATION:{label}] Starting feedback is non-finite.")
+            return False
+        if not (cmd_lower <= target <= cmd_upper):
+            self.get_logger().error(f"[INITIALIZATION:{label}] Target is outside command limits.")
+            return False
+        if not (
+            phys_lower - self.initialization_current_limit_tolerance_rad
+            <= start_pos
+            <= phys_upper + self.initialization_current_limit_tolerance_rad
+        ):
+            self.get_logger().error(
+                f"[INITIALIZATION:{label}] Start outside physical limits: "
+                f"{math.degrees(start_pos):.2f} deg."
+            )
+            return False
+
+        start_error = target - start_pos
+        if abs(start_error) <= self.initialization_tolerance_rad:
+            self.get_logger().info(
+                f"[INITIALIZATION:{label}] SKIP - current={math.degrees(start_pos):.2f} deg, "
+                f"target={math.degrees(target):.2f} deg."
+            )
+            return True
+
+        desired_direction = 1 if start_error > 0.0 else -1
+        # At/outside a physical endpoint, only inward motion is permitted.
+        if start_pos <= phys_lower and desired_direction <= 0:
+            self.get_logger().error(f"[INITIALIZATION:{label}] Refusing motion farther below physical minimum.")
+            return False
+        if start_pos >= phys_upper and desired_direction >= 0:
+            self.get_logger().error(f"[INITIALIZATION:{label}] Refusing motion farther above physical maximum.")
+            return False
+
+        self.get_logger().warn(
+            f"[INITIALIZATION:{label}] MOVE {math.degrees(start_pos):.2f} -> "
+            f"{math.degrees(target):.2f} deg, PWM={cfg['pwm']}, "
+            f"pulse={cfg['on_sec']:.2f}s ON/{cfg['off_sec']:.2f}s OFF."
         )
-        control_dt = 1.0 / max(1.0, self.control_hz)
-        start = time.monotonic()
+        start_time = time.monotonic()
+        last_log = 0.0
+        try:
+            while rclpy.ok():
+                now = time.monotonic()
+                if now - start_time > cfg["timeout_sec"]:
+                    self.get_logger().error(f"[INITIALIZATION:{label}] Timeout.")
+                    return False
+                if joint_name == "swing_joint" and not joint.sensor_valid():
+                    self.get_logger().error(f"[INITIALIZATION:{label}] Feedback became stale.")
+                    return False
 
-        swing = self.joints.get("swing_joint")
-        if swing is not None and hasattr(swing, "reset_swing_fault"):
-            swing.reset_swing_fault()
+                pos = float(joint.read_position_rad())
+                if not math.isfinite(pos):
+                    self.get_logger().error(f"[INITIALIZATION:{label}] Feedback became non-finite.")
+                    return False
+                error = target - pos
+                travel = pos - start_pos
 
-        while rclpy.ok():
-            elapsed = time.monotonic() - start
-            if elapsed > self.initialization_timeout_sec:
+                if (
+                    pos < phys_lower - self.initialization_current_limit_tolerance_rad
+                    or pos > phys_upper + self.initialization_current_limit_tolerance_rad
+                ):
+                    self.get_logger().error(
+                        f"[INITIALIZATION:{label}] PHYSICAL LIMIT violation: "
+                        f"{math.degrees(pos):.2f} deg."
+                    )
+                    return False
+                if abs(travel) > cfg["max_travel_rad"]:
+                    self.get_logger().error(
+                        f"[INITIALIZATION:{label}] Maximum travel exceeded: "
+                        f"{math.degrees(travel):+.2f} deg."
+                    )
+                    return False
+                if travel * desired_direction < -cfg["wrong_way_rad"]:
+                    self.get_logger().error(
+                        f"[INITIALIZATION:{label}] WRONG-WAY motion: "
+                        f"{math.degrees(travel):+.2f} deg."
+                    )
+                    return False
+
+                crossed_target = error * start_error <= 0.0
+                if abs(error) <= self.initialization_tolerance_rad or crossed_target:
+                    self.get_logger().info(
+                        f"[INITIALIZATION:{label}] REACHED current={math.degrees(pos):.2f} deg, "
+                        f"target={math.degrees(target):.2f} deg, "
+                        f"travel={math.degrees(travel):+.2f} deg."
+                    )
+                    return True
+
+                # Shared PWM means exactly one joint may be energized.
+                for other_name, other_joint in self.joints.items():
+                    if other_name != joint_name:
+                        other_joint.stop()
+                joint.drive_direction(desired_direction, cfg["pwm"])
+                self.pi.set_PWM_dutycycle(self.shared_pwm_pin, cfg["pwm"])
+                time.sleep(cfg["on_sec"])
+                self.pi.set_PWM_dutycycle(self.shared_pwm_pin, 0)
+                joint.stop()
+                time.sleep(cfg["off_sec"])
+
+                if now - last_log >= 0.25:
+                    self.get_logger().info(
+                        f"[INITIALIZATION:{label}] current={math.degrees(pos):.2f} deg, "
+                        f"error={math.degrees(error):+.2f} deg, "
+                        f"travel={math.degrees(travel):+.2f} deg"
+                    )
+                    last_log = now
+        finally:
+            self._stop_all()
+        return False
+
+    def _verify_initial_position(self) -> bool:
+        """Require all four measured positions to be within startup tolerance."""
+        self._stop_all()
+        all_ok = True
+        for joint_name in ("swing_joint", "boom_joint", "arm_joint", "bucket_joint"):
+            joint = self.joints[joint_name]
+            if joint_name == "swing_joint" and not joint.sensor_valid():
+                self.get_logger().error("[INITIALIZATION FINAL] swing feedback is stale.")
+                all_ok = False
+                continue
+            pos = float(joint.read_position_rad())
+            target = self.initial_position[joint_name]
+            error = target - pos
+            ok = math.isfinite(pos) and abs(error) <= self.initialization_tolerance_rad
+            self.get_logger().info(
+                f"[INITIALIZATION FINAL] {joint_name}: current={math.degrees(pos):.2f} deg, "
+                f"target={math.degrees(target):.2f} deg, "
+                f"error={math.degrees(error):+.2f} deg, status={'OK' if ok else 'NOT_READY'}"
+            )
+            all_ok = all_ok and ok
+        return all_ok
+
+    def move_to_initial_position(self) -> bool:
+        """Sequentially initialize all four joints, then verify the complete pose."""
+        self._stop_all()
+        self.get_logger().warn(
+            "[INITIALIZATION] Production four-joint sequential initialization starting."
+        )
+        if not self.preflight_initial_position():
+            self.get_logger().error("[INITIALIZATION] Preflight failed; no motion allowed.")
+            return False
+
+        # Fixed order keeps startup deterministic and guarantees only one axis
+        # is energized at a time. Joints already within tolerance are skipped.
+        for joint_name in ("swing_joint", "boom_joint", "arm_joint", "bucket_joint"):
+            if not self._correct_initial_joint(joint_name):
                 self._stop_all()
                 self.get_logger().error(
-                    "[INITIALIZATION] Timeout after "
-                    f"{self.initialization_timeout_sec:.1f}s - stopping all motors."
+                    f"[INITIALIZATION] Failed while correcting {joint_name}."
                 )
                 return False
-
-            plans: Dict[str, Tuple[int, int, float]] = {}
-            all_ready = True
-
-            for joint_name, target in self.initial_position.items():
-                pos, err, at_goal, direction, pwm = (
-                    self.joints[joint_name].plan_toward_target(target)
-                )
-                plans[joint_name] = (direction, pwm, err)
-                if not at_goal:
-                    all_ready = False
-
-            if swing is not None and getattr(swing, "_swing_fault", None):
-                self._stop_all()
-                self.get_logger().error(
-                    "[INITIALIZATION] Swing fault: "
-                    f"{swing._swing_fault}"
-                )
-                return False
-
-            if all_ready:
-                self._stop_all()
-                status = ", ".join(
-                    f"{name}={math.degrees(self.joints[name].read_position_rad()):.1f} deg"
-                    for name in self.initial_position
-                )
-                self.get_logger().info(
-                    "[INITIALIZATION] Initial position reached: " + status
-                )
-                return True
-
-            self._apply_plans(plans)
-            time.sleep(control_dt)
 
         self._stop_all()
-        return False
+        if not self._verify_initial_position():
+            self.get_logger().error(
+                "[INITIALIZATION] FINAL VERIFICATION FAILED; trajectory commands remain rejected."
+            )
+            return False
+        self.get_logger().info(
+            "[INITIALIZATION] FINAL VERIFICATION PASSED for all four joints."
+        )
+        return True
 
     # ── Action callbacks ─────────────────────────────────────────
     def move_to_home(self):

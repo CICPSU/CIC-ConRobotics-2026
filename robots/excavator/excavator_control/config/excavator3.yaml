@@ -108,32 +108,45 @@ home:
 
 initial_position:
   enabled: true
-  # COMMISSIONING MODE: run the full preflight first, then energize ONLY
-  # arm using short low-duty pulses toward the configured startup target.
-  # Swing/boom/bucket remain OFF and normal trajectory goals stay rejected.
-  mode: arm_test
-  swing_test_pwm: 160
-  swing_test_on_sec: 0.04
-  swing_test_off_sec: 0.08
-  swing_test_timeout_sec: 4.0
-  swing_test_max_travel_deg: 12.0
-  swing_test_wrong_way_deg: 1.5
-  arm_test_pwm: 140
-  arm_test_on_sec: 0.03
-  arm_test_off_sec: 0.10
-  arm_test_timeout_sec: 5.0
-  arm_test_max_travel_deg: 15.0
-  arm_test_wrong_way_deg: 1.5
-  # A joint within 3 deg of its startup target is treated as already there
-  # and will not be selected for a future correction.
+  mode: move
+
+  # A joint already within this tolerance is skipped.
   tolerance_deg: 3.0
-  # Startup targets normally stay at least 3 deg inside command limits. A
-  # boundary target is accepted only when the joint is already at that target.
-  limit_margin_deg: 3.0
-  # Sensor/calibration allowance used only for validating measured current
-  # positions against physical limits; it does not expand command limits.
   current_limit_tolerance_deg: 1.0
-  timeout_sec: 15.0
+  limit_margin_deg: 3.0
+  timeout_sec: 25.0
+
+  # Production initialization uses one joint at a time. Every correction uses
+  # short guarded pulses, continuous feedback checks, physical-limit checks,
+  # wrong-way detection, max-travel protection, and a per-joint timeout.
+  swing_pwm: 160
+  swing_on_sec: 0.04
+  swing_off_sec: 0.08
+  swing_timeout_sec: 5.0
+  swing_max_travel_deg: 20.0
+  swing_wrong_way_deg: 1.5
+
+  boom_pwm: 140
+  boom_on_sec: 0.03
+  boom_off_sec: 0.10
+  boom_timeout_sec: 5.0
+  boom_max_travel_deg: 20.0
+  boom_wrong_way_deg: 1.5
+
+  arm_pwm: 140
+  arm_on_sec: 0.03
+  arm_off_sec: 0.10
+  arm_timeout_sec: 5.0
+  arm_max_travel_deg: 20.0
+  arm_wrong_way_deg: 1.5
+
+  bucket_pwm: 80
+  bucket_on_sec: 0.03
+  bucket_off_sec: 0.10
+  bucket_timeout_sec: 5.0
+  bucket_max_travel_deg: 20.0
+  bucket_wrong_way_deg: 1.5
+
   positions:
     swing: 90.0
     boom: -10.0
