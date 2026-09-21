@@ -1237,9 +1237,9 @@ class PiExcavatorTrajectoryServer(Node):
         self.initialization_mode = str(
             initial_position.get("mode", "preflight")
         ).strip().lower()
-        if self.initialization_mode not in ("preflight", "move"):
+        if self.initialization_mode not in ("preflight", "swing_test", "move"):
             raise RuntimeError(
-                "initial_position.mode must be either 'preflight' or 'move'"
+                "initial_position.mode must be 'preflight', 'swing_test', or 'move'"
             )
         self.initialization_limit_margin_rad = math.radians(
             float(initial_position.get("limit_margin_deg", 3.0))
@@ -1255,6 +1255,27 @@ class PiExcavatorTrajectoryServer(Node):
         # expands the range allowed for commanded targets.
         self.initialization_current_limit_tolerance_rad = math.radians(
             float(initial_position.get("current_limit_tolerance_deg", 1.0))
+        )
+        # Deliberately conservative, one-axis startup test settings.  These are
+        # used only by initial_position.mode=swing_test; normal trajectory
+        # control is unchanged.
+        self.initialization_swing_test_pwm = int(
+            clamp(float(initial_position.get("swing_test_pwm", 160)), 0, 255)
+        )
+        self.initialization_swing_test_timeout_sec = float(
+            initial_position.get("swing_test_timeout_sec", 4.0)
+        )
+        self.initialization_swing_test_max_travel_rad = math.radians(
+            float(initial_position.get("swing_test_max_travel_deg", 12.0))
+        )
+        self.initialization_swing_test_wrong_way_rad = math.radians(
+            float(initial_position.get("swing_test_wrong_way_deg", 1.5))
+        )
+        self.initialization_swing_test_on_sec = float(
+            initial_position.get("swing_test_on_sec", 0.04)
+        )
+        self.initialization_swing_test_off_sec = float(
+            initial_position.get("swing_test_off_sec", 0.08)
         )
         initial_positions = initial_position.get("positions", {})
         if self.initialize_on_startup:
@@ -1664,6 +1685,24 @@ class PiExcavatorTrajectoryServer(Node):
                 )
             return
 
+        if self.initialization_mode == "swing_test":
+            success = self.swing_only_initialization_test()
+            # A one-axis commissioning test never makes the full excavator
+            # operational.  Normal trajectory goals remain rejected even if
+            # swing reaches its target successfully.
+            self.initialization_complete = False
+            self.initialization_failed = not success
+            if success:
+                self.get_logger().warn(
+                    "[SWING-ONLY TEST] PASSED - swing reached the startup target. "
+                    "Other joints were never energized; trajectory commands remain REJECTED."
+                )
+            else:
+                self.get_logger().error(
+                    "[SWING-ONLY TEST] FAILED - all motors are OFF and trajectory commands remain REJECTED."
+                )
+            return
+
         success = self.move_to_initial_position()
         self.initialization_complete = success
         self.initialization_failed = not success
@@ -1772,6 +1811,156 @@ class PiExcavatorTrajectoryServer(Node):
 
         self._stop_all()
         return ok
+
+    def swing_only_initialization_test(self) -> bool:
+        """Commission startup motion using *only* the swing joint.
+
+        This is intentionally separate from normal trajectory execution.  It
+        first runs the full no-motion preflight, then allows only swing to
+        receive direction/PWM.  Boom, arm, and bucket are stopped on every
+        cycle.  Fresh feedback, hard limits, maximum travel, timeout, and
+        wrong-way motion are checked continuously.  Passing this test does
+        not mark the excavator READY.
+        """
+        self._stop_all()
+        if not self.preflight_initial_position():
+            self.get_logger().error(
+                "[SWING-ONLY TEST] Preflight failed; refusing to energize swing."
+            )
+            return False
+
+        swing = self.joints.get("swing_joint")
+        if swing is None or not swing.sensor_valid():
+            self.get_logger().error(
+                "[SWING-ONLY TEST] Fresh swing feedback is required."
+            )
+            return False
+
+        target = self.initial_position["swing_joint"]
+        cmd_lower, cmd_upper = self.joint_limits_rad["swing_joint"]
+        hard_lower, hard_upper = self.joint_physical_limits_rad["swing_joint"]
+        start_pos = float(swing.read_position_rad())
+        start_error = target - start_pos
+
+        if not (cmd_lower <= target <= cmd_upper):
+            self.get_logger().error(
+                "[SWING-ONLY TEST] Target is outside the swing command range."
+            )
+            return False
+        if not (hard_lower <= start_pos <= hard_upper):
+            self.get_logger().error(
+                "[SWING-ONLY TEST] Starting feedback is outside the swing hard range."
+            )
+            return False
+        if abs(start_error) <= self.initialization_tolerance_rad:
+            self.get_logger().warn(
+                f"[SWING-ONLY TEST] SKIP - already at target: "
+                f"current={math.degrees(start_pos):.2f} deg, "
+                f"target={math.degrees(target):.2f} deg."
+            )
+            self._stop_all()
+            return True
+
+        desired_direction = 1 if start_error > 0.0 else -1
+        # The test may recover from a position just outside the narrower
+        # command envelope (e.g. +95.8 deg) only when the requested direction
+        # points back toward the target/interior.
+        if start_pos > cmd_upper and desired_direction >= 0:
+            self.get_logger().error(
+                "[SWING-ONLY TEST] Refusing motion farther above command max."
+            )
+            return False
+        if start_pos < cmd_lower and desired_direction <= 0:
+            self.get_logger().error(
+                "[SWING-ONLY TEST] Refusing motion farther below command min."
+            )
+            return False
+
+        self.get_logger().warn(
+            "[SWING-ONLY TEST] ENERGIZING SWING ONLY: "
+            f"current={math.degrees(start_pos):.2f} deg -> "
+            f"target={math.degrees(target):.2f} deg, "
+            f"PWM={self.initialization_swing_test_pwm}, "
+            f"pulse={self.initialization_swing_test_on_sec:.2f}s ON/"
+            f"{self.initialization_swing_test_off_sec:.2f}s OFF, "
+            f"max_travel={math.degrees(self.initialization_swing_test_max_travel_rad):.1f} deg."
+        )
+
+        start_time = time.monotonic()
+        last_log = 0.0
+        try:
+            while rclpy.ok():
+                now = time.monotonic()
+                if now - start_time > self.initialization_swing_test_timeout_sec:
+                    self.get_logger().error(
+                        "[SWING-ONLY TEST] Timeout; stopping swing."
+                    )
+                    return False
+                if not swing.sensor_valid():
+                    self.get_logger().error(
+                        "[SWING-ONLY TEST] Swing feedback became stale; stopping immediately."
+                    )
+                    return False
+
+                pos = float(swing.read_position_rad())
+                error = target - pos
+                travel = pos - start_pos
+
+                if pos < hard_lower or pos > hard_upper:
+                    self.get_logger().error(
+                        f"[SWING-ONLY TEST] HARD LIMIT violation: {math.degrees(pos):.2f} deg."
+                    )
+                    return False
+                if abs(travel) > self.initialization_swing_test_max_travel_rad:
+                    self.get_logger().error(
+                        f"[SWING-ONLY TEST] Maximum test travel exceeded: "
+                        f"{math.degrees(travel):+.2f} deg."
+                    )
+                    return False
+                if travel * desired_direction < -self.initialization_swing_test_wrong_way_rad:
+                    self.get_logger().error(
+                        f"[SWING-ONLY TEST] WRONG-WAY motion detected: "
+                        f"travel={math.degrees(travel):+.2f} deg; stopping immediately."
+                    )
+                    return False
+
+                # Stop on tolerance or as soon as feedback crosses the target.
+                crossed_target = error * start_error <= 0.0
+                if abs(error) <= self.initialization_tolerance_rad or crossed_target:
+                    self.get_logger().warn(
+                        f"[SWING-ONLY TEST] Target reached: "
+                        f"current={math.degrees(pos):.2f} deg, "
+                        f"target={math.degrees(target):.2f} deg, "
+                        f"travel={math.degrees(travel):+.2f} deg."
+                    )
+                    return True
+
+                # Ensure every non-swing direction pin is held OFF.
+                for name, joint in self.joints.items():
+                    if name != "swing_joint":
+                        joint.stop()
+                swing.drive_direction(desired_direction, self.initialization_swing_test_pwm)
+                self.pi.set_PWM_dutycycle(
+                    self.shared_pwm_pin, self.initialization_swing_test_pwm
+                )
+                time.sleep(self.initialization_swing_test_on_sec)
+
+                # Coast/read phase: no motor receives shared PWM.
+                self.pi.set_PWM_dutycycle(self.shared_pwm_pin, 0)
+                swing.stop()
+                time.sleep(self.initialization_swing_test_off_sec)
+
+                if now - last_log >= 0.25:
+                    self.get_logger().info(
+                        f"[SWING-ONLY TEST] current={math.degrees(pos):.2f} deg, "
+                        f"error={math.degrees(error):+.2f} deg, "
+                        f"travel={math.degrees(travel):+.2f} deg"
+                    )
+                    last_log = now
+        finally:
+            self._stop_all()
+
+        return False
 
     def move_to_initial_position(self) -> bool:
         """Move all four joints to the configured scenario-start pose."""
