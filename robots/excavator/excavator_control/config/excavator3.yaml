@@ -112,7 +112,15 @@ initial_position:
   # but does not energize any motor. Keep this in preflight until the
   # reported current positions and targets have been reviewed.
   mode: preflight
+  # A joint within 3 deg of its startup target is treated as already there
+  # and will not be selected for a future correction.
+  tolerance_deg: 3.0
+  # Startup targets normally stay at least 3 deg inside command limits. A
+  # boundary target is accepted only when the joint is already at that target.
   limit_margin_deg: 3.0
+  # Sensor/calibration allowance used only for validating measured current
+  # positions against physical limits; it does not expand command limits.
+  current_limit_tolerance_deg: 1.0
   timeout_sec: 15.0
   positions:
     swing: 90.0

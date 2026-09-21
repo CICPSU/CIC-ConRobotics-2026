@@ -1244,6 +1244,18 @@ class PiExcavatorTrajectoryServer(Node):
         self.initialization_limit_margin_rad = math.radians(
             float(initial_position.get("limit_margin_deg", 3.0))
         )
+        # Startup-pose tolerance is intentionally independent of the normal
+        # trajectory tolerances. It answers only: does this joint actually
+        # need a correction to establish the known scenario-start pose?
+        self.initialization_tolerance_rad = math.radians(
+            float(initial_position.get("tolerance_deg", 3.0))
+        )
+        # Small allowance for sensor/calibration quantization when checking a
+        # measured current position against a physical range. This never
+        # expands the range allowed for commanded targets.
+        self.initialization_current_limit_tolerance_rad = math.radians(
+            float(initial_position.get("current_limit_tolerance_deg", 1.0))
+        )
         initial_positions = initial_position.get("positions", {})
         if self.initialize_on_startup:
             if not isinstance(initial_positions, dict):
@@ -1290,6 +1302,20 @@ class PiExcavatorTrajectoryServer(Node):
                 math.radians(float(self.excavator_config.bucket.min_angle_deg)),
                 math.radians(float(self.excavator_config.bucket.max_angle_deg)),
             ),
+        }
+
+        # Current feedback is checked against physical/hard limits, not the
+        # narrower normal-command envelope. Swing is the important distinction:
+        # coast can legitimately leave it just outside +/-95 deg while still
+        # remaining inside the observed physical range of +/-105 deg.
+        self.joint_physical_limits_rad = {
+            "swing_joint": (
+                math.radians(swing_hard_min_deg),
+                math.radians(swing_hard_max_deg),
+            ),
+            "boom_joint": self.joint_limits_rad["boom_joint"],
+            "arm_joint": self.joint_limits_rad["arm_joint"],
+            "bucket_joint": self.joint_limits_rad["bucket_joint"],
         }
 
         for joint_name, (lower, upper) in self.joint_limits_rad.items():
@@ -1656,10 +1682,16 @@ class PiExcavatorTrajectoryServer(Node):
         self.move_to_home()
 
     def preflight_initial_position(self) -> bool:
-        """Validate startup feedback and targets without energizing any motor."""
+        """Plan startup corrections without energizing any motor.
+
+        Current feedback is validated against physical limits. Targets are
+        validated against command limits. A target at a command boundary is
+        allowed only when the joint is already within startup tolerance, so an
+        initialization never drives farther into a physical endpoint.
+        """
         self._stop_all()
         self.get_logger().warn(
-            "[INITIALIZATION PRE-FLIGHT] Motors are OFF; validating feedback and limits only."
+            "[INITIALIZATION PRE-FLIGHT] Motors are OFF; validating and planning only."
         )
 
         ok = True
@@ -1672,29 +1704,71 @@ class PiExcavatorTrajectoryServer(Node):
             )
             ok = False
 
+        corrections = []
         for joint_name in ("swing_joint", "boom_joint", "arm_joint", "bucket_joint"):
             joint = self.joints[joint_name]
             current = float(joint.read_position_rad())
             target = self.initial_position[joint_name]
-            lower, upper = self.joint_limits_rad[joint_name]
+            cmd_lower, cmd_upper = self.joint_limits_rad[joint_name]
+            phys_lower, phys_upper = self.joint_physical_limits_rad[joint_name]
 
-            current_ok = math.isfinite(current) and lower <= current <= upper
-            target_ok = math.isfinite(target) and lower <= target <= upper
-            margin = min(target - lower, upper - target)
+            current_ok = (
+                math.isfinite(current)
+                and phys_lower - self.initialization_current_limit_tolerance_rad
+                <= current
+                <= phys_upper + self.initialization_current_limit_tolerance_rad
+            )
+            target_ok = (
+                math.isfinite(target) and cmd_lower <= target <= cmd_upper
+            )
+            error = target - current
+            already_at_target = (
+                math.isfinite(error)
+                and abs(error) <= self.initialization_tolerance_rad
+            )
+
+            margin = min(target - cmd_lower, cmd_upper - target)
             margin_ok = margin >= self.initialization_limit_margin_rad
+            # A boundary target is safe for startup only if no motion toward
+            # that boundary is required. Example: bucket already at 0 deg.
+            boundary_ok = margin_ok or already_at_target
+
+            if not current_ok:
+                plan = "BLOCKED_CURRENT_OUTSIDE_PHYSICAL_LIMIT"
+            elif not target_ok:
+                plan = "BLOCKED_TARGET_OUTSIDE_COMMAND_LIMIT"
+            elif not boundary_ok:
+                plan = "BLOCKED_TARGET_TOO_CLOSE_TO_LIMIT"
+            elif already_at_target:
+                plan = "SKIP_ALREADY_AT_TARGET"
+            else:
+                plan = "CORRECTION_REQUIRED"
+                corrections.append(joint_name)
 
             self.get_logger().warn(
                 "[INITIALIZATION PRE-FLIGHT] "
                 f"{joint_name}: current={math.degrees(current):.2f} deg, "
                 f"target={math.degrees(target):.2f} deg, "
-                f"limits=[{math.degrees(lower):.2f}, {math.degrees(upper):.2f}] deg, "
-                f"current={'OK' if current_ok else 'INVALID'}, "
-                f"target={'OK' if target_ok else 'INVALID'}, "
-                f"limit_margin={'OK' if margin_ok else 'TOO CLOSE'}"
+                f"error={math.degrees(error):+.2f} deg, "
+                f"physical=[{math.degrees(phys_lower):.2f}, {math.degrees(phys_upper):.2f}] deg, "
+                f"command=[{math.degrees(cmd_lower):.2f}, {math.degrees(cmd_upper):.2f}] deg, "
+                f"plan={plan}"
             )
 
-            if not current_ok or not target_ok or not margin_ok:
+            if not current_ok or not target_ok or not boundary_ok:
                 ok = False
+
+        if ok:
+            if corrections:
+                self.get_logger().warn(
+                    "[INITIALIZATION PRE-FLIGHT] SAFE PLAN ONLY - motors remain OFF. "
+                    "Corrections would be required for: " + ", ".join(corrections)
+                )
+            else:
+                self.get_logger().warn(
+                    "[INITIALIZATION PRE-FLIGHT] SAFE PLAN ONLY - motors remain OFF. "
+                    "All joints are already within startup tolerance."
+                )
 
         self._stop_all()
         return ok
