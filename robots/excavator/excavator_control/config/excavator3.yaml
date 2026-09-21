@@ -108,6 +108,11 @@ home:
 
 initial_position:
   enabled: true
+  # SAFE VALIDATION MODE: startup reads and validates all four joints,
+  # but does not energize any motor. Keep this in preflight until the
+  # reported current positions and targets have been reviewed.
+  mode: preflight
+  limit_margin_deg: 3.0
   timeout_sec: 15.0
   positions:
     swing: 90.0

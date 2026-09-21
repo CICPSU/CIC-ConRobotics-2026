@@ -1234,6 +1234,16 @@ class PiExcavatorTrajectoryServer(Node):
         self.initialization_timeout_sec = float(
             initial_position.get("timeout_sec", 15.0)
         )
+        self.initialization_mode = str(
+            initial_position.get("mode", "preflight")
+        ).strip().lower()
+        if self.initialization_mode not in ("preflight", "move"):
+            raise RuntimeError(
+                "initial_position.mode must be either 'preflight' or 'move'"
+            )
+        self.initialization_limit_margin_rad = math.radians(
+            float(initial_position.get("limit_margin_deg", 3.0))
+        )
         initial_positions = initial_position.get("positions", {})
         if self.initialize_on_startup:
             if not isinstance(initial_positions, dict):
@@ -1562,11 +1572,18 @@ class PiExcavatorTrajectoryServer(Node):
                 f"{name}={math.degrees(target):.1f} deg"
                 for name, target in self.initial_position.items()
             )
-            self.get_logger().warn(
-                "  Startup initialization enabled. Waiting for ROS callbacks "
-                "before moving to the configured initial pose: "
-                + targets_deg
-            )
+            if self.initialization_mode == "preflight":
+                self.get_logger().warn(
+                    "  Startup initialization PRE-FLIGHT enabled. Motors will NOT move. "
+                    "Waiting for ROS callbacks before validating current/target positions: "
+                    + targets_deg
+                )
+            else:
+                self.get_logger().warn(
+                    "  Startup initialization MOVE mode enabled. Waiting for ROS callbacks "
+                    "before moving to the configured initial pose: "
+                    + targets_deg
+                )
             # Do not initialize inside __init__. Swing feedback arrives through
             # a ROS subscription, so the executor must be spinning first.
             # The one-shot timer runs in the default callback group while the
@@ -1603,6 +1620,24 @@ class PiExcavatorTrajectoryServer(Node):
     def _run_startup_initialization_once(self) -> None:
         """Run configured four-joint initialization after the executor starts."""
         self._initialization_timer.cancel()
+        if self.initialization_mode == "preflight":
+            success = self.preflight_initial_position()
+            # Pre-flight deliberately never makes the excavator operational.
+            # A human must review the readings before MOVE mode is enabled.
+            self.initialization_complete = False
+            self.initialization_failed = not success
+            if success:
+                self.get_logger().warn(
+                    "[INITIALIZATION PRE-FLIGHT] PASSED - motors remained OFF. "
+                    "Trajectory commands remain REJECTED until initialization MOVE mode is enabled."
+                )
+            else:
+                self.get_logger().error(
+                    "[INITIALIZATION PRE-FLIGHT] FAILED - motors remained OFF. "
+                    "Trajectory commands will be rejected."
+                )
+            return
+
         success = self.move_to_initial_position()
         self.initialization_complete = success
         self.initialization_failed = not success
@@ -1619,6 +1654,50 @@ class PiExcavatorTrajectoryServer(Node):
         """Run the old three-joint home routine without blocking ROS startup."""
         self._initialization_timer.cancel()
         self.move_to_home()
+
+    def preflight_initial_position(self) -> bool:
+        """Validate startup feedback and targets without energizing any motor."""
+        self._stop_all()
+        self.get_logger().warn(
+            "[INITIALIZATION PRE-FLIGHT] Motors are OFF; validating feedback and limits only."
+        )
+
+        ok = True
+        swing = self.joints.get("swing_joint")
+        if swing is None or not swing.sensor_valid():
+            age = float("inf") if swing is None else swing.sensor_age_sec()
+            self.get_logger().error(
+                "[INITIALIZATION PRE-FLIGHT] swing_joint feedback is not fresh "
+                f"(age={age:.3f}s)."
+            )
+            ok = False
+
+        for joint_name in ("swing_joint", "boom_joint", "arm_joint", "bucket_joint"):
+            joint = self.joints[joint_name]
+            current = float(joint.read_position_rad())
+            target = self.initial_position[joint_name]
+            lower, upper = self.joint_limits_rad[joint_name]
+
+            current_ok = math.isfinite(current) and lower <= current <= upper
+            target_ok = math.isfinite(target) and lower <= target <= upper
+            margin = min(target - lower, upper - target)
+            margin_ok = margin >= self.initialization_limit_margin_rad
+
+            self.get_logger().warn(
+                "[INITIALIZATION PRE-FLIGHT] "
+                f"{joint_name}: current={math.degrees(current):.2f} deg, "
+                f"target={math.degrees(target):.2f} deg, "
+                f"limits=[{math.degrees(lower):.2f}, {math.degrees(upper):.2f}] deg, "
+                f"current={'OK' if current_ok else 'INVALID'}, "
+                f"target={'OK' if target_ok else 'INVALID'}, "
+                f"limit_margin={'OK' if margin_ok else 'TOO CLOSE'}"
+            )
+
+            if not current_ok or not target_ok or not margin_ok:
+                ok = False
+
+        self._stop_all()
+        return ok
 
     def move_to_initial_position(self) -> bool:
         """Move all four joints to the configured scenario-start pose."""
