@@ -177,7 +177,7 @@ joint_control:
 
   boom:
     kp: 120.0
-    min_pwm: 110
+    min_pwm: 90
     max_pwm: 255
     kick_pwm: 150
 
