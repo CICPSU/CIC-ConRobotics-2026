@@ -179,7 +179,7 @@ joint_control:
     kp: 120.0
     min_pwm: 110
     max_pwm: 255
-    kick_pwm: 180
+    kick_pwm: 150
 
     stop_tolerance_rad: 0.0524 # 3 degrees
     tolerance_rad: 0.1745 # 10 degrees
