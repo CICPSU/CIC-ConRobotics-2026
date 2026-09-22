@@ -201,9 +201,9 @@ joint_control:
 
   boom:
     kp: 120.0
-    min_pwm: 90
+    min_pwm: 130
     max_pwm: 255
-    kick_pwm: 150
+    kick_pwm: 180
 
     # Existing Excavator 1 values preserved.
     tolerance_rad: 0.035
