@@ -138,26 +138,18 @@ initial_position:
   timeout_sec: 25.0
 
   swing_pwm: 160
-  swing_on_sec: 0.04
-  swing_off_sec: 0.08
   swing_timeout_sec: 5.0
   swing_wrong_way_deg: 10.0
 
   boom_pwm: 140
-  boom_on_sec: 0.03
-  boom_off_sec: 0.10
   boom_timeout_sec: 5.0
   boom_wrong_way_deg: 10.0
 
   arm_pwm: 140
-  arm_on_sec: 0.03
-  arm_off_sec: 0.10
   arm_timeout_sec: 5.0
   arm_wrong_way_deg: 10.0
 
   bucket_pwm: 80
-  bucket_on_sec: 0.03
-  bucket_off_sec: 0.10
   bucket_timeout_sec: 5.0
   bucket_wrong_way_deg: 10.0
 
@@ -213,8 +205,9 @@ joint_control:
     max_pwm: 255
     kick_pwm: 180
 
-    stop_tolerance_rad: 0.0524 # 3 degrees
-    tolerance_rad: 0.1745 # 10 degrees
+    # Existing Excavator 1 values preserved.
+    tolerance_rad: 0.035
+    stop_tolerance_rad: 0.015
 
   arm:
     kp: 120.0
@@ -222,9 +215,9 @@ joint_control:
     max_pwm: 220
     kick_pwm: 180
 
-    stop_tolerance_rad: 0.1396 # 8 degrees
-    tolerance_rad: 0.2618 # 15 degrees
-
+    # Existing Excavator 1 values preserved.
+    tolerance_rad: 0.035
+    stop_tolerance_rad: 0.015
 
   bucket:
     kp: 70.0
@@ -232,5 +225,6 @@ joint_control:
     max_pwm: 255
     kick_pwm: 80
 
-    stop_tolerance_rad: 0.1745 # 10 degrees
-    tolerance_rad: 0.2618 # 15 degrees
+    # Existing Excavator 1 values preserved.
+    tolerance_rad: 0.08
+    stop_tolerance_rad: 0.06

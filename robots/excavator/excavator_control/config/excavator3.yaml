@@ -122,30 +122,22 @@ initial_position:
   limit_margin_deg: 3.0
   timeout_sec: 25.0
 
-  # Production initialization uses one joint at a time. Every correction uses
-  # short guarded pulses, continuous feedback checks, physical-limit checks,
-  # wrong-way detection, max-travel protection, and a per-joint timeout.
+  # Production initialization moves one joint at a time with continuous drive.
+  # Feedback, physical limits, wrong-way motion, target crossing, and per-joint
+  # timeout are checked continuously while the selected joint is moving.
   swing_pwm: 160
-  swing_on_sec: 0.06
-  swing_off_sec: 0.08
   swing_timeout_sec: 5.0
   swing_wrong_way_deg: 10.0
 
   boom_pwm: 140
-  boom_on_sec: 0.06
-  boom_off_sec: 0.06
   boom_timeout_sec: 5.0
   boom_wrong_way_deg: 10.0
 
   arm_pwm: 140
-  arm_on_sec: 0.06
-  arm_off_sec: 0.10
   arm_timeout_sec: 5.0
   arm_wrong_way_deg: 10.0
 
   bucket_pwm: 80
-  bucket_on_sec: 0.06
-  bucket_off_sec: 0.10
   bucket_timeout_sec: 5.0
   bucket_wrong_way_deg: 10.0
 

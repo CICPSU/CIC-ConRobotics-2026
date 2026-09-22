@@ -1288,22 +1288,21 @@ class PiExcavatorTrajectoryServer(Node):
         self.initialization_arm_test_off_sec = float(
             initial_position.get("arm_test_off_sec", 0.10)
         )
-        # Production startup correction settings. Every joint uses the same
-        # sequential guarded pulse controller; only tuning values differ.
+        # Production startup correction settings. Every joint is moved
+        # continuously, one axis at a time, while guarded by physical-limit,
+        # wrong-way, feedback, target-crossing, and timeout checks.
         default_prod = {
-            "swing_joint": (160, 0.04, 0.08, 5.0, 10.0),
-            "boom_joint": (140, 0.03, 0.10, 5.0, 10.0),
-            "arm_joint": (140, 0.03, 0.10, 5.0, 10.0),
-            "bucket_joint": (80, 0.03, 0.10, 5.0, 10.0),
+            "swing_joint": (160, 5.0, 10.0),
+            "boom_joint": (140, 5.0, 10.0),
+            "arm_joint": (140, 5.0, 10.0),
+            "bucket_joint": (80, 5.0, 10.0),
         }
         self.initialization_joint_motion = {}
         for joint_name, defaults in default_prod.items():
             short = joint_name.replace("_joint", "")
-            pwm, on_sec, off_sec, timeout_sec, wrong_way_deg = defaults
+            pwm, timeout_sec, wrong_way_deg = defaults
             self.initialization_joint_motion[joint_name] = {
                 "pwm": int(clamp(float(initial_position.get(f"{short}_pwm", pwm)), 0, 255)),
-                "on_sec": float(initial_position.get(f"{short}_on_sec", on_sec)),
-                "off_sec": float(initial_position.get(f"{short}_off_sec", off_sec)),
                 "timeout_sec": float(initial_position.get(f"{short}_timeout_sec", timeout_sec)),
                 "wrong_way_rad": math.radians(float(initial_position.get(f"{short}_wrong_way_deg", wrong_way_deg))),
             }
@@ -2215,7 +2214,13 @@ class PiExcavatorTrajectoryServer(Node):
         return False
 
     def _correct_initial_joint(self, joint_name: str) -> bool:
-        """Move exactly one joint toward its startup target using guarded pulses."""
+        """Move exactly one joint continuously toward its startup target.
+
+        Production startup motion is continuous rather than pulsed: once the
+        requested direction is validated, the selected joint remains energized
+        until it reaches startup tolerance or crosses the target. Safety checks
+        remain active throughout the move.
+        """
         self._stop_all()
         joint = self.joints[joint_name]
         target = self.initial_position[joint_name]
@@ -2265,11 +2270,13 @@ class PiExcavatorTrajectoryServer(Node):
 
         self.get_logger().warn(
             f"[INITIALIZATION:{label}] MOVE {math.degrees(start_pos):.2f} -> "
-            f"{math.degrees(target):.2f} deg, PWM={cfg['pwm']}, "
-            f"pulse={cfg['on_sec']:.2f}s ON/{cfg['off_sec']:.2f}s OFF."
+            f"{math.degrees(target):.2f} deg, PWM={cfg['pwm']}, continuous drive."
         )
+
         start_time = time.monotonic()
         last_log = 0.0
+        control_dt = 1.0 / max(1.0, self.control_hz)
+
         try:
             while rclpy.ok():
                 now = time.monotonic()
@@ -2284,6 +2291,7 @@ class PiExcavatorTrajectoryServer(Node):
                 if not math.isfinite(pos):
                     self.get_logger().error(f"[INITIALIZATION:{label}] Feedback became non-finite.")
                     return False
+
                 error = target - pos
                 travel = pos - start_pos
 
@@ -2296,6 +2304,7 @@ class PiExcavatorTrajectoryServer(Node):
                         f"{math.degrees(pos):.2f} deg."
                     )
                     return False
+
                 if travel * desired_direction < -cfg["wrong_way_rad"]:
                     self.get_logger().error(
                         f"[INITIALIZATION:{label}] WRONG-WAY motion: "
@@ -2312,16 +2321,14 @@ class PiExcavatorTrajectoryServer(Node):
                     )
                     return True
 
-                # Shared PWM means exactly one joint may be energized.
+                # Shared PWM means exactly one joint may be energized. Keep
+                # every other joint OFF while continuously driving this joint.
                 for other_name, other_joint in self.joints.items():
                     if other_name != joint_name:
                         other_joint.stop()
+
                 joint.drive_direction(desired_direction, cfg["pwm"])
                 self.pi.set_PWM_dutycycle(self.shared_pwm_pin, cfg["pwm"])
-                time.sleep(cfg["on_sec"])
-                self.pi.set_PWM_dutycycle(self.shared_pwm_pin, 0)
-                joint.stop()
-                time.sleep(cfg["off_sec"])
 
                 if now - last_log >= 0.25:
                     self.get_logger().info(
@@ -2330,8 +2337,12 @@ class PiExcavatorTrajectoryServer(Node):
                         f"travel={math.degrees(travel):+.2f} deg"
                     )
                     last_log = now
+
+                # Keep the motor energized between feedback/control checks.
+                time.sleep(control_dt)
         finally:
             self._stop_all()
+
         return False
 
     def _verify_initial_position(self) -> bool:
