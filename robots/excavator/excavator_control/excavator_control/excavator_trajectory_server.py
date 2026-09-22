@@ -1612,21 +1612,24 @@ class PiExcavatorTrajectoryServer(Node):
             sensor_qos,
             callback_group=self._sensor_callback_group,
         )
-        # creates the server that listens for movement commands
-        #actually run the command, decide if valid, and stop if canceled
-        self.action_server = ActionServer(
-            self,
-            FollowJointTrajectory,
-            self.action_name,
-            execute_callback=self._execute_cb,
-            goal_callback=self._goal_cb,
-            cancel_callback=self._cancel_cb,
-        )
+        # Do NOT expose the Action server until the excavator is actually READY.
+        #
+        # This prevents the Command Center / Scenario Manager from discovering
+        # the Action server during startup and sending a trajectory while
+        # initial-position initialization is still in progress.
+        #
+        # The Action server is created by _start_action_server() only after
+        # successful startup initialization. If startup initialization is
+        # disabled, it is created immediately below.
+        self.action_server = None
+
         #publishing joint states 
         self.create_timer(1.0 / max(1.0, self.publish_hz), self._publish_joint_states)
 
-        self.get_logger().info("[PI MODE] PiExcavatorTrajectoryServer ready")
-        self.get_logger().info(f"  Action  : {self.action_name}")
+        self.get_logger().info("[PI MODE] PiExcavatorTrajectoryServer started")
+        self.get_logger().info(
+            f"  Action  : {self.action_name} (available only after READY)"
+        )
         self.get_logger().info("  Publishes feedback: /joint_states")
         self.get_logger().info(
             f"  Swing feedback: {swing_position_topic} "
@@ -1677,6 +1680,25 @@ class PiExcavatorTrajectoryServer(Node):
             self.get_logger().info(
                 "  Startup initialization disabled; hardware will remain stationary."
             )
+            self._start_action_server()
+
+    def _start_action_server(self) -> None:
+        """Expose the FollowJointTrajectory Action server exactly once."""
+        if self.action_server is not None:
+            return
+
+        self.action_server = ActionServer(
+            self,
+            FollowJointTrajectory,
+            self.action_name,
+            execute_callback=self._execute_cb,
+            goal_callback=self._goal_cb,
+            cancel_callback=self._cancel_cb,
+        )
+        self.get_logger().info(
+            f"[PI] Action server is now AVAILABLE: {self.action_name}"
+        )
+
     def _swing_position_cb(self, msg: JointState) -> None:
         try:
             index = list(msg.name).index("swing_joint")
@@ -1795,6 +1817,7 @@ class PiExcavatorTrajectoryServer(Node):
             self.get_logger().info(
                 "[INITIALIZATION] SUCCESS - excavator is READY for trajectory commands."
             )
+            self._start_action_server()
         else:
             self.get_logger().error(
                 "[INITIALIZATION] FAILED - trajectory commands will be rejected."
