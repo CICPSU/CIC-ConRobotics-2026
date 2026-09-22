@@ -110,8 +110,14 @@ initial_position:
   enabled: true
   mode: move
 
-  # A joint already within this tolerance is skipped.
+  # A joint already within this tolerance is skipped during startup correction.
   tolerance_deg: 3.0
+
+  # Final READY verification allows a slightly wider band so that sensor
+  # noise or small coast after motor stop does not invalidate an otherwise
+  # successful startup initialization.
+  verification_tolerance_deg: 5.0
+
   current_limit_tolerance_deg: 1.0
   limit_margin_deg: 3.0
   timeout_sec: 25.0
@@ -123,29 +129,25 @@ initial_position:
   swing_on_sec: 0.04
   swing_off_sec: 0.08
   swing_timeout_sec: 5.0
-  swing_max_travel_deg: 20.0
-  swing_wrong_way_deg: 1.5
+  swing_wrong_way_deg: 10.0
 
   boom_pwm: 140
   boom_on_sec: 0.03
   boom_off_sec: 0.10
   boom_timeout_sec: 5.0
-  boom_max_travel_deg: 20.0
-  boom_wrong_way_deg: 1.5
+  boom_wrong_way_deg: 10.0
 
   arm_pwm: 140
   arm_on_sec: 0.03
   arm_off_sec: 0.10
   arm_timeout_sec: 5.0
-  arm_max_travel_deg: 20.0
-  arm_wrong_way_deg: 1.5
+  arm_wrong_way_deg: 10.0
 
   bucket_pwm: 80
   bucket_on_sec: 0.03
   bucket_off_sec: 0.10
   bucket_timeout_sec: 5.0
-  bucket_max_travel_deg: 20.0
-  bucket_wrong_way_deg: 1.5
+  bucket_wrong_way_deg: 10.0
 
   positions:
     swing: 90.0

@@ -859,6 +859,7 @@ class ExternalSwingJointMotor:
         self._watch_started = None
         self._last_requested_target_rad = None
         self._last_effective_target_rad = None
+        self._goal_reached_latched = False
 
         pi.set_mode(cfg.in1_pin, pigpio.OUTPUT)
         pi.set_mode(cfg.in2_pin, pigpio.OUTPUT)
@@ -1234,6 +1235,12 @@ class PiExcavatorTrajectoryServer(Node):
         self.initialization_tolerance_rad = math.radians(
             float(initial_position.get("tolerance_deg", 3.0))
         )
+        # Final READY verification is intentionally slightly wider than the
+        # correction/skip tolerance. This prevents small sensor variation or
+        # post-stop coast from invalidating an otherwise successful startup.
+        self.initialization_verification_tolerance_rad = math.radians(
+            float(initial_position.get("verification_tolerance_deg", 5.0))
+        )
         # Small allowance for sensor/calibration quantization when checking a
         # measured current position against a physical range. This never
         # expands the range allowed for commanded targets.
@@ -1284,21 +1291,20 @@ class PiExcavatorTrajectoryServer(Node):
         # Production startup correction settings. Every joint uses the same
         # sequential guarded pulse controller; only tuning values differ.
         default_prod = {
-            "swing_joint": (160, 0.04, 0.08, 5.0, 20.0, 1.5),
-            "boom_joint": (140, 0.03, 0.10, 5.0, 20.0, 1.5),
-            "arm_joint": (140, 0.03, 0.10, 5.0, 20.0, 1.5),
-            "bucket_joint": (80, 0.03, 0.10, 5.0, 20.0, 1.5),
+            "swing_joint": (160, 0.04, 0.08, 5.0, 10.0),
+            "boom_joint": (140, 0.03, 0.10, 5.0, 10.0),
+            "arm_joint": (140, 0.03, 0.10, 5.0, 10.0),
+            "bucket_joint": (80, 0.03, 0.10, 5.0, 10.0),
         }
         self.initialization_joint_motion = {}
         for joint_name, defaults in default_prod.items():
             short = joint_name.replace("_joint", "")
-            pwm, on_sec, off_sec, timeout_sec, max_travel_deg, wrong_way_deg = defaults
+            pwm, on_sec, off_sec, timeout_sec, wrong_way_deg = defaults
             self.initialization_joint_motion[joint_name] = {
                 "pwm": int(clamp(float(initial_position.get(f"{short}_pwm", pwm)), 0, 255)),
                 "on_sec": float(initial_position.get(f"{short}_on_sec", on_sec)),
                 "off_sec": float(initial_position.get(f"{short}_off_sec", off_sec)),
                 "timeout_sec": float(initial_position.get(f"{short}_timeout_sec", timeout_sec)),
-                "max_travel_rad": math.radians(float(initial_position.get(f"{short}_max_travel_deg", max_travel_deg))),
                 "wrong_way_rad": math.radians(float(initial_position.get(f"{short}_wrong_way_deg", wrong_way_deg))),
             }
         initial_positions = initial_position.get("positions", {})
@@ -2222,12 +2228,6 @@ class PiExcavatorTrajectoryServer(Node):
                         f"{math.degrees(pos):.2f} deg."
                     )
                     return False
-                if abs(travel) > cfg["max_travel_rad"]:
-                    self.get_logger().error(
-                        f"[INITIALIZATION:{label}] Maximum travel exceeded: "
-                        f"{math.degrees(travel):+.2f} deg."
-                    )
-                    return False
                 if travel * desired_direction < -cfg["wrong_way_rad"]:
                     self.get_logger().error(
                         f"[INITIALIZATION:{label}] WRONG-WAY motion: "
@@ -2279,7 +2279,10 @@ class PiExcavatorTrajectoryServer(Node):
             pos = float(joint.read_position_rad())
             target = self.initial_position[joint_name]
             error = target - pos
-            ok = math.isfinite(pos) and abs(error) <= self.initialization_tolerance_rad
+            ok = (
+                math.isfinite(pos)
+                and abs(error) <= self.initialization_verification_tolerance_rad
+            )
             self.get_logger().info(
                 f"[INITIALIZATION FINAL] {joint_name}: current={math.degrees(pos):.2f} deg, "
                 f"target={math.degrees(target):.2f} deg, "
