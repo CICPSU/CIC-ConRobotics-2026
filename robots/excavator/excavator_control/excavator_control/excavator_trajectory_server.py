@@ -1663,10 +1663,15 @@ class PiExcavatorTrajectoryServer(Node):
                 )
             # Do not initialize inside __init__. Swing feedback arrives through
             # a ROS subscription, so the executor must be spinning first.
-            # The one-shot timer runs in the default callback group while the
-            # swing subscriber has its own callback group.
+            #
+            # Startup is intentionally order-independent: the excavator Pi may
+            # start before the ROS-PC camera / AprilTag perception stack. Keep
+            # all motors OFF and wait up to initial_position.timeout_sec for
+            # fresh swing feedback before running initialization exactly once.
+            self._initialization_wait_started = time.monotonic()
+            self._initialization_wait_log_time = 0.0
             self._initialization_timer = self.create_timer(
-                0.25, self._run_startup_initialization_once
+                0.25, self._wait_for_swing_then_initialize
             )
         else:
             self.get_logger().info(
@@ -1687,9 +1692,49 @@ class PiExcavatorTrajectoryServer(Node):
         if swing is not None:
             swing.update_position(position)
 
+    def _wait_for_swing_then_initialize(self) -> None:
+        """Wait for fresh swing feedback, then run startup initialization once."""
+        self._stop_all()
+
+        swing = self.joints.get("swing_joint")
+        if swing is not None and swing.sensor_valid():
+            wait_sec = time.monotonic() - self._initialization_wait_started
+            self.get_logger().info(
+                "[INITIALIZATION] Fresh swing feedback received after "
+                f"{wait_sec:.2f}s; starting initialization."
+            )
+            self._initialization_timer.cancel()
+            self._run_startup_initialization_once()
+            return
+
+        elapsed = time.monotonic() - self._initialization_wait_started
+        if elapsed >= self.initialization_timeout_sec:
+            self._initialization_timer.cancel()
+            self._stop_all()
+            self.initialization_complete = False
+            self.initialization_failed = True
+            age = float("inf") if swing is None else swing.sensor_age_sec()
+            self.get_logger().error(
+                "[INITIALIZATION] Timed out waiting for fresh swing feedback "
+                f"after {elapsed:.2f}s (feedback age={age:.3f}s). "
+                "Motors remain OFF and trajectory commands will be rejected."
+            )
+            return
+
+        # Log roughly once per second rather than every 0.25 s timer tick.
+        if (
+            self._initialization_wait_log_time == 0.0
+            or elapsed - self._initialization_wait_log_time >= 1.0
+        ):
+            remaining = max(0.0, self.initialization_timeout_sec - elapsed)
+            self.get_logger().warn(
+                "[INITIALIZATION] Waiting for fresh swing feedback; "
+                f"{remaining:.1f}s remaining. Motors are OFF."
+            )
+            self._initialization_wait_log_time = elapsed
+
     def _run_startup_initialization_once(self) -> None:
-        """Run configured four-joint initialization after the executor starts."""
-        self._initialization_timer.cancel()
+        """Run configured four-joint initialization after fresh swing feedback."""
         if self.initialization_mode == "preflight":
             success = self.preflight_initial_position()
             # Pre-flight deliberately never makes the excavator operational.

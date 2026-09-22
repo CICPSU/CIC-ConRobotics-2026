@@ -278,7 +278,7 @@ def generate_launch_description():
 
     trucks_argument = DeclareLaunchArgument(
         "trucks",
-        default_value="truck1",
+        default_value="",
         description=(
             "Comma-separated truck names. "
             "Examples: truck1 or truck1,truck3"
