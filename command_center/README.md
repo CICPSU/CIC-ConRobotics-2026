@@ -1,1952 +1,1532 @@
 # Construction Robotics Command Center
 
-The `command_center` directory contains the ROS 2 components used to coordinate multiple construction robots in the CIC ConRobotics system.
+This directory contains the high-level ROS 2 coordination layer for the
+CIC-ConRobotics construction robotics platform.
 
-The Command Center provides a higher-level execution layer above individual robot controllers. Construction operations can be described as YAML scenarios and executed as sequences of robot tasks, excavator trajectories, waits, topic commands, parallel operations, and conditions.
+For normal physical operation, **use the Command Center as the ROS PC
+entry point**. The Command Center coordinates shared perception,
+dump-truck localization and task execution, excavator perception, and
+construction scenarios.
 
-The current system supports:
+> **Normal operation:** `command_center.launch.py`\
+> **Debug / subsystem validation only:** `excavator_system.launch.py`,
+> `dump_truck_system.launch.py`, and lower-level component launch files.
 
-- Dump truck waypoint tasks using `ExecuteRobotTask`
+------------------------------------------------------------------------
 
-- Excavator joint trajectories using `FollowJointTrajectory`
+## 1. Quick Start
 
-- Multiple independently namespaced excavators
+This section is the shortest path from a powered system to a running
+construction scenario.
 
-- Sequential multi-robot scenarios
+The normal physical architecture is:
 
-- Parallel scenario steps
-
-- Conditional execution based on ROS 2 topics
-
-- Direct topic publishing
-
-- Software-only testing using mock dump trucks and simulated excavators
-
-- Physical dump truck operation
-
-- Physical excavator operation
-
-- Mixed dump truck + excavator scenarios
-
-- Multi-machine ROS 2 communication using Zenoh
-
----
-
-# System Architecture
-
-```text
-
-                         Scenario YAML
-
-                              │
-
-                              ▼
-
-                       Scenario Manager
-
-                              │
-
-              ┌───────────────┴────────────────┐
-
-              │                                │
-
-              ▼                                ▼
-
-      ExecuteRobotTask                FollowJointTrajectory
-
-              │                                │
-
-              ▼                                ▼
-
-       /truckN/...                    /excavatorN/...
-
-              │                                │
-
-              ▼                                ▼
-
-         Dump Truck                       Excavator
-
-              │                                │
-
-       Physical / Mock                  Physical / SIM
-
+``` text
+                    ACTIVE ROS PC
+                         │
+                ┌────────┴────────┐
+                │                 │
+          Zenoh Router       Command Center
+                │                 │
+        ┌───────┼─────────┐       │
+        │       │         │       │
+        ▼       ▼         ▼       ▼
+     Truck Pi  Truck Pi  Excavator Pi
+        │       │         │
+        └───────┴─────────┘
+                │
+          Physical Robots
 ```
 
-The Command Center does not directly control motors.
+The overhead camera and AprilTag detector are **shared site
+perception**. They are started by the Command Center and are not owned
+by any individual robot.
 
-Instead, it sends higher-level commands to robot-specific ROS 2 interfaces.
+### 1.1 Start the Zenoh Router
 
-For physical multi-machine operation, the Command Center and robot computers communicate through one active Zenoh router.
+On the active ROS PC:
 
-The router can run on either `ros-pc` (primary) or `ros-backup-pc` (backup).
-
-```text
-
-                      ACTIVE ROUTER HOST
-
-                   ros-pc OR ros-backup-pc
-
-                              │
-
-                         Zenoh Router
-
-                              │
-
-          ┌───────────────────┼───────────────────┐
-
-          │                   │                   │
-
-          ▼                   ▼                   ▼
-
-      Dump Truck          Excavator 1         Excavator 3
-
-          Pi                  Pi                  Pi
-
+``` bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh router ros-pc
+ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
-The intended architecture is:
+Keep this terminal running.
 
-```text
+Only one Zenoh router should normally be active.
 
-1 Active Router Host
+For complete network setup, device profiles, backup-router operation,
+and network troubleshooting, see:
 
-      \+
-
-1 Zenoh Router
-
-      \+
-
-1 Command Center
-
-      \+
-
-N Physical Robot Clients
-
+``` text
+network/README.md
 ```
 
----
+### 1.2 Start the Physical Robots
 
-# Directory Structure
+Each participating robot runs its hardware-side software on its own
+Raspberry Pi. In normal operation, the robot Raspberry Pis can be accessed from the ROS PC or your laptop through SSH; for SSH setup, host configuration, and connection details, see `network/README.md`.
 
-```text
+#### Dump Truck Example --- Truck 1
 
-command_center/
+On the Truck 1 Raspberry Pi:
 
-├── construction_site_control/
-
-│   ├── construction_site_control/
-
-│   │   ├── scenario_manager_node.py
-
-│   │   └── excavator_task_client.py
-
-│   │
-
-│   ├── launch/
-
-│   │   ├── excavator_system.launch.py
-
-│   │   ├── dump_truck_system.launch.py
-
-│   │   └── command_center.launch.py
-
-│   │
-
-│   ├── package.xml
-
-│   └── setup.py
-
-│
-
-└── dump_truck_action_server/
-
-    ├── dump_truck_action_server/
-
-    │   ├── waypoint_action_server_node.py
-
-    │   └── mock_waypoint_action_server_node.py
-
-    │
-
-    ├── package.xml
-
-    └── setup.py
-
+``` bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client dumptruck1
+sudo pigpiod
+ros2 launch dump_truck_bringup \
+  dump_truck_pi.launch.py \
+  truck_name:=truck1
 ```
 
-Operational files are stored separately from the ROS 2 packages:
+Other dump trucks use the same launch file with their own device profile
+and robot name.
 
-```text
+Examples:
 
-operations/
-
-├── dump_truck/
-
-│   └── waypoints/
-
-│
-
-├── excavator/
-
-│   └── trajectories/
-
-│
-
-└── scenarios/
-
+``` text
+dumptruck1 → truck1
+dumptruck3 → truck3
+dumptruck4 → truck4
+dumptruck5 → truck5
 ```
 
-This separates reusable ROS 2 software from operation-specific task definitions.
+#### Excavator Example --- Excavator 3
 
----
+On the Excavator 3 Raspberry Pi:
 
-# 1. Scenario Manager
-
-The main Command Center node is:
-
-```bash
-
-ros2 run construction_site_control scenario_manager_node
-
+``` bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client excavator3
+sudo pigpiod
+ros2 launch excavator_control \
+  excavator.launch.py \
+  mode:=pi \
+  robot_name:=excavator3
 ```
 
-The Scenario Manager reads a YAML scenario and executes its steps.
-
-Currently supported step types are:
-
-```text
-
-task
-
-excavator_trajectory
-
-wait
-
-topic_publish
-
-parallel
-
-condition
-
-```
-
-A scenario can therefore coordinate different types of construction robots without requiring them to use the same low-level controller.
-
-Sequential steps proceed only after the previous step completes successfully.
-
-If an Action step reports failure, the Scenario Manager does not treat the step as successful and the sequential scenario is aborted.
-
----
-
-# 2. Dump Truck Tasks
-
-Dump trucks use the custom ROS 2 Action:
-
-```text
-
-construction_site_interfaces/action/ExecuteRobotTask
-
-```
-
-The Action interface for each truck is:
-
-```text
-
-/\<truck_name>/execute_robot_task
-
-```
-
-For example:
-
-```text
-
-/truck1/execute_robot_task
-
-```
-
-A dump truck scenario step looks like:
-
-```yaml
-
-- id: truck1_route
-
-  type: task
-
-  robot: truck1
-
-  task_type: waypoint
-
-  task_file: truck1_waypoints.yaml
-
-```
-
-The `robot` field determines the target truck.
-
-Waypoint files are stored under:
-
-```text
-
-operations/dump_truck/waypoints/
-
-```
-
-The physical Action Server uses the truck localization and control stack to execute the requested waypoint file.
-
-A mock Action Server is also available for software-only integration testing.
-
----
-
-# 3. Excavator Tasks
-
-Excavators use the standard ROS 2 Action:
-
-```text
-
-control_msgs/action/FollowJointTrajectory
-
-```
-
-Each excavator runs inside its own ROS 2 namespace.
-
-The standard Action interface is:
-
-```text
-
-/\<excavator_name>/upper_arm_controller/follow_joint_trajectory
-
-```
-
-For example:
-
-```text
-
-/excavator1/upper_arm_controller/follow_joint_trajectory
-
-/excavator3/upper_arm_controller/follow_joint_trajectory
-
-```
-
-An excavator scenario step looks like:
-
-```yaml
-
-- id: excavator3_move
-
-  type: excavator_trajectory
-
-  robot: excavator3
-
-  task_file: excavator3_excavation_cycle_test.yaml
-
-  seconds_per_waypoint: 5.0
-
-```
-
-The `robot` field is used to resolve the target Action.
-
-For example:
-
-```yaml
-
-robot: excavator3
-
-```
-
-resolves to:
-
-```text
-
-/excavator3/upper_arm_controller/follow_joint_trajectory
-
-```
-
-and:
-
-```yaml
-
-robot: excavator1
-
-```
-
-resolves to:
-
-```text
-
-/excavator1/upper_arm_controller/follow_joint_trajectory
-
-```
-
-An explicit `action_name` may be supplied in a scenario step when an override is required. Otherwise, the namespaced Action is derived automatically from `robot`.
-
-Trajectory files are stored under:
-
-```text
-
-operations/excavator/trajectories/
-
-```
-
-Excavator trajectories may command all joints or only a subset of joints.
-
-Joints not listed in the trajectory are not included in the `FollowJointTrajectory` goal.
-
-This is useful for isolated joint testing and for operations that do not require every excavator joint.
-
----
-
-# 4. Multi-Excavator Support
-
-The Command Center supports independently namespaced excavators.
+During physical startup, the excavator trajectory server waits for fresh
+swing feedback from the shared overhead AprilTag system before
+completing initialization.
 
 Conceptually:
 
-```text
-
-                         Scenario Manager
-
-                                │
-
-             ┌──────────────────┴──────────────────┐
-
-             │                                     │
-
-             ▼                                     ▼
-
-        robot: excavator1                     robot: excavator3
-
-             │                                     │
-
-             ▼                                     ▼
-
-/excavator1/upper_arm_controller/     /excavator3/upper_arm_controller/
-
-   follow_joint_trajectory               follow_joint_trajectory
-
-             │                                     │
-
-             ▼                                     ▼
-
-        Excavator 1                            Excavator 3
-
+``` text
+Fresh Swing Feedback
+        │
+        ▼
+     Preflight
+        │
+        ▼
+ Initial Position
+        │
+        ▼
+Final Joint Verification
+        │
+        ▼
+      READY
 ```
 
-The robot name therefore serves as both:
+Trajectory goals are rejected until initialization completes
+successfully.
 
-- the logical robot identity used by the scenario
+### 1.3 Run the Command Center and Scenario
 
-- the basis for resolving the excavator's ROS 2 Action namespace
+In the second terminal on the active ROS PC:
 
-This removes the previous single global excavator Action and allows multiple excavators to coexist on the same ROS 2 network.
+``` bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-pc
+ros2 launch construction_site_control \
+  command_center.launch.py \
+  trucks:=truck1 \
+  excavators:=excavator3 \
+  start_scenario_manager:=true \
+  scenario:=YOUR_SCENARIO.yaml
+```
 
----
+Replace the robot lists and scenario file with the robots participating
+in the operation.
 
-# 5. Mixed-Robot Scenarios
+Scenario files are stored in:
 
-A single scenario can coordinate dump trucks and excavators.
+``` text
+operations/scenarios/
+```
 
-For example:
+The Command Center starts the shared ROS PC infrastructure required by
+the selected robots, including:
 
-```yaml
+-   overhead camera
+-   AprilTag detection
+-   excavator swing-position adapters
+-   dump-truck odometry and localization
+-   dump-truck waypoint Action Servers
+-   Scenario Manager when requested
 
-scenario_name: truck1_excavator3_integration_test
+For a scenario that uses only one robot type, explicitly provide the
+intended robot selection.
+
+Examples:
+
+``` bash
+ros2 launch construction_site_control \
+  command_center.launch.py \
+  trucks:=truck1 \
+  excavators:="" \
+  start_scenario_manager:=true \
+  scenario:=YOUR_TRUCK_SCENARIO.yaml
+```
+
+``` bash
+ros2 launch construction_site_control \
+  command_center.launch.py \
+  trucks:="" \
+  excavators:=excavator3 \
+  start_scenario_manager:=true \
+  scenario:=YOUR_EXCAVATOR_SCENARIO.yaml
+```
+
+------------------------------------------------------------------------
+
+## 2. Run a Scenario
+
+A scenario is the standard way to coordinate construction operations.
+
+Scenario YAML files live in:
+
+``` text
+operations/scenarios/
+```
+
+The Scenario Manager currently supports:
+
+``` text
+task
+excavator_trajectory
+wait
+parallel
+condition
+topic_publish
+```
+
+A scenario may contain dump-truck tasks, excavator trajectories, waits,
+synchronization conditions, direct topic publications, and parallel
+robot operations.
+
+Before combining robots into a new physical scenario, validate each dump-truck task and excavator trajectory independently. Only integrate individually verified robot motions into a multi-robot scenario.
+
+### 2.1 Example Mixed-Robot Scenario
+
+``` yaml
+scenario_name: truck1_excavator3_example
 
 steps:
+  - id: truck1_route
+    type: task
+    robot: truck1
+    task_type: waypoint
+    task_file: truck1_waypoints.yaml
 
   - id: excavator3_move
-
     type: excavator_trajectory
-
     robot: excavator3
-
     task_file: excavator3_excavation_cycle_test.yaml
-
     seconds_per_waypoint: 5.0
-
-  - id: truck1_short_move
-
-    type: task
-
-    robot: truck1
-
-    task_type: waypoint
-
-    task_file: truck1_waypoints3.yaml
-
 ```
 
-Because these steps are sequential, the execution flow is:
+Sequential Action steps proceed only after the previous step completes
+successfully.
 
-```text
+Conceptually:
 
+``` text
+Scenario Start
+     │
+     ▼
 Truck 1 Task
-
-      │
-
-      ▼
-
-ExecuteRobotTask
-
-      │
-
-      ▼
-
-SUCCESS
-
-      │
-
-      ▼
-
+     │
+     ▼
+   SUCCESS
+     │
+     ▼
 Excavator 3 Trajectory
-
-      │
-
-      ▼
-
-/excavator3/upper_arm_controller/
-
-follow_joint_trajectory
-
-      │
-
-      ▼
-
-Action Result
-
+     │
+     ▼
+   SUCCESS
+     │
+     ▼
+Scenario Complete
 ```
 
-The next sequential step begins only after the previous Action completes successfully.
+If an Action step reports failure, the sequential scenario is aborted
+rather than continuing as though the step succeeded.
 
-A physical Truck 1 + Excavator 3 scenario has been used to verify this routing architecture.
+### 2.2 Select the Participating Robots
 
----
+The `trucks` and `excavators` launch arguments determine which
+robot-specific ROS PC components are started.
 
-# 6. Software-Only Integration Testing
+Examples:
 
-The Command Center can be tested without physical robots.
+``` text
+trucks:=truck1
+trucks:=truck1,truck3
+trucks:=truck1,truck3,truck4,truck5
 
-A typical software-only configuration uses:
-
-```text
-
-Dump Truck  → Mock Action Server
-
-Excavator   → SIM mode
-
+excavators:=excavator3
+excavators:=excavator1,excavator3
 ```
 
-This allows scenario orchestration to be tested independently of sensors, motors, Raspberry Pis, and physical calibration.
+The selected robots should match the robots referenced by the scenario.
 
----
+### 2.3 Start a Scenario
 
-# 7. Build
+Example:
 
-From the repository root:
-
-```bash
-
-cd \~/ws_conrobotics/CIC-ConRobotics-2026
-
+``` bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
-
-colcon build \\
-
-  --symlink-install \\
-
-  --packages-select \\
-
-    construction_site_interfaces \\
-
-    dump_truck_action_server \\
-
-    excavator_control \\
-
-    construction_site_control
-
 source install/setup.bash
-
+source network/setup_zenoh.sh client ros-pc
+ros2 launch construction_site_control \
+  command_center.launch.py \
+  trucks:=truck1 \
+  excavators:=excavator3 \
+  start_scenario_manager:=true \
+  scenario:=YOUR_SCENARIO.yaml
 ```
 
-A setuptools warning related to `pytest-repeat` may appear during the build.
+For a new physical scenario, it is often useful to first start the
+Command Center without automatically starting the Scenario Manager:
 
-If all packages finish successfully, this warning does not indicate a build failure.
-
----
-
-# 8. Start an Excavator in SIM Mode
-
-**Terminal 1**
-```bash
-
-cd \~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-source install/setup.bash
-
-ros2 launch excavator_control \\
-
-  excavator.launch.py \\
-
-  mode:=sim \\
-
-  robot_name:=excavator1
-
+``` bash
+ros2 launch construction_site_control \
+  command_center.launch.py \
+  trucks:=truck1 \
+  excavators:=excavator3 \
+  start_scenario_manager:=false
 ```
 
-The expected node namespace is:
+Verify the intended ROS interfaces and physical system before initiating
+motion.
 
-```text
+------------------------------------------------------------------------
 
-/excavator1
+## 3. Excavator Trajectory
 
+Excavators use the standard ROS 2:
+
+``` text
+control_msgs/action/FollowJointTrajectory
 ```
 
-The Action interface is:
-
-```text
-
-/excavator1/upper_arm_controller/follow_joint_trajectory
-
-```
-
----
-
-# 9. Start a Mock Dump Truck
-
-**Terminal 2**
-```bash
-
-cd \~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-source install/setup.bash
-
-ros2 run dump_truck_action_server \\
-
-  mock_waypoint_action_server_node \\
-
-  --ros-args \\
-
-  -p truck_name:=truck1 \\
-
-  -p seconds_per_waypoint:=0.5
-
-```
-
-The mock server provides:
-
-```text
-
-/truck1/execute_robot_task
-
-```
-
-and publishes status on:
-
-```text
-
-/truck1/status
-
-```
-
-The mock server loads the real waypoint YAML but does not command motors or require odometry.
-
----
-
-# 10. Run a Mixed-Robot Software Scenario
-
-**Terminal 3**
-```bash
-
-cd \~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-source install/setup.bash
-
-ros2 run construction_site_control \\
-
-  scenario_manager_node \\
-
-  --ros-args \\
-
-  -p scenario:=truck1_excavator_cycle.yaml \\
-
-  -p trucks:=truck1
-
-```
-
-The expected execution sequence is:
-
-```text
-
-SCENARIO START
-
-      │
-
-      ▼
-
-Truck 1 Mock
-
-      │
-
-      ▼
-
-SUCCESS
-
-      │
-
-      ▼
-
-Excavator 1 SIM
-
-      │
-
-      ▼
-
-EXCAVATOR SUCCESS
-
-      │
-
-      ▼
-
-Next Step
-
-      │
-
-      ▼
-
-SCENARIO COMPLETE
-
-```
-
----
-
-# 11. Direct Excavator Command Center Test
-
-The Command Center contains a standalone excavator Action client.
+Each excavator is independently namespaced.
 
 For Excavator 3:
 
-```bash
-
-ros2 run construction_site_control \\
-
-  excavator_task_client \\
-
-  operations/excavator/trajectories/excavator3_excavation_cycle_test.yaml \\
-
-  --robot excavator3 \\
-
-  --seconds-per-waypoint 5.0
-
+``` text
+/excavator3/upper_arm_controller/follow_joint_trajectory
 ```
 
-This bypasses the Scenario Manager and directly targets:
+Trajectory files are stored in:
 
-```text
+``` text
+operations/excavator/trajectories/
+```
 
+### 3.1 Trajectory YAML Format
+
+Excavator trajectories are written in degrees.
+
+Example:
+
+``` yaml
+trajectory_name: example_trajectory
+description: >
+  Example excavator trajectory.
+
+joints:
+  - swing
+  - boom
+  - arm
+  - bucket
+
+waypoints:
+  - name: position_1
+    positions:
+      swing: 90.0
+      boom: -40.0
+      arm: 100.0
+      bucket: 15.0
+
+  - name: position_2
+    positions:
+      swing: 45.0
+      boom: -35.0
+      arm: 95.0
+      bucket: 25.0
+```
+
+Supported logical joints are:
+
+``` text
+swing
+boom
+arm
+bucket
+```
+
+The trajectory client converts the trajectory values from degrees to
+radians before sending the ROS 2 Action goal.
+
+### 3.2 Subset-Joint Trajectories
+
+A trajectory does not need to command all four joints.
+
+Example:
+
+``` yaml
+trajectory_name: boom_only_example
+description: >
+  Example trajectory that commands only the boom.
+
+joints:
+  - boom
+
+waypoints:
+  - name: position_1
+    positions:
+      boom: -40.0
+
+  - name: position_2
+    positions:
+      boom: -45.0
+```
+
+Joints that are not listed are not included in the resulting
+`FollowJointTrajectory` goal.
+
+Subset-joint trajectories are useful for:
+
+-   isolated joint testing
+-   calibration
+-   hardware debugging
+-   operations that do not require all joints
+
+### 3.3 Send a Trajectory Directly
+
+For direct testing without the Scenario Manager:
+
+``` bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-pc
+ros2 run construction_site_control \
+  excavator_task_client \
+  operations/excavator/trajectories/YOUR_TRAJECTORY.yaml \
+  --robot excavator3 \
+  --seconds-per-waypoint 5.0
+```
+
+This targets:
+
+``` text
 /excavator3/upper_arm_controller/follow_joint_trajectory
+```
 
+### 3.4 Use a Trajectory in a Scenario
+
+``` yaml
+- id: excavator3_move
+  type: excavator_trajectory
+  robot: excavator3
+  task_file: excavator3_excavation_cycle_test.yaml
+  seconds_per_waypoint: 5.0
+```
+
+Unless explicitly overridden, the target Action is resolved from the
+`robot` field.
+
+For example:
+
+``` text
+robot: excavator3
+        ↓
+/excavator3/upper_arm_controller/follow_joint_trajectory
+```
+
+### 3.5 Physical Startup and READY State
+
+The physical excavator trajectory server does not immediately accept
+motion goals at startup.
+
+It waits for fresh swing feedback from the overhead AprilTag system and
+then performs startup initialization.
+
+``` text
+Server Starts
+     │
+     ▼
+Wait for Fresh Swing Feedback
+     │
+     ▼
+Preflight
+     │
+     ▼
+Initialize Swing
+     │
+     ▼
+Initialize Boom
+     │
+     ▼
+Initialize Arm
+     │
+     ▼
+Initialize Bucket
+     │
+     ▼
+Final Four-Joint Verification
+     │
+     ▼
+READY
+```
+
+If fresh swing feedback is unavailable, the motors remain off while the
+server waits.
+
+Do not send a physical trajectory until the excavator reports that
+initialization completed successfully.
+
+### 3.6 Trajectory Safety
+
+Trajectory validation checks software structure and configured limits.
+It does **not** independently prove that a physical motion is safe.
+
+Before physical execution, confirm:
+
+-   the intended excavator
+-   trajectory joint names
+-   waypoint positions
+-   configured joint limits
+-   physical workspace clearance
+-   sensor behavior
+-   motor direction
+-   mechanical clearance
+
+Immediately stop testing if a joint moves in the wrong direction, an
+unexpected joint moves, motion becomes unstable, a mechanical limit is
+approached, or motion does not stop as expected.
+
+------------------------------------------------------------------------
+
+## 4. Dump Truck Task
+
+Dump trucks use the custom ROS 2 Action:
+
+``` text
+construction_site_interfaces/action/ExecuteRobotTask
+```
+
+Each truck exposes a namespaced Action.
+
+For Truck 1:
+
+``` text
+/truck1/execute_robot_task
+```
+
+Waypoint files are stored in:
+
+``` text
+operations/dump_truck/waypoints/
+```
+
+### 4.1 Waypoint Task
+
+A scenario executes a dump-truck waypoint task using:
+
+``` yaml
+- id: truck1_route
+  type: task
+  robot: truck1
+  task_type: waypoint
+  task_file: truck1_waypoints.yaml
 ```
 
 The execution path is:
 
-```text
-
-Excavator Trajectory YAML
-
-          │
-
-          ▼
-
-excavator_task_client
-
-          │
-
-          │ --robot excavator3
-
-          ▼
-
-/excavator3/upper_arm_controller/
-
-follow_joint_trajectory
-
-          │
-
-          ▼
-
-Excavator 3
-
-```
-
-An explicit Action name can also be supplied through the client's Action-name override when required.
-
----
-
-# 12. Physical Robot Operation
-
-The same high-level interfaces are used for simulation and physical operation.
-
-For excavators:
-
-```text
-
-Command Center
-
+``` text
+Scenario Manager
       │
-
-      │ FollowJointTrajectory
-
       ▼
-
-/excavatorN/...
-
+/truck1/execute_robot_task
       │
-
       ▼
-
-excavator_control
-
+Dump Truck Action Server
       │
-
-      ├── SIM mode
-
-      │
-
-      └── PI mode
-
-```
-
-For dump trucks:
-
-```text
-
-Command Center
-
-      │
-
-      │ ExecuteRobotTask
-
       ▼
-
-/truckN/execute_robot_task
-
+Waypoint YAML
       │
-
       ▼
-
-dump_truck_action_server
-
+Waypoint Controller
       │
-
       ▼
-
-dump_truck_control
-
+/truck1/cmd_vel
       │
-
       ▼
-
-Physical Dump Truck
-
+Physical Truck
 ```
 
-The Command Center therefore remains independent of the low-level hardware implementation.
+### 4.2 Dump Truck Localization
 
----
+The normal ROS PC stack for a selected truck includes:
 
-# 13. ROS 2 Network Architecture
-
-Zenoh (`rmw_zenoh_cpp`) is the standard ROS 2 communication method for physical multi-machine operation.
-
-The system uses ****one active Zenoh router****. The router can run on either:
-
-- `ros-pc` — primary router host (`10.170.32.181`)
-
-- `ros-backup-pc` — backup router host (`10.170.32.227`)
-
-```text
-
-                      ACTIVE ROUTER HOST
-
-                   ros-pc OR ros-backup-pc
-
-                              │
-
-                         Zenoh Router
-
-                              │
-
-          ┌───────────────────┼───────────────────┐
-
-          │                   │                   │
-
-          ▼                   ▼                   ▼
-
-      Dumptruck1          Excavator1          Excavator3
-
-          Pi                  Pi                  Pi
-
+``` text
+Wheel Encoder Odometry
+        │
+        ▼
+     /truck/odom
+        │
+        ▼
+AprilTag / Odom Fusion
+        │
+        ▼
+ /truck/fused_odom
+        │
+        ▼
+Waypoint Controller
 ```
 
-The robot Raspberry Pis do not need to be configured as direct ROS peers of one another.
+The overhead camera and AprilTag detector are shared with the rest of
+the construction site.
 
-Each robot independently connects to the currently active router.
+### 4.3 Robot Status
 
-Network configuration is managed through:
+Dump-truck task execution publishes robot status under:
 
-```text
-
-network/
-
-├── devices.sh
-
-├── setup_zenoh.sh
-
-└── setup_network.sh
-
+``` text
+/<truck_name>/status
 ```
 
-Normal operation uses:
+For example:
 
-```text
-
-setup_zenoh.sh
-
+``` text
+/truck1/status
 ```
 
-The primary `ros-pc` router is the default. For example:
+Common states include:
 
-```bash
-
-source network/setup_zenoh.sh client excavator3
-
+``` text
+idle
+waiting
+navigating
+performing_action
+completed
+fault
 ```
 
-is equivalent to:
+Robot status may also be used by the Scenario Manager for state-based
+synchronization.
 
-```bash
+------------------------------------------------------------------------
 
-source network/setup_zenoh.sh client excavator3 ros-pc
+## 5. How to Create a Scenario
 
-```
+Create scenario YAML files under:
 
-When `ros-backup-pc` is the active router, participating clients must select it explicitly:
-
-```bash
-
-source network/setup_zenoh.sh client excavator3 ros-backup-pc
-
-```
-
-Detailed network instructions are provided in:
-
-```text
-
-network/README.md
-
-```
-
----
-
-# 14. Standard Physical System Startup
-
-The ROS PC has three normal system-level entry points:
-
-```text
-
-Excavator only  → excavator_system.launch.py
-
-Dump truck only → dump_truck_system.launch.py
-
-Integrated      → command_center.launch.py
-
-```
-
-The recommended physical system uses ****one active router host****.
-
-## Primary Operation
-
-```text
-
-ros-pc
-
-├── T1 → Zenoh Router
-
-└── T2 → Command Center
-
-Robot Raspberry Pis
-
-└── T1 → Robot Hardware / Robot Server
-
-```
-
-## Backup Operation
-
-```text
-
-ros-backup-pc
-
-├── T1 → Zenoh Router
-
-└── T2 → Command Center
-
-Robot Raspberry Pis
-
-└── T1 → Robot Hardware / Robot Server
-
-```
-
-All participating robot computers must connect to the same active router.
-
----
-
-## Primary ROS PC T1 — Zenoh Router
-
-****Machine:**** `ros-pc`
-
-****Keep this terminal running.****
-
-```bash
-
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-source install/setup.bash
-
-source network/setup_zenoh.sh router ros-pc
-
-ros2 run rmw_zenoh_cpp rmw_zenohd
-
-```
-
-The backward-compatible default is also valid:
-
-```bash
-
-source network/setup_zenoh.sh router
-
-```
-
-Only one router is normally required.
-
-Do not start one router per robot.
-
----
-
-## Primary-Router Robot Clients
-
-When `ros-pc` is the active router, the default client configuration can be used.
-
-### Dump Truck Raspberry Pi
-
-Example for Truck 1:
-
-```bash
-
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-source install/setup.bash
-
-source network/setup_zenoh.sh client dumptruck1
-
-sudo pigpiod
-
-ros2 launch dump_truck_bringup \
-
-  dump_truck_pi.launch.py \
-
-  truck_name:=truck1
-
-```
-
-The explicit network equivalent is:
-
-```bash
-
-source network/setup_zenoh.sh client dumptruck1 ros-pc
-
-```
-
-### Excavator Raspberry Pi
-
-Example for Excavator 3:
-
-```bash
-
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-source install/setup.bash
-
-source network/setup_zenoh.sh client excavator3
-
-sudo pigpiod
-
-ros2 launch excavator_control \
-
-  excavator.launch.py \
-
-  mode:=pi \
-
-  robot_name:=excavator3 \
-
-  config:=$(ros2 pkg prefix excavator_control)/share/excavator_control/config/excavator3.yaml
-
-```
-
-The explicit network equivalent is:
-
-```bash
-
-source network/setup_zenoh.sh client excavator3 ros-pc
-
-```
-
-The Zenoh client profile configures the machine's network connection.
-
-The launch argument:
-
-```text
-
-robot_name:=excavator3
-
-```
-
-configures the ROS 2 namespace.
-
-These are separate configuration concepts and should normally use the corresponding robot identity.
-
-> ****Excavator 3 Swing has been physically validated using overhead AprilTag feedback. Continue to use conservative motion and the configured physical safety limits.****
-
----
-
-## Primary ROS PC T2 — Select the System Launch
-
-****Keep this terminal running.****
-
-Configure the ROS PC application terminal for the primary router:
-
-```bash
-
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-source install/setup.bash
-
-source network/setup_zenoh.sh client ros-pc
-
-```
-
-Use one of the following three system-level entry points.
-
-### Excavator Only
-
-```bash
-
-ros2 launch construction_site_control \
-
-  excavator_system.launch.py \
-
-  excavators:=excavator3
-
-```
-
-This starts the shared overhead camera, AprilTag detector, and the selected excavator perception adapter. The excavator trajectory server runs on the excavator Raspberry Pi.
-
-### Dump Truck Only
-
-```bash
-
-ros2 launch construction_site_control \
-
-  dump_truck_system.launch.py \
-
-  trucks:=truck1
-
-```
-
-For multiple dump trucks:
-
-```bash
-
-ros2 launch construction_site_control \
-
-  dump_truck_system.launch.py \
-
-  trucks:=truck1,truck3,truck4,truck5
-
-```
-
-This starts the shared overhead camera and AprilTag detector, the selected truck localization stacks, and the selected truck waypoint Action Servers.
-
-### Integrated Dump Truck + Excavator
-
-```bash
-
-ros2 launch construction_site_control \
-
-  command_center.launch.py \
-
-  trucks:=truck1 \
-
-  excavators:=excavator3 \
-
-  start_scenario_manager:=false
-
-```
-
-The integrated launch owns the shared perception stack and starts the ROS-PC-side components required by the selected robots.
-
-The physical excavator trajectory server remains on the excavator Raspberry Pi and is discovered through ROS 2 over Zenoh.
-
-The lower-level launch files `overhead_camera.launch.py`, `excavator_perception.launch.py`, and `dump_truck_ros_pc.launch.py` are internal/debugging components and normally do not need to be launched directly.
-
----
-
-## Backup ROS PC Operation
-
-When `ros-backup-pc` is selected, `rmw_zenohd` must actually be started on the backup ROS PC.
-
-### Backup ROS PC T1 — Zenoh Router
-
-```bash
-
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-source install/setup.bash
-
-source network/setup_zenoh.sh router ros-backup-pc
-
-ros2 run rmw_zenoh_cpp rmw_zenohd
-
-```
-
-****Keep this terminal running.****
-
-### Backup ROS PC T2 — Select the System Launch
-
-Configure the application terminal for the backup router:
-
-```bash
-
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-source install/setup.bash
-
-source network/setup_zenoh.sh client ros-backup-pc
-
-```
-
-Then use the same system-level entry points as on the primary ROS PC.
-
-Excavator only:
-
-```bash
-
-ros2 launch construction_site_control \
-
-  excavator_system.launch.py \
-
-  excavators:=excavator3
-
-```
-
-Dump truck only:
-
-```bash
-
-ros2 launch construction_site_control \
-
-  dump_truck_system.launch.py \
-
-  trucks:=truck1
-
-```
-
-Integrated:
-
-```bash
-
-ros2 launch construction_site_control \
-
-  command_center.launch.py \
-
-  trucks:=truck1 \
-
-  excavators:=excavator3 \
-
-  start_scenario_manager:=false
-
-```
-
-### Backup-Router Robot Clients
-
-Example for Truck 1:
-
-```bash
-
-source network/setup_zenoh.sh client dumptruck1 ros-backup-pc
-
-```
-
-Example for Excavator 3:
-
-```bash
-
-source network/setup_zenoh.sh client excavator3 ros-backup-pc
-
-```
-
-Every participating client must select `ros-backup-pc` while the backup router is active.
-
-Selecting `ros-backup-pc` in `setup_zenoh.sh` does not remotely start a router on that machine. The router process must run on the physical backup ROS PC.
-
----
-
-# 15. Verify Multi-Robot Communication
-
-From a Zenoh-configured ROS PC terminal:
-
-```bash
-
-echo "===== NODES ====="
-
-ros2 node list
-
-echo
-
-echo "===== ACTIONS ====="
-
-ros2 action list
-
-echo
-
-echo "===== EXCAVATOR 3 ====="
-
-ros2 action info \\
-
-  /excavator3/upper_arm_controller/follow_joint_trajectory
-
-echo
-
-echo "===== EXCAVATOR 3 JOINT STATES ====="
-
-ros2 topic info \\
-
-  /excavator3/joint_states
-
-```
-
-For an active Excavator 3 server, the expected interfaces include:
-
-```text
-
-/excavator3/excavator_trajectory_server
-
-/excavator3/upper_arm_controller/follow_joint_trajectory
-
-/excavator3/joint_states
-
-```
-
-The Action should report one Action server.
-
----
-
-# 16. Current Communication Status
-
-Normal physical operation uses:
-
-```text
-
-RMW_IMPLEMENTATION=rmw_zenoh_cpp
-
-```
-
-Zenoh has been validated for:
-
-- ROS 2 node and topic discovery
-
-- dump truck communication
-
-- dump truck `/wheel_states`
-
-- dump truck `/cmd_vel`
-
-- overhead camera communication
-
-- AprilTag detection messages
-
-- compressed camera image transport
-
-- namespaced excavator `/joint_states`
-
-- namespaced excavator `FollowJointTrajectory`
-
-- excavator Action goal transport
-
-- excavator Action feedback
-
-- excavator Action results
-
-- Command Center integration
-
-- physical dump truck operation
-
-- physical Truck 1 + Excavator 3 scenario routing
-
-Zenoh is therefore the standard communication layer for the integrated system.
-
----
-
-# 17. Running a Scenario Automatically
-
-The Command Center can start the Scenario Manager automatically.
-
-Before launching a physical scenario, configure the Command Center terminal for the currently active router.
-
-## Primary ROS PC
-
-For example, the Truck 1 + Excavator 3 integration scenario can be started with:
-
-```bash
-
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-source install/setup.bash
-
-source network/setup_zenoh.sh client ros-pc
-
-ros2 launch construction_site_control command_center.launch.py \
-
-  trucks:=truck1 \
-
-  excavators:=excavator3 \
-
-  start_scenario_manager:=true \
-
-  scenario:=dtex_integration.yaml
-
-```
-
-## Backup ROS PC
-
-When `ros-backup-pc` is the active router:
-
-```bash
-
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-source install/setup.bash
-
-source network/setup_zenoh.sh client ros-backup-pc
-
-ros2 launch construction_site_control command_center.launch.py \
-
-  trucks:=truck1 \
-
-  excavators:=excavator3 \
-
-  start_scenario_manager:=true \
-
-  scenario:=dtex_integration.yaml
-
-```
-
-Scenario files are resolved from:
-
-```text
-
+``` text
 operations/scenarios/
-
 ```
 
-For new physical scenarios, it is generally preferable to first start the system with:
-
-```text
-
-start_scenario_manager:=false
-
-```
-
-and verify the intended robot interfaces before initiating physical motion.
-
----
-
-# 18. Scenario Step Types
-
-The Scenario Manager currently supports:
-
-```text
-
-task
-
-excavator_trajectory
-
-wait
-
-parallel
-
-condition
-
-topic_publish
-
-```
-
----
-
-## `task`
-
-Executes a robot task through `ExecuteRobotTask`.
-
-```yaml
-
-- id: truck1_route
-
-  type: task
-
-  robot: truck1
-
-  task_type: waypoint
-
-  task_file: truck1_waypoints.yaml
-
-```
-
----
-
-## `excavator_trajectory`
-
-Executes an excavator trajectory through `FollowJointTrajectory`.
-
-```yaml
-
-- id: excavator3_move
-
-  type: excavator_trajectory
-
-  robot: excavator3
-
-  task_file: excavator3_excavation_cycle_test.yaml
-
-  seconds_per_waypoint: 5.0
-
-```
-
-Unless explicitly overridden, the Action is resolved from the robot name:
-
-```text
-
-/excavator3/upper_arm_controller/follow_joint_trajectory
-
-```
-
----
-
-## `wait`
-
-Introduces a timed delay.
-
-```yaml
-
-- id: wait_after_truck
-
-  type: wait
-
-  duration: 3.0
-
-```
-
----
-
-## `parallel`
-
-Runs multiple child steps simultaneously.
+A scenario contains a `scenario_name` and a sequence of `steps`.
 
 Example:
 
-```yaml
+``` yaml
+scenario_name: example_construction_scenario
 
-- id: parallel_move
+steps:
+  - id: truck1_route
+    type: task
+    robot: truck1
+    task_type: waypoint
+    task_file: truck1_waypoints.yaml
 
+  - id: wait_after_truck
+    type: wait
+    duration: 3.0
+
+  - id: excavator3_move
+    type: excavator_trajectory
+    robot: excavator3
+    task_file: excavator3_excavation_cycle_test.yaml
+    seconds_per_waypoint: 5.0
+```
+
+### 5.1 `task`
+
+Executes a robot task through `ExecuteRobotTask`.
+
+``` yaml
+- id: truck1_route
+  type: task
+  robot: truck1
+  task_type: waypoint
+  task_file: truck1_waypoints.yaml
+```
+
+For Truck 1, this targets:
+
+``` text
+/truck1/execute_robot_task
+```
+
+### 5.2 `excavator_trajectory`
+
+Executes an excavator trajectory through `FollowJointTrajectory`.
+
+``` yaml
+- id: excavator3_move
+  type: excavator_trajectory
+  robot: excavator3
+  task_file: excavator3_excavation_cycle_test.yaml
+  seconds_per_waypoint: 5.0
+```
+
+The `robot` field normally determines the target Action namespace.
+
+### 5.3 `wait`
+
+Introduces a timed delay.
+
+``` yaml
+- id: wait_after_truck
+  type: wait
+  duration: 3.0
+```
+
+### 5.4 `parallel`
+
+Runs multiple child tasks simultaneously.
+
+``` yaml
+- id: parallel_operation
   type: parallel
-
   tasks:
-
     - id: truck1_move
-
       type: task
-
       robot: truck1
-
       task_type: waypoint
-
       task_file: truck1_waypoints.yaml
 
     - id: excavator3_move
-
       type: excavator_trajectory
-
       robot: excavator3
-
       task_file: excavator3_excavation_cycle_test.yaml
-
       seconds_per_waypoint: 5.0
-
 ```
 
-The scenario continues after all parallel child steps complete successfully.
+The scenario continues after all parallel child tasks complete
+successfully.
 
-Different excavators can be represented by different `robot` names and therefore different Action namespaces.
+### 5.5 `condition`
 
----
+Waits for a supported ROS topic value to satisfy a condition.
 
-## `condition`
+The current Scenario Manager supports condition handling for:
 
-Waits for a ROS topic value to satisfy a condition.
-
-This allows scenario execution to depend on robot or system state.
-
-Conceptually:
-
-```text
-
-Robot State Topic
-
-      │
-
-      ▼
-
-Condition Evaluation
-
-      │
-
-      ▼
-
-Scenario Execution
-
+``` text
+std_msgs/String
+construction_site_interfaces/msg/RobotStatus
 ```
 
----
+This can be used to synchronize scenario execution with robot or system
+state.
 
-## `topic_publish`
+Use an existing scenario under `operations/scenarios/` as the template
+when creating a new condition step.
+
+### 5.6 `topic_publish`
 
 Publishes directly to a supported ROS topic.
 
-This can be used for:
+This is useful for:
 
-- simple commands
+-   simple commands
+-   integration testing
+-   operations that do not require a complete Action abstraction
 
-- integration testing
+Use an existing `topic_publish` scenario under `operations/scenarios/`
+as the template for the exact message definition required by the target
+topic.
 
-- operations that do not require an Action abstraction
+### 5.7 Scenario Design Rules
 
----
+When creating a new scenario:
 
-# 19. Action Success and Failure Behavior
+1.  Use a unique `id` for each step.
+2.  Use the correct `robot` name.
+3.  Keep waypoint files under `operations/dump_truck/waypoints/`.
+4.  Keep excavator trajectories under
+    `operations/excavator/trajectories/`.
+5.  Keep scenario files under `operations/scenarios/`.
+6.  Test individual robot tasks before combining them into a new
+    physical multi-robot scenario.
+7.  Confirm the participating robots are included in the `trucks` and
+    `excavators` Command Center launch arguments.
+8.  Treat Action failure as a real scenario failure; do not assume the
+    next sequential step will run.
 
-The Scenario Manager waits for Action results before advancing sequential scenarios.
+------------------------------------------------------------------------
 
-For excavator trajectories:
+## 6. Troubleshooting
 
-```text
+Start with the smallest layer that can prove where the problem is.
 
-Scenario Manager
+### 6.1 Basic ROS 2 Check
 
-      │
+In a terminal configured as a Zenoh client:
 
-      ▼
-
-FollowJointTrajectory Goal
-
-      │
-
-      ▼
-
-Excavator Server
-
-      │
-
-      ├── SUCCESS
-
-      │      │
-
-      │      ▼
-
-      │   Next Step
-
-      │
-
-      └── FAILURE
-
-             │
-
-             ▼
-
-        Scenario Abort
-
+``` bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-pc
+ros2 node list
+ros2 topic list
+ros2 action list
 ```
 
-This behavior has been physically tested with Excavator 3.
+If remote robot nodes are missing, check the Zenoh setup first:
 
-The namespaced Action successfully received the trajectory and returned continuous trajectory feedback through the Command Center.
-
-When the physical excavator did not reach the final joint tolerance, the excavator server returned a trajectory failure and the Scenario Manager correctly aborted the scenario rather than reporting success.
-
-Physical tracking or calibration failures should therefore be distinguished from Command Center routing failures.
-
----
-
-# 20. Current Validation Status
-
-## Verified
-
-The following software and integration functionality has been tested:
-
-```text
-
-Excavator configuration loading
-
-Excavator trajectory loading
-
-Subset-joint trajectories
-
-Trajectory limit validation
-
-FollowJointTrajectory goal validation
-
-Excavator SIM Action Server
-
-Namespaced Excavator Actions
-
-Namespaced Excavator joint-state topics
-
-Excavator Action client
-
-Command Center → Excavator SIM
-
-Scenario Manager → Excavator SIM
-
-Mock Dump Truck Action Server
-
-Mixed Dump Truck + Excavator software scenario
-
-Zenoh ROS 2 communication
-
-Namespaced FollowJointTrajectory over Zenoh
-
-Dump Truck ROS communication over Zenoh
-
-Overhead Camera and AprilTag communication over Zenoh
-
-Physical Dump Truck end-to-end operation over Zenoh
-
-Physical Truck 1 + Excavator 3 Command Center routing
-
-Excavator Action feedback propagation
-
-Excavator Action failure propagation
-
-Scenario abort following robot Action failure
-
+``` text
+network/README.md
 ```
 
-Excavator 3 has completed physical coordinated trajectories using closed-loop Swing, Boom, Arm, and Bucket control.
+### 6.2 Visualize the ROS Graph
 
-Swing position is supplied by the overhead AprilTag system through `/excavator3/swing_joint_state`. The validated integration scenario runs the Excavator 3 excavation cycle and then executes the Truck 1 waypoint and dumping task.
+For teaching and diagnostics:
 
----
-
-## Remaining Excavator Hardware Work
-
-Remaining Excavator 3 work includes:
-
-- continued joint tracking and tolerance tuning
-
-- continued coordinated multi-joint trajectory validation
-
-- validation under changing payload and soil resistance
-
-- final physical motion and safety validation
-
-Swing sensing, Command Center routing, Zenoh communication, multi-joint excavation, and the Truck 1 integration sequence have been physically validated. These remaining items concern continued hardware tuning and operational robustness.
-
----
-
-# 21. Recommended Development Workflow
-
-Use the system in progressively higher-risk stages:
-
-```text
-
-1\. Unit Tests
-
-      │
-
-      ▼
-
-2\. Excavator SIM
-
-      │
-
-      ▼
-
-3\. Mock Truck + Excavator SIM
-
-      │
-
-      ▼
-
-4\. Single Physical Robot
-
-      │
-
-      ▼
-
-5\. Multi-Robot Physical Integration
-
-      │
-
-      ▼
-
-6\. Integrated Construction Scenario
-
+``` bash
+rqt_graph
 ```
 
-For new excavator trajectories:
+This is useful for confirming which nodes, topics, and interfaces are
+currently connected.
 
-1\. Inspect the trajectory YAML.
+### 6.3 Excavator Action Is Missing
 
-2\. Confirm the target excavator.
+For Excavator 3:
 
-3\. Validate the trajectory against that machine's configuration.
-
-4\. Confirm the intended joints.
-
-5\. Confirm the physical workspace is clear.
-
-6\. Begin with conservative physical motion.
-
-For Excavator 3, Swing has been physically validated with overhead AprilTag feedback. Continue to use conservative trajectories and the configured physical safety limits.
-
----
-
-# 22. Current Architecture
-
-The current architecture supports:
-
-```text
-
-                         Operational YAML
-
-                               │
-
-                               ▼
-
-                         Scenario Manager
-
-                               │
-
-             ┌─────────────────┴─────────────────┐
-
-             │                                   │
-
-             ▼                                   ▼
-
-      ExecuteRobotTask                  FollowJointTrajectory
-
-             │                                   │
-
-             ▼                                   ▼
-
-     /truckN/execute_robot_task        /excavatorN/upper_arm_controller/
-
-                                          follow_joint_trajectory
-
-             │                                   │
-
-             ▼                                   ▼
-
-         Dump Truck                           Excavator
-
-             │                                   │
-
-      Mock / Physical                     SIM / Physical
-
-             │                                   │
-
-             └─────────────────┬─────────────────┘
-
-                               ▼
-
-                          Zenoh Network
-
+``` bash
+ros2 action info \
+  /excavator3/upper_arm_controller/follow_joint_trajectory
 ```
 
-This architecture allows scenario logic to identify robots by name while robot-specific ROS 2 interfaces remain isolated by namespace.
+The physical excavator Raspberry Pi must be running the trajectory
+server.
 
----
+Expected Action:
 
-# 23. Where New Command Center Files Belong
+``` text
+/excavator3/upper_arm_controller/follow_joint_trajectory
+```
 
-Use the following rule when extending the system:
+### 6.4 Excavator Does Not Reach READY
 
-```text
+Check that the Command Center is running the shared overhead camera,
+AprilTag detector, and the excavator perception adapter.
 
-Scenario Manager logic
+Check the swing feedback:
 
-    → command_center/construction_site_control/
+``` bash
+ros2 topic echo /excavator3/swing_joint_state
+```
 
-Excavator Command Center client logic
+The excavator startup sequence requires fresh swing feedback before
+initialization can proceed.
 
-    → command_center/construction_site_control/
+If feedback is unavailable, inspect:
 
-Dump truck Action Server logic
+``` text
+Camera
+  ↓
+AprilTag Detector
+  ↓
+Swing Position Adapter
+  ↓
+/excavator3/swing_joint_state
+```
 
-    → command_center/dump_truck_action_server/
+The motors should remain off while the trajectory server waits for fresh
+startup swing feedback.
 
-Scenario YAML
+### 6.5 Excavator Trajectory Is Rejected
 
-    → operations/scenarios/
+Check:
 
-Dump truck waypoint YAML
+-   trajectory joint names
+-   duplicate joints
+-   waypoint structure
+-   missing joint positions
+-   configured joint limits
+-   target robot name
+-   excavator READY state
 
+Use a small subset-joint trajectory when isolating a joint-level
+problem.
+
+### 6.6 Excavator SIM Test
+
+This section is primarily for Isaac Sim and software-integration development. It is not part of the normal physical-robot operating workflow and can generally be ignored during routine field operation.
+
+SIM mode does not access Raspberry Pi hardware.
+
+Start a simulated excavator:
+
+``` bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch excavator_control \
+  excavator.launch.py \
+  mode:=sim \
+  robot_name:=excavator1
+```
+
+Send a trajectory:
+
+``` bash
+ros2 run construction_site_control \
+  excavator_task_client \
+  operations/excavator/trajectories/YOUR_TRAJECTORY.yaml \
+  --robot excavator1 \
+  --seconds-per-waypoint 3.0
+```
+
+Observe SIM commands:
+
+``` bash
+ros2 topic echo /excavator1/joint_command
+```
+
+If no trajectory is executing, `ros2 topic echo` may wait without
+displaying data. This is normal.
+
+### 6.7 Dump Truck Action Is Missing
+
+For Truck 1:
+
+``` bash
+ros2 action info /truck1/execute_robot_task
+```
+
+The Command Center must have been started with Truck 1 selected.
+
+### 6.8 Dump Truck Localization Is Missing
+
+Check:
+
+``` bash
+ros2 topic echo /truck1/wheel_states
+ros2 topic echo /truck1/odom
+ros2 topic echo /truck1/fused_odom
+```
+
+Use the results to isolate the failing layer:
+
+``` text
+No wheel_states
+    → Pi / encoder / hardware layer
+
+wheel_states but no odom
+    → odometry layer
+
+odom but no fused_odom
+    → AprilTag / fusion layer
+
+fused_odom available but task fails
+    → waypoint / Action layer
+```
+
+### 6.9 Manual Dump Truck Motion Test
+
+Direct `cmd_vel` is a diagnostic tool, not the normal operational
+interface.
+
+Example:
+
+``` bash
+ros2 topic pub -r 10 \
+  /truck1/cmd_vel \
+  geometry_msgs/msg/Twist \
+  "{linear: {x: 0.20}, angular: {z: 0.0}}"
+```
+
+Use manual motion only when validating motor direction, encoder mapping,
+odometry, or low-level motion behavior.
+
+### 6.10 Camera / AprilTag Problems
+
+Check:
+
+``` bash
+ros2 node list
+ros2 topic list
+```
+
+Expected shared perception nodes include the overhead camera and
+AprilTag detector.
+
+For AprilTag calibration procedures, use:
+
+``` text
+docs/perception/apriltag/Calibration.md
+```
+
+Do not place camera or AprilTag calibration procedures in this
+operational README.
+
+### 6.11 Network Problems
+
+Network configuration and Zenoh troubleshooting belong in:
+
+``` text
+network/README.md
+```
+
+Normal physical operation uses:
+
+``` text
+RMW_IMPLEMENTATION=rmw_zenoh_cpp
+```
+
+Do not switch middleware as a troubleshooting shortcut.
+
+### 6.12 Shutdown Warnings
+
+Some perception processes may emit warnings during shutdown even after
+normal runtime operation.
+
+Evaluate runtime behavior separately from Ctrl+C shutdown messages. If
+the system operated correctly but a process reports a shutdown-only
+error, record it as a cleanup issue rather than immediately treating it
+as a startup or communication failure.
+
+------------------------------------------------------------------------
+
+## 7. Architecture
+
+The platform separates robot hardware, robot control, shared perception,
+operations, communication, and high-level coordination.
+
+### 7.1 High-Level System
+
+``` text
+                         Scenario YAML
+                              │
+                              ▼
+                       Scenario Manager
+                              │
+             ┌────────────────┴────────────────┐
+             │                                 │
+             ▼                                 ▼
+      Dump Truck Task                 Excavator Trajectory
+             │                                 │
+             ▼                                 ▼
+   ExecuteRobotTask                  FollowJointTrajectory
+             │                                 │
+             ▼                                 ▼
+   Waypoint Controller              Excavator Controller
+             │                                 │
+             └──────────────┬──────────────────┘
+                            │
+                            ▼
+                     Physical Robots
+
+
+                    Shared Perception
+                            │
+                 ┌──────────┴──────────┐
+                 │                     │
+                 ▼                     ▼
+           Overhead Camera        AprilTag Detection
+                                       │
+                          ┌────────────┴────────────┐
+                          │                         │
+                          ▼                         ▼
+                 Truck Localization        Excavator Swing
+                                             Feedback
+```
+
+The overhead camera and AprilTag detector are **site-wide shared
+infrastructure**.
+
+They support both dump-truck localization and excavator swing feedback.
+
+### 7.2 ROS Interfaces
+
+Dump trucks use:
+
+``` text
+construction_site_interfaces/action/ExecuteRobotTask
+```
+
+Example:
+
+``` text
+/truck1/execute_robot_task
+```
+
+Excavators use:
+
+``` text
+control_msgs/action/FollowJointTrajectory
+```
+
+Example:
+
+``` text
+/excavator3/upper_arm_controller/follow_joint_trajectory
+```
+
+Robot namespaces allow multiple trucks and excavators to coexist on the
+same ROS 2 network.
+
+### 7.3 Repository Responsibilities
+
+``` text
+robots/
+    Robot-specific hardware, control, configuration, and bringup
+
+common/
+    Shared ROS 2 interfaces
+
+perception/
+    Shared camera, AprilTag, and perception components
+
+command_center/
+    High-level task execution and multi-robot coordination
+
+operations/
+    Waypoints, excavator trajectories, and construction scenarios
+
+network/
+    Zenoh and multi-machine ROS 2 communication
+
+docs/
+    Supporting technical documentation that does not belong in normal operation
+
+tools/
+    Diagnostic and utility scripts
+```
+
+Operational data is intentionally separated from reusable robot
+software.
+
+``` text
+operations/
+├── dump_truck/
+│   └── waypoints/
+├── excavator/
+│   └── trajectories/
+└── scenarios/
+```
+
+------------------------------------------------------------------------
+
+## 8. Development
+
+This section is for software development, debugging, integration
+testing, and adding new robot behavior. It is not the normal
+student/operator startup path.
+
+### 8.1 Adding a New Robot
+
+Add and validate a new physical robot **before** integrating it into a
+multi-robot scenario.
+
+Use this development sequence:
+
+``` text
+Create Robot Configuration
+        │
+        ▼
+Validate Physical Hardware
+        │
+        ▼
+Validate ROS Interfaces
+        │
+        ▼
+Validate Individual Task / Motion
+        │
+        ▼
+Integrate into a Scenario
+```
+
+Do not use a multi-robot scenario as the first test of a newly added
+robot. Hardware, sensing, ROS communication, and individual robot motion
+should already be working independently.
+
+#### 8.1.1 Common Setup
+
+For every new physical robot:
+
+1. Assign a unique device name and ROS robot name.
+2. Add the Raspberry Pi to the device registry in:
+
+``` text
+network/devices.sh
+```
+
+3. Configure and verify SSH and Zenoh communication using:
+
+``` text
+network/README.md
+```
+
+4. Create a robot-specific machine configuration under `robots/`.
+5. Verify physical sensors, wiring, motor direction, and actuator
+   behavior.
+6. Verify the robot's ROS 2 topics and Action interface.
+7. Create and validate an individual waypoint task or trajectory.
+8. Only after the individual robot works correctly, add it to a
+   scenario under:
+
+``` text
+operations/scenarios/
+```
+
+#### 8.1.2 Adding a New Excavator
+
+Excavator machine configurations are stored in:
+
+``` text
+robots/excavator/excavator_control/config/
+```
+
+**Always start from the excavator configuration template.**
+
+For example, when adding Excavator 6:
+
+``` bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+cp   robots/excavator/excavator_control/config/excavator_template.yaml   robots/excavator/excavator_control/config/excavator6.yaml
+```
+
+Then edit:
+
+``` text
+robots/excavator/excavator_control/config/excavator6.yaml
+```
+
+At minimum, verify and configure the following for the physical
+machine:
+
+``` text
+excavator_name
+    Unique robot name, for example excavator6
+
+joints
+    Boom / arm / bucket ADC channels
+    Boom / arm / bucket physical limits
+    Boom / arm / bucket raw ADC calibration
+    Swing physical limits
+
+gpio
+    GPIO pin assignments
+    Motor direction for every joint
+
+initial_position
+    Safe startup target for all four joints
+    Startup PWM and pulse timing
+    Per-joint timeout
+    Wrong-way detection
+
+joint_control
+    Swing feedback topic
+    Swing commanded range
+    Joint control parameters and tolerances
+```
+
+Boom, arm, and bucket calibration values are **machine-specific**.
+Measure the actual physical excavator; do not copy raw ADC values from
+another excavator.
+
+Swing feedback uses the site perception system rather than the
+excavator's ADS1115 calibration. Set the Swing feedback topic to match
+the new robot name.
+
+For Excavator 6:
+
+``` yaml
+excavator_name: excavator6
+```
+
+and:
+
+``` yaml
+joint_control:
+  swing:
+    position_topic: /excavator6/swing_joint_state
+```
+
+Before normal operation, verify the new excavator in stages:
+
+``` text
+1. Sensor feedback
+2. GPIO wiring
+3. Motor direction
+4. Joint limits
+5. Swing perception feedback
+6. Startup initialization
+7. Individual joint motion
+8. Multi-joint trajectory
+9. Scenario integration
+```
+
+Do not assume that the template's startup target, PWM values, motor
+directions, or control parameters are physically correct for a new
+machine. Begin with small, controlled tests.
+
+After hardware validation, create an operational trajectory under:
+
+``` text
+operations/excavator/trajectories/
+```
+
+Validate that trajectory directly as described in Section 3 before
+using the excavator in a scenario.
+
+#### 8.1.3 Adding a New Dump Truck
+
+Dump-truck hardware configurations are stored in:
+
+``` text
+robots/dump_truck/dump_truck_bringup/config/hardware/
+```
+
+When adding a new truck, start from a **verified existing truck
+configuration** and create a new robot-specific YAML file.
+
+For example, when adding Truck 6:
+
+``` bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+cp   robots/dump_truck/dump_truck_bringup/config/hardware/truck5.yaml   robots/dump_truck/dump_truck_bringup/config/hardware/truck6.yaml
+```
+
+Do not assume that the copied machine-specific values are correct for
+the new truck.
+
+At minimum, verify and configure:
+
+``` text
+robot identity / namespace
+servo calibration
+robot_tag_child_frame
+AprilTag yaw offset
+odometry scale factors
+encoder direction
+encoder inversion
+swap_encoders
+```
+
+Encoder mapping and motor direction must be checked physically for each
+truck.
+
+Then verify the truck in stages:
+
+``` text
+1. Motor and steering response
+2. Wheel encoder feedback
+3. Odometry
+4. AprilTag detection
+5. Fused localization
+6. Manual motion
+7. Individual waypoint task
+8. Scenario integration
+```
+
+Create operational waypoint files under:
+
+``` text
+operations/dump_truck/waypoints/
+```
+
+Validate the waypoint task independently as described in Section 4
+before adding the truck to a multi-robot scenario.
+
+### 8.2 Normal vs. Debug Launch Files
+
+Normal ROS PC operation:
+
+``` text
+command_center.launch.py
+```
+
+Subsystem launch files such as:
+
+``` text
+excavator_system.launch.py
+dump_truck_system.launch.py
+dump_truck_ros_pc.launch.py
+overhead_camera.launch.py
+excavator_perception.launch.py
+```
+
+remain useful for debugging and component-level validation, but they
+should not be presented as the normal operational entry point.
+
+### 8.3 Build the Command Center Stack
+
+From the repository root:
+
+``` bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+```
+
+For targeted development, package-specific builds may be used when
+appropriate.
+
+### 8.4 Software-Only Integration Testing
+
+A useful software-only configuration is:
+
+``` text
+Dump Truck  → Mock Action Server
+Excavator   → SIM Mode
+```
+
+Example mock Truck 1 Action Server:
+
+``` bash
+ros2 run dump_truck_action_server \
+  mock_waypoint_action_server_node \
+  --ros-args \
+  -p truck_name:=truck1 \
+  -p seconds_per_waypoint:=0.5
+```
+
+Example Excavator 1 SIM server:
+
+``` bash
+ros2 launch excavator_control \
+  excavator.launch.py \
+  mode:=sim \
+  robot_name:=excavator1
+```
+
+The Scenario Manager can then be tested independently of physical
+motors, sensors, Raspberry Pis, and mechanical calibration.
+
+### 8.5 Adding Operational Files
+
+Use the following rule:
+
+``` text
+New dump-truck route
     → operations/dump_truck/waypoints/
 
-Excavator trajectory YAML
-
+New excavator motion
     → operations/excavator/trajectories/
 
-Shared ROS messages and Actions
-
-    → common/construction_site_interfaces/
-
-Robot-specific hardware and control
-
-    → robots/
-
-ROS network configuration
-
-    → network/
-
+New multi-robot workflow
+    → operations/scenarios/
 ```
 
-The general design principle is:
+Do not place operation-specific waypoint or trajectory data inside
+reusable ROS 2 packages.
 
-> The Command Center coordinates robot tasks, while robot-specific packages remain responsible for executing physical motion.
+### 8.6 Repository Locations
+
+Use the following ownership rule when adding or modifying robot content:
+
+```text
+network/
+    Network device definitions and Zenoh configuration
+
+robots/
+    Robot-specific software, launch files, and machine configuration
+
+operations/
+    Waypoints, excavator trajectories, and scenarios
+```
+
+Keep machine configuration separate from operational task definitions.
+
+### 8.7 Documentation Rule
+
+This README is the primary operational manual for the construction
+robotics system.
+
+Keep normal operating procedures here rather than duplicating them
+across robot-specific directories.
+
+Use:
+
+``` text
+README.md
+```
+
+for repository entry, initial setup, and branch guidance.
+
+Use:
+
+``` text
+command_center/README.md
+```
+
+for system operation, scenarios, robot tasks, troubleshooting,
+architecture, and development guidance.
+
+Use:
+
+``` text
+network/README.md
+```
+
+for Zenoh and multi-machine network configuration.
+
+Keep standalone documents under `docs/` only when the topic is
+specialized and would unnecessarily clutter the normal operational
+workflow, such as AprilTag calibration.
+
+------------------------------------------------------------------------
+
+## Summary
+
+For normal physical operation:
+
+``` text
+1. Start one Zenoh router.
+2. Start the participating robot Raspberry Pis.
+3. Start command_center.launch.py on the ROS PC.
+4. Run the intended scenario.
+```
+
+The central rule is:
+
+``` text
+Normal ROS PC operation → command_center.launch.py
+```
+
+Use subsystem launch files only for debugging and component-level
+validation.

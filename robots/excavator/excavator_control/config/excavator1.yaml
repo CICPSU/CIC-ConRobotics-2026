@@ -3,14 +3,23 @@
 # ================================================================
 # Physical machine configuration for Excavator 1.
 #
+# Boom, arm, and bucket use potentiometer feedback through ADS1115.
+#
 # Calibration convention:
 #   raw_at_min_angle = ADC raw value at min_angle_deg
 #   raw_at_max_angle = ADC raw value at max_angle_deg
 #
 # Raw ADC values may increase OR decrease as joint angle increases.
+#
+# Swing feedback is provided externally as sensor_msgs/JointState.
 # ================================================================
 
 excavator_name: excavator1
+
+
+# ================================================================
+# JOINT SENSOR CALIBRATION / LIMITS
+# ================================================================
 
 joints:
 
@@ -36,34 +45,19 @@ joints:
     raw_at_max_angle: 13100
 
   swing:
-    adc_channel: 3
-    min_angle_deg: -90.0
-    max_angle_deg: 90.0
+    # Swing position comes from the site perception / sensor adapter.
+    #
+    # These limits follow the current external-feedback excavator
+    # configuration structure and must be physically verified on
+    # Excavator 1 before Swing is operated with this configuration.
+    min_angle_deg: -105.0
+    max_angle_deg: 105.0
 
-    angle_deg_table:
-      - -90.0
-      - -45.0
-      - -30.0
-      - 0.0
-      - 30.0
-      - 45.0
-      - 60.0
-      - 75.0
-      - 90.0
-
-    raw_table:
-      - 1600
-      - 1800
-      - 3955
-      - 6968
-      - 9943
-      - 11410
-      - 14282
-      - 17497
-      - 21447
 
 # ================================================================
 # GPIO
+# ================================================================
+# Existing Excavator 1 wiring and motor-direction values are preserved.
 # ================================================================
 
 gpio:
@@ -90,6 +84,7 @@ gpio:
     in2_pin: 24
     invert_motor: false
 
+
 # ================================================================
 # GLOBAL CONTROL PARAMETERS
 # ================================================================
@@ -106,35 +101,111 @@ control:
   pwm_frequency_hz: 1000
   pwm_arbitration: exclusive
 
-# ================================================================
-# HOME POSITION
-# ================================================================
-# Human-readable degrees.
-# Boom home intentionally set to -20 deg.
 
-home:
-  boom_deg: -20.0
-  arm_deg: 105.020
-  bucket_deg: 12.245
+# ================================================================
+# STARTUP INITIAL POSITION
+# ================================================================
+#
+# Current startup architecture:
+#
+#   1. wait for fresh Swing feedback
+#   2. preflight
+#   3. correct Swing
+#   4. correct Boom
+#   5. correct Arm
+#   6. correct Bucket
+#   7. final four-joint verification
+#   8. READY
+#
+# IMPORTANT:
+#   The startup parameters and target pose below are migrated from the
+#   current common configuration structure. They have NOT been
+#   physically validated on Excavator 1 as part of this migration.
+#
+#   Verify Swing feedback, motor direction, PWM values, and the complete
+#   startup pose on Excavator 1 before relying on automatic startup.
+# ================================================================
+
+initial_position:
+  enabled: true
+  mode: move
+
+  tolerance_deg: 3.0
+  verification_tolerance_deg: 5.0
+
+  current_limit_tolerance_deg: 1.0
+  limit_margin_deg: 3.0
+  timeout_sec: 25.0
+
+  swing_pwm: 160
+  swing_on_sec: 0.04
+  swing_off_sec: 0.08
+  swing_timeout_sec: 5.0
+  swing_wrong_way_deg: 10.0
+
+  boom_pwm: 140
+  boom_on_sec: 0.03
+  boom_off_sec: 0.10
+  boom_timeout_sec: 5.0
+  boom_wrong_way_deg: 10.0
+
+  arm_pwm: 140
+  arm_on_sec: 0.03
+  arm_off_sec: 0.10
+  arm_timeout_sec: 5.0
+  arm_wrong_way_deg: 10.0
+
+  bucket_pwm: 80
+  bucket_on_sec: 0.03
+  bucket_off_sec: 0.10
+  bucket_timeout_sec: 5.0
+  bucket_wrong_way_deg: 10.0
+
+  # TODO:
+  #   Physically verify that this is a safe and reachable startup pose
+  #   for Excavator 1 before automatic startup is used.
+  positions:
+    swing: 90.0
+    boom: -10.0
+    arm: 60.0
+    bucket: 0.0
+
 
 # ================================================================
 # PER-JOINT CONTROL PARAMETERS
+# ================================================================
+#
+# Boom, arm, and bucket preserve the existing Excavator 1 controller
+# values.
+#
+# Swing is migrated to the current external-feedback control structure
+# and must be physically validated on Excavator 1.
 # ================================================================
 
 joint_control:
 
   swing:
-    kp: 120.0
-    min_pwm: 220
-    max_pwm: 255
-    kick_pwm: 255
+    position_topic: /excavator1/swing_joint_state
+    sensor_timeout_sec: 0.30
 
-    tolerance_rad: 0.04
-    stop_tolerance_rad: 0.05
+    # Normal commanded range stays inside the hard range above.
+    # Physically verify this range on Excavator 1.
+    command_min_angle_deg: -95.0
+    command_max_angle_deg: 95.0
 
-    pulse_err_deg: 5.0
-    pulse_on_cycles: 1
-    pulse_off_cycles: 2
+    far_error_deg: 30.0
+    far_pwm: 255
+    near_pwm: 255
+
+    stop_tolerance_rad: 0.1396  # 8 degrees
+    tolerance_rad: 0.2618       # 15 degrees
+
+    pulse_err_deg: 30.0
+    pulse_on_cycles: 2
+    pulse_off_cycles: 4
+
+    progress_timeout_sec: 0.35
+    min_progress_deg: 1.0
 
   boom:
     kp: 120.0
@@ -142,8 +213,8 @@ joint_control:
     max_pwm: 255
     kick_pwm: 180
 
-    tolerance_rad: 0.035
-    stop_tolerance_rad: 0.015
+    stop_tolerance_rad: 0.0524 # 3 degrees
+    tolerance_rad: 0.1745 # 10 degrees
 
   arm:
     kp: 120.0
@@ -151,8 +222,9 @@ joint_control:
     max_pwm: 220
     kick_pwm: 180
 
-    tolerance_rad: 0.035
-    stop_tolerance_rad: 0.015
+    stop_tolerance_rad: 0.1396 # 8 degrees
+    tolerance_rad: 0.2618 # 15 degrees
+
 
   bucket:
     kp: 70.0
@@ -160,5 +232,5 @@ joint_control:
     max_pwm: 255
     kick_pwm: 80
 
-    tolerance_rad: 0.08
-    stop_tolerance_rad: 0.06
+    stop_tolerance_rad: 0.1745 # 10 degrees
+    tolerance_rad: 0.2618 # 15 degrees
