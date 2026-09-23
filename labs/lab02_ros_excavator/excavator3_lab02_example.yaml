@@ -1,0 +1,47 @@
+# Lab 02 example trajectory for Excavator 3.
+# Starting pose from excavator3.yaml initial_position.positions:
+#   swing=90, boom=-10, arm=60, bucket=0 degrees.
+# This is a classroom example, not a validated physical test.
+# Check the actual READY pose and clear the workspace before running.
+#
+# Each waypoint supplies all four joints because all four are listed below.
+# The task client reads this YAML at run time; editing it needs no rebuild.
+
+trajectory_name: excavator3_lab02_small_dig
+description: Small dig and return near Excavator 3's initial pose.
+
+joints:
+  - swing
+  - boom
+  - arm
+  - bucket
+
+waypoints:
+  - name: initial
+    positions:
+      swing: 90.0
+      boom: -10.0
+      arm: 60.0
+      bucket: 0.0
+
+  - name: lower_boom
+    positions:
+      swing: 90.0
+      boom: -25.0
+      arm: 60.0
+      bucket: 0.0
+
+  - name: small_scoop
+    positions:
+      swing: 90.0
+      boom: -25.0
+      arm: 80.0
+      bucket: 90.0
+
+  - name: initial
+    positions:
+      swing: 90.0
+      boom: -10.0
+      arm: 60.0
+      bucket: 0.0
+

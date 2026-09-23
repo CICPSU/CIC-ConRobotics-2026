@@ -16,7 +16,7 @@
     pose_estimation_method: "pnp"
 
     tag:
-      # 0,1,2 = trucks. 9 =excavator. 16,17,18 = fixed floor landmarks.
+      #  0-4 = trucks (1 to 5). 7-12 =excavator(1 to 3, and 5 to 7). 16,17,18 = fixed floor landmarks.
       ids: [0, 1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 16, 17, 18]
 
       frames:

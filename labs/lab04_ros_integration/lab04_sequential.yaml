@@ -1,0 +1,18 @@
+# Lab 04 — sequential execution on Truck 1 and Excavator 3
+# Run only after the individual route and trajectory have been checked on site.
+# The second Action starts after the first reports success.
+
+scenario_name: lab04_truck_then_excavator
+
+steps:
+  - id: truck1_route_first
+    type: task
+    robot: truck1
+    task_type: waypoint
+    task_file: truck1_waypoints3.yaml
+
+  - id: excavator3_cycle_after_truck
+    type: excavator_trajectory
+    robot: excavator3
+    task_file: excavator3_excavation_cycle_test.yaml
+    seconds_per_waypoint: 5.0
