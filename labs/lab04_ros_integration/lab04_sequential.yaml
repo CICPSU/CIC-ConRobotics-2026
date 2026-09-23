@@ -16,3 +16,4 @@ steps:
     robot: excavator3
     task_file: excavator3_excavation_cycle_test.yaml
     seconds_per_waypoint: 5.0
+
