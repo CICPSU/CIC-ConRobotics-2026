@@ -197,7 +197,13 @@ def launch_setup(context, *args, **kwargs):
             # Common environment/fusion values
             {
                 'alpha':
-                    0.03,
+                    0.06,
+
+                'use_tag_yaw_correction':
+                    True,
+
+                'tag_yaw_alpha':
+                    0.08,
 
                 'tag_parent_frame':
                     'default_cam',

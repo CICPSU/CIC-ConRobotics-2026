@@ -198,6 +198,11 @@ class TagOdomFusionLandmarksNode(Node):
         self.declare_parameter('reject_tag_jump', True)
         self.declare_parameter('max_tag_correction_m', 0.35)
         self.declare_parameter('use_tag_yaw_correction', False)
+        self.declare_parameter('tag_yaw_alpha', 0.08)
+        self.declare_parameter('max_tag_yaw_step_deg', 20.0)
+        self.declare_parameter('max_tag_yaw_reanchor_deg', 90.0)
+        self.declare_parameter('stable_tag_yaw_observations', 3)
+        self.declare_parameter('max_yaw_correction_step_deg', 5.0)
 
         # Odom delta correction and yaw alignment
         self.declare_parameter('odom_x_scale', 1.0)
@@ -243,6 +248,11 @@ class TagOdomFusionLandmarksNode(Node):
         self.reject_tag_jump = bool(self.get_parameter('reject_tag_jump').value)
         self.max_tag_correction_m = float(self.get_parameter('max_tag_correction_m').value)
         self.use_tag_yaw_correction = bool(self.get_parameter('use_tag_yaw_correction').value)
+        self.tag_yaw_alpha = max(0.0, min(1.0, float(self.get_parameter('tag_yaw_alpha').value)))
+        self.max_tag_yaw_step = math.radians(float(self.get_parameter('max_tag_yaw_step_deg').value))
+        self.max_tag_yaw_reanchor = math.radians(float(self.get_parameter('max_tag_yaw_reanchor_deg').value))
+        self.stable_tag_yaw_observations = max(2, int(self.get_parameter('stable_tag_yaw_observations').value))
+        self.max_yaw_correction_step = math.radians(float(self.get_parameter('max_yaw_correction_step_deg').value))
 
         self.odom_x_scale = float(self.get_parameter('odom_x_scale').value)
         self.odom_y_scale = float(self.get_parameter('odom_y_scale').value)
@@ -272,6 +282,12 @@ class TagOdomFusionLandmarksNode(Node):
         self.current_odom_twist = None
         self.latest_robot_tag_pose_map: Optional[Pose2D] = None
         self.latest_robot_tag_time = None
+        self.robot_tag_sequence = 0
+        self.last_corrected_tag_sequence = 0
+        self.last_robot_tag_stamp_ns = None
+        self.last_trusted_tag_yaw = None
+        self.yaw_candidate = None
+        self.yaw_candidate_count = 0
 
         # Initialization anchors
         self.initialized = False
@@ -349,6 +365,15 @@ class TagOdomFusionLandmarksNode(Node):
             raw_x = t.transform.translation.x * self.camera_x_scale
             raw_y = t.transform.translation.y * self.camera_y_scale
             raw_yaw = self.camera_yaw_scale * raw_yaw
+
+            if t.child_frame_id == self.robot_tag_child_frame:
+                stamp_ns = t.header.stamp.sec * 1_000_000_000 + t.header.stamp.nanosec
+                # A forwarded TF for the same image is not another observation.
+                if stamp_ns and self.last_robot_tag_stamp_ns is not None and stamp_ns <= self.last_robot_tag_stamp_ns:
+                    continue
+                if stamp_ns:
+                    self.last_robot_tag_stamp_ns = stamp_ns
+                self.robot_tag_sequence += 1
 
             self.latest_tag_raw[t.child_frame_id] = (raw_x, raw_y, raw_yaw, now)
 
@@ -472,6 +497,8 @@ class TagOdomFusionLandmarksNode(Node):
         self.correction_x = 0.0
         self.correction_y = 0.0
         self.correction_yaw = 0.0
+        self.last_trusted_tag_yaw = tag_yaw
+        self.last_corrected_tag_sequence = self.robot_tag_sequence
         self.initialized = True
 
         self.get_logger().info(
@@ -504,31 +531,71 @@ class TagOdomFusionLandmarksNode(Node):
         fused_y = pred_y + self.correction_y
         fused_yaw = normalize_angle(pred_yaw + self.correction_yaw)
 
-        if self.alpha <= 0.0 or not self.robot_tag_is_fresh():
+        if not self.robot_tag_is_fresh() or self.robot_tag_sequence == self.last_corrected_tag_sequence:
             return fused_x, fused_y, fused_yaw
+
+        self.last_corrected_tag_sequence = self.robot_tag_sequence
 
         tag_x, tag_y, tag_yaw = self.latest_robot_tag_pose_map
         tag_error = math.hypot(tag_x - fused_x, tag_y - fused_y)
 
-        if self.reject_tag_jump and tag_error > self.max_tag_correction_m:
+        position_accepted = not (self.reject_tag_jump and tag_error > self.max_tag_correction_m)
+        if not position_accepted:
             self.get_logger().warn(
                 f'Rejected robot-tag correction jump: error={tag_error:.3f} m '
                 f'> max_tag_correction_m={self.max_tag_correction_m:.3f} m',
                 throttle_duration_sec=1.0,
             )
-            return fused_x, fused_y, fused_yaw
+        elif self.alpha > 0.0:
+            self.correction_x += self.alpha * (tag_x - fused_x)
+            self.correction_y += self.alpha * (tag_y - fused_y)
 
-        self.correction_x += self.alpha * (tag_x - fused_x)
-        self.correction_y += self.alpha * (tag_y - fused_y)
-
-        if self.use_tag_yaw_correction:
+        # A position outlier must not block recovery from wheel-induced yaw drift.
+        # Check consecutive tag headings to avoid following an isolated bad pose.
+        if self.use_tag_yaw_correction and self.tag_yaw_alpha > 0.0 and self.tag_yaw_is_stable(tag_yaw):
             yaw_error = normalize_angle(tag_yaw - fused_yaw)
-            self.correction_yaw = normalize_angle(self.correction_yaw + self.alpha * yaw_error)
+            step = max(-self.max_yaw_correction_step,
+                       min(self.max_yaw_correction_step, self.tag_yaw_alpha * yaw_error))
+            self.correction_yaw = normalize_angle(self.correction_yaw + step)
 
         fused_x = pred_x + self.correction_x
         fused_y = pred_y + self.correction_y
         fused_yaw = normalize_angle(pred_yaw + self.correction_yaw)
         return fused_x, fused_y, fused_yaw
+
+    def tag_yaw_is_stable(self, yaw: float) -> bool:
+        if self.last_trusted_tag_yaw is None:
+            self.last_trusted_tag_yaw = yaw
+            return True
+        if abs(normalize_angle(yaw - self.last_trusted_tag_yaw)) > self.max_tag_yaw_reanchor:
+            self.yaw_candidate = None
+            self.yaw_candidate_count = 0
+            self.get_logger().warn(
+                'Ignoring AprilTag yaw more than 90 degrees from last trusted yaw',
+                throttle_duration_sec=1.0,
+            )
+            return False
+        if abs(normalize_angle(yaw - self.last_trusted_tag_yaw)) <= self.max_tag_yaw_step:
+            self.last_trusted_tag_yaw = yaw
+            self.yaw_candidate = None
+            self.yaw_candidate_count = 0
+            return True
+        if (self.yaw_candidate is not None and
+                abs(normalize_angle(yaw - self.yaw_candidate)) <= self.max_tag_yaw_step):
+            self.yaw_candidate_count += 1
+        else:
+            self.yaw_candidate_count = 1
+        self.yaw_candidate = yaw
+        if self.yaw_candidate_count >= self.stable_tag_yaw_observations:
+            self.last_trusted_tag_yaw = yaw
+            self.yaw_candidate = None
+            self.yaw_candidate_count = 0
+            return True
+        self.get_logger().warn(
+            'Holding abrupt AprilTag yaw change until consecutive observations agree',
+            throttle_duration_sec=1.0,
+        )
+        return False
 
     def update(self):
         # Update camera->map from landmarks first, then refresh robot tag pose if raw tag exists.
