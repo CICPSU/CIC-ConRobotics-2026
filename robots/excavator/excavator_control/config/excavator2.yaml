@@ -1,0 +1,396 @@
+# ================================================================
+# CIC ConRobotics - Model Excavator Configuration Template
+# ================================================================
+# Machine-specific configuration template for one physical excavator.
+#
+# Create ONE configuration file for EACH physical excavator:
+#
+#   excavator1.yaml
+#   excavator2.yaml
+#   excavator3.yaml
+#   ...
+#
+# The ROS 2 control code remains common across all machines.
+# Machine-specific calibration, wiring, sensor, startup, and control
+# parameters belong in this file.
+#
+# IMPORTANT:
+#   This template follows the current physical Excavator 3 configuration
+#   structure. Values marked for verification are NOT automatically safe
+#   for another excavator.
+#
+#   Do NOT copy raw ADC calibration values, motor directions, startup
+#   targets, or control values from another machine without physically
+#   validating the new excavator.
+# ================================================================
+
+
+# ================================================================
+# EXCAVATOR IDENTIFICATION
+# ================================================================
+# Change this to match the physical machine.
+#
+# Example:
+#   excavator1
+#   excavator5
+#   excavator6
+# ================================================================
+
+excavator_name: excavator2
+
+
+# ================================================================
+# JOINT SENSOR CALIBRATION / LIMITS
+# ================================================================
+#
+# Boom, arm, and bucket use potentiometer feedback through ADS1115.
+#
+# Calibration convention:
+#
+#   raw_at_min_angle = ADC raw value measured at min_angle_deg
+#   raw_at_max_angle = ADC raw value measured at max_angle_deg
+#
+# Raw ADC values may increase OR decrease as joint angle increases.
+#
+# Swing is different:
+#
+#   Swing position is provided externally as sensor_msgs/JointState
+#   through the site perception / swing-position adapter.
+#
+# Therefore Swing does NOT use an ADC calibration table here.
+#
+# All angles in this section are expressed in DEGREES.
+# ================================================================
+
+joints:
+
+  # --------------------------------------------------------------
+  # BOOM
+  # --------------------------------------------------------------
+
+  boom:
+    adc_channel: 1
+
+    min_angle_deg: -60.0
+    max_angle_deg: 5.0
+
+    # TODO: Measure on this excavator at min_angle_deg.
+    raw_at_min_angle: 5950
+
+    # TODO: Measure on this excavator at max_angle_deg.
+    raw_at_max_angle: 380
+
+
+  # --------------------------------------------------------------
+  # ARM
+  # --------------------------------------------------------------
+
+  arm:
+    adc_channel: 2
+
+    min_angle_deg: 52.0
+    max_angle_deg: 112.0
+
+    # TODO: Measure on this excavator at min_angle_deg.
+    raw_at_min_angle: 17550
+
+    # TODO: Measure on this excavator at max_angle_deg.
+    raw_at_max_angle: 12200
+
+
+  # --------------------------------------------------------------
+  # BUCKET
+  # --------------------------------------------------------------
+
+  bucket:
+    adc_channel: 0
+
+    min_angle_deg: 0.0
+    max_angle_deg: 90.0
+
+    # TODO: Measure on this excavator at min_angle_deg.
+    raw_at_min_angle: 20300
+
+    # TODO: Measure on this excavator at max_angle_deg.
+    raw_at_max_angle: 24200
+
+
+  # --------------------------------------------------------------
+  # SWING
+  # --------------------------------------------------------------
+  #
+  # Swing feedback comes from an external sensor adapter.
+  #
+  # These are bounds of the periodic angle representation.
+  # They are NOT physical stops or a cable-winding limit.
+  #
+  # The AprilTag adapter reports the site heading within +/-180 degrees.
+  # --------------------------------------------------------------
+
+  swing:
+    min_angle_deg: -180.0
+    max_angle_deg: 180.0
+
+
+# ================================================================
+# GPIO
+# ================================================================
+#
+# Verify the physical wiring before operating a new machine.
+#
+# These values follow the current excavator wiring layout and are a
+# starting point only.
+#
+# invert_motor controls the logical motor direction for each joint.
+# Verify every joint direction using small controlled motions.
+# ================================================================
+
+gpio:
+
+  standby_pin: 21
+  shared_pwm_pin: 7
+
+  swing:
+    in1_pin: 16
+    in2_pin: 20
+
+    # TODO: Verify on this excavator.
+    invert_motor: true
+
+  boom:
+    in1_pin: 8
+    in2_pin: 25
+
+    # TODO: Verify on this excavator.
+    invert_motor: true
+
+  arm:
+    in1_pin: 15
+    in2_pin: 14
+
+    # TODO: Verify on this excavator.
+    invert_motor: true
+
+  bucket:
+    in1_pin: 23
+    in2_pin: 24
+
+    # TODO: Verify on this excavator.
+    invert_motor: true
+
+
+# ================================================================
+# GLOBAL CONTROL PARAMETERS
+# ================================================================
+#
+# These values follow the current control architecture.
+#
+# Do NOT use controller tuning to compensate for:
+#
+#   - incorrect ADC calibration
+#   - incorrect motor direction
+#   - incorrect wiring
+#   - incorrect joint limits
+#
+# Verify those items first.
+# ================================================================
+
+control:
+
+  publish_hz: 10.0
+  control_hz: 50.0
+  feedback_hz: 10.0
+
+  goal_tolerance_rad: 0.035
+  stop_on_goal_finish: true
+
+  ads1115_address: 72
+  pwm_frequency_hz: 1000
+  pwm_arbitration: exclusive
+
+
+# ================================================================
+# STARTUP INITIAL POSITION
+# ================================================================
+#
+# This is the startup pose used before normal trajectory execution.
+#
+# When enabled in PI mode, the trajectory server:
+#
+#   1. waits for fresh Swing feedback
+#   2. performs startup preflight checks
+#   3. holds Swing at its observed heading
+#   4. corrects Boom
+#   5. corrects Arm
+#   6. corrects Bucket
+#   7. verifies the three targets and fresh Swing feedback
+#   8. becomes READY for normal trajectory goals
+#
+# Motors remain OFF while waiting for fresh Swing feedback.
+#
+# The startup pose is NOT a calibration definition. It is an
+# operational initial position and must be physically safe and
+# reachable on the new excavator.
+# ================================================================
+
+initial_position:
+
+  enabled: true
+  mode: preflight
+
+  # A joint already within this tolerance is skipped during startup
+  # correction.
+  tolerance_deg: 3.0
+
+  # Final READY verification uses a slightly wider tolerance to avoid
+  # rejecting a successful initialization because of small sensor noise
+  # or coast after motor stop.
+  verification_tolerance_deg: 5.0
+
+  current_limit_tolerance_deg: 1.0
+  limit_margin_deg: 3.0
+
+  # Also used as the startup wait timeout for fresh Swing feedback.
+  timeout_sec: 25.0
+
+  # --------------------------------------------------------------
+  # STARTUP CORRECTION PARAMETERS
+  # --------------------------------------------------------------
+  #
+  # Production startup corrects boom, arm, and bucket one at a time
+  # while holding the swing motor off.
+  #
+  # Safety checks include:
+  #
+  #   - continuous sensor feedback
+  #   - physical-limit checks
+  #   - 10-degree wrong-way detection
+  #   - per-joint timeout
+  #
+  # TODO:
+  #   Validate PWM and pulse timing on each physical excavator.
+  # --------------------------------------------------------------
+
+  boom_pwm: 140
+  boom_timeout_sec: 5.0
+  boom_wrong_way_deg: 10.0
+
+  arm_pwm: 140
+  arm_timeout_sec: 5.0
+  arm_wrong_way_deg: 10.0
+
+  bucket_pwm: 80
+  bucket_timeout_sec: 5.0
+  bucket_wrong_way_deg: 10.0
+
+  # TODO:
+  #   Select and physically verify safe boom, arm, bucket startup targets.
+  positions:
+    boom: -10.0
+    arm: 60.0
+    bucket: 0.0
+
+
+# ================================================================
+# PER-JOINT CONTROL PARAMETERS
+# ================================================================
+#
+# These values provide a baseline based on the current working control
+# configuration. Individual machines may require tuning because of:
+#
+#   - mechanical friction
+#   - linkage geometry
+#   - motor behavior
+#   - sensor noise
+#   - battery / supply conditions
+#
+# Start with small, controlled motions when validating a new machine.
+# ================================================================
+
+joint_control:
+
+  # --------------------------------------------------------------
+  # SWING
+  # --------------------------------------------------------------
+  #
+  # Swing feedback is external. Change excavatorX below to the actual
+  # excavator name used at the top of this file.
+  #
+  # Example:
+  #   /excavator6/swing_joint_state
+  #
+  # Commands specify headings within +/-180 degrees; observed heading wraps.
+  # --------------------------------------------------------------
+
+  swing:
+
+    # TODO: Replace excavatorX with the actual excavator name.
+    position_topic: /excavator2/swing_joint_state
+    sensor_timeout_sec: 1.0
+
+    # TODO: Physically verify the safe commanded range.
+    command_min_angle_deg: -180.0
+    command_max_angle_deg: 180.0
+
+    far_error_deg: 30.0
+    far_pwm: 255
+    near_pwm: 255
+
+    stop_tolerance_rad: 0.1396  # 8 degrees
+    tolerance_rad: 0.2618       # 15 degrees
+
+    pulse_err_deg: 30.0
+    pulse_on_cycles: 2
+    pulse_off_cycles: 4
+
+    # Allow camera frame gaps and swing motor startup before declaring a stall.
+    progress_timeout_sec: 1.5
+    min_progress_deg: 1.0
+
+
+  # --------------------------------------------------------------
+  # BOOM
+  # --------------------------------------------------------------
+
+  boom:
+
+    kp: 120.0
+
+    min_pwm: 130
+    max_pwm: 255
+    kick_pwm: 180
+
+    stop_tolerance_rad: 0.0524  # 3 degrees
+    tolerance_rad: 0.1745       # 10 degrees
+
+
+  # --------------------------------------------------------------
+  # ARM
+  # --------------------------------------------------------------
+
+  arm:
+
+    kp: 120.0
+
+    min_pwm: 180
+    max_pwm: 220
+    kick_pwm: 180
+
+    stop_tolerance_rad: 0.1396  # 8 degrees
+    tolerance_rad: 0.2618       # 15 degrees
+
+
+  # --------------------------------------------------------------
+  # BUCKET
+  # --------------------------------------------------------------
+
+  bucket:
+
+    kp: 70.0
+
+    min_pwm: 40
+    max_pwm: 150
+    kick_pwm: 80
+
+    stop_tolerance_rad: 0.1745  # 10 degrees
+    tolerance_rad: 0.2618       # 15 degrees
