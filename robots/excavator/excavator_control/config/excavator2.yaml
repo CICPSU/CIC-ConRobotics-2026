@@ -69,7 +69,7 @@ joints:
   # --------------------------------------------------------------
 
   boom:
-    adc_channel: 1
+    adc_channel: 2
 
     min_angle_deg: -60.0
     max_angle_deg: 5.0
@@ -86,7 +86,7 @@ joints:
   # --------------------------------------------------------------
 
   arm:
-    adc_channel: 2
+    adc_channel: 1
 
     min_angle_deg: 52.0
     max_angle_deg: 112.0
@@ -153,29 +153,21 @@ gpio:
   swing:
     in1_pin: 16
     in2_pin: 20
-
-    # TODO: Verify on this excavator.
     invert_motor: true
 
   boom:
     in1_pin: 8
     in2_pin: 25
-
-    # TODO: Verify on this excavator.
     invert_motor: true
 
   arm:
     in1_pin: 15
     in2_pin: 14
-
-    # TODO: Verify on this excavator.
     invert_motor: true
 
   bucket:
     in1_pin: 23
     in2_pin: 24
-
-    # TODO: Verify on this excavator.
     invert_motor: true
 
 
