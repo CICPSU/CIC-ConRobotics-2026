@@ -103,6 +103,22 @@ def test_watchdog_counts_forward_progress_across_wrap():
     assert motor._swing_fault is None
 
 
+def test_progress_watchdog_allows_startup_then_stops_stalled_swing():
+    motor = make_motor()
+    motor.cfg.progress_timeout_sec = 1.5
+    motor.cfg.sensor_timeout_sec = 1.0
+    motor.update_position(math.radians(-90))
+    motor.plan_toward_target(math.radians(-45), +1)
+    motor._watch_started -= 0.4
+    motor.update_position(math.radians(-90))
+    assert motor.plan_toward_target(math.radians(-45), +1)[3] == 1
+    assert motor._swing_fault is None
+    motor._watch_started -= 1.2
+    motor.update_position(math.radians(-90))
+    assert motor.plan_toward_target(math.radians(-45), +1)[3:] == (0, 0)
+    assert "not making sufficient progress" in motor._swing_fault
+
+
 def test_explicit_negative_direction_persists_across_wrap_and_arrives():
     motor = make_motor()
     motor.update_position(math.radians(-175))

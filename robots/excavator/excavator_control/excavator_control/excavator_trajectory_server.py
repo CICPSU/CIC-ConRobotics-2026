@@ -1448,7 +1448,7 @@ class PiExcavatorTrajectoryServer(Node):
                     near_pwm=int(swing_control.get("near_pwm", 220)),
                     sensor_timeout_sec=swing_sensor_timeout_sec,
                     progress_timeout_sec=float(
-                        swing_control.get("progress_timeout_sec", 0.35)
+                        swing_control.get("progress_timeout_sec", 1.5)
                     ),
                     min_progress_rad=math.radians(
                         float(swing_control.get("min_progress_deg", 1.0))
@@ -2279,10 +2279,6 @@ class PiExcavatorTrajectoryServer(Node):
         names = list(goal_request.trajectory.joint_names)
         points = goal_request.trajectory.points
 
-        if "swing_joint" in names and not self.joints["swing_joint"].sensor_valid():
-            self.get_logger().warn("[GOAL REJECTED] Swing feedback is stale or missing.")
-            return GoalResponse.REJECT
-
         try:
             validate_joint_targets(
                 joint_names=names,
@@ -2347,6 +2343,40 @@ class PiExcavatorTrajectoryServer(Node):
             result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
             result.error_string = "No valid waypoints"
             return result # if there are no valid points, it rejects/aborts the movement and returns an error 
+
+        # A camera frame can arrive just after goal admission. Wait while all
+        # motors are off; only start the trajectory clock after fresh feedback.
+        # Keep the in-motion sensor watchdog independent at 1 second.
+        if "swing_joint" in joint_names:
+            swing = self.joints["swing_joint"]
+            feedback_wait_deadline = time.monotonic() + 5.0
+            if not swing.sensor_valid():
+                self.get_logger().warn(
+                    "[PI] Waiting up to 5.0s for fresh swing feedback "
+                    "before moving; motors OFF."
+                )
+            while not swing.sensor_valid() and rclpy.ok():
+                self._stop_all()
+                if goal_handle.is_cancel_requested:
+                    goal_handle.canceled()
+                    result.error_code = FollowJointTrajectory.Result.SUCCESSFUL
+                    result.error_string = "Canceled while waiting for swing feedback"
+                    return result
+                if time.monotonic() >= feedback_wait_deadline:
+                    self._stop_all()
+                    goal_handle.abort()
+                    result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+                    result.error_string = (
+                        "No fresh swing feedback within 5.0s before motion "
+                        f"(age={swing.sensor_age_sec():.2f}s)"
+                    )
+                    self.get_logger().error(f"[PI] {result.error_string}")
+                    return result
+                time.sleep(0.05)
+            if not rclpy.ok():
+                self._stop_all()
+                goal_handle.abort()
+                return result
 
         duration = waypoints[-1].t # gets the total length of the trajectory, it uses the time of the last waypoint
         final_positions = list(waypoints[-1].positions) 

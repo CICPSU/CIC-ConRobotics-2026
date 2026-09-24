@@ -343,7 +343,8 @@ joint_control:
     pulse_on_cycles: 2
     pulse_off_cycles: 4
 
-    progress_timeout_sec: 0.35
+    # Allow camera frame gaps and swing motor startup before declaring a stall.
+    progress_timeout_sec: 1.5
     min_progress_deg: 1.0
 
 
