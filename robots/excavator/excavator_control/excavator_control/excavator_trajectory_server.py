@@ -70,6 +70,7 @@ from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 from excavator_control.config_loader import load_excavator_config
+from excavator_control.swing_angles import shortest_angle_error
 from excavator_control.goal_validation import (
     ExcavatorGoalValidationError,
     validate_joint_targets,
@@ -875,7 +876,7 @@ class ExternalSwingJointMotor:
             if self._last_sensor_position is not None and self._last_sensor_time is not None:
                 dt = max(1e-6, now - self._last_sensor_time)
                 self._last_velocity_rad_s = (
-                    position_rad - self._last_sensor_position
+                    shortest_angle_error(position_rad, self._last_sensor_position)
                 ) / dt
             else:
                 self._last_velocity_rad_s = 0.0
@@ -943,21 +944,12 @@ class ExternalSwingJointMotor:
     ) -> Tuple[float, float, bool, int, int]:
         pos = self.read_position_rad()
         self._last_requested_target_rad = target_rad
-        target_rad = clamp(
-            target_rad,
-            self.cfg.angle_min_rad,
-            self.cfg.angle_max_rad,
-        )
         self._last_effective_target_rad = target_rad
-        err = target_rad - pos
+        err = shortest_angle_error(target_rad, pos)
         abs_err = abs(err)
 
         if self._swing_fault is not None:
             return pos, err, False, 0, 0
-
-        if self._goal_reached_latched:
-            self._reset_progress_watch()
-            return pos, err, True, 0, 0
 
         if not self.sensor_valid():
             self._swing_fault = (
@@ -968,7 +960,7 @@ class ExternalSwingJointMotor:
             self._reset_progress_watch()
             return pos, err, False, 0, 0
 
-        if pos < self.cfg.angle_min_rad or pos > self.cfg.angle_max_rad:
+        if pos < self.cfg.angle_min_rad - 1e-6 or pos > self.cfg.angle_max_rad + 1e-6:
             self._swing_fault = (
                 f"swing feedback outside configured range: "
                 f"{math.degrees(pos):.2f} deg"
@@ -976,19 +968,16 @@ class ExternalSwingJointMotor:
             self._reset_progress_watch()
             return pos, err, False, 0, 0
 
+        if self._goal_reached_latched:
+            self._reset_progress_watch()
+            return pos, err, True, 0, 0
+
         if abs_err <= self.cfg.stop_tolerance_rad:
             self._goal_reached_latched = True
             self._reset_progress_watch()
             return pos, err, True, 0, 0
 
         direction = 1 if err > 0.0 else -1
-
-        if direction > 0 and pos >= self.cfg.angle_max_rad:
-            self._reset_progress_watch()
-            return pos, err, True, 0, 0
-        if direction < 0 and pos <= self.cfg.angle_min_rad:
-            self._reset_progress_watch()
-            return pos, err, True, 0, 0
 
         if direction != self._watch_direction:
             self._watch_direction = direction
@@ -999,7 +988,7 @@ class ExternalSwingJointMotor:
             and time.monotonic() - self._watch_started
             >= self.cfg.progress_timeout_sec
         ):
-            progress = (pos - self._watch_position) * direction
+            progress = shortest_angle_error(pos, self._watch_position) * direction
             if progress < self.cfg.min_progress_rad:
                 # The controller aims for stop_tolerance_rad, but a joint
                 # already inside tolerance_rad is operationally acceptable.
@@ -1222,9 +1211,10 @@ class PiExcavatorTrajectoryServer(Node):
         self.initialization_mode = str(
             initial_position.get("mode", "preflight")
         ).strip().lower()
-        if self.initialization_mode not in ("preflight", "swing_test", "arm_test", "move"):
+        if self.initialization_mode not in ("preflight", "arm_test", "move"):
             raise RuntimeError(
-                "initial_position.mode must be 'preflight', 'swing_test', 'arm_test', or 'move'"
+                "initial_position.mode must be 'preflight', 'arm_test', or 'move'; "
+                "swing startup motion is disabled"
             )
         self.initialization_limit_margin_rad = math.radians(
             float(initial_position.get("limit_margin_deg", 3.0))
@@ -1247,29 +1237,7 @@ class PiExcavatorTrajectoryServer(Node):
         self.initialization_current_limit_tolerance_rad = math.radians(
             float(initial_position.get("current_limit_tolerance_deg", 1.0))
         )
-        # Deliberately conservative, one-axis startup test settings.  These are
-        # used only by initial_position.mode=swing_test; normal trajectory
-        # control is unchanged.
-        self.initialization_swing_test_pwm = int(
-            clamp(float(initial_position.get("swing_test_pwm", 160)), 0, 255)
-        )
-        self.initialization_swing_test_timeout_sec = float(
-            initial_position.get("swing_test_timeout_sec", 4.0)
-        )
-        self.initialization_swing_test_max_travel_rad = math.radians(
-            float(initial_position.get("swing_test_max_travel_deg", 12.0))
-        )
-        self.initialization_swing_test_wrong_way_rad = math.radians(
-            float(initial_position.get("swing_test_wrong_way_deg", 1.5))
-        )
-        self.initialization_swing_test_on_sec = float(
-            initial_position.get("swing_test_on_sec", 0.04)
-        )
-        self.initialization_swing_test_off_sec = float(
-            initial_position.get("swing_test_off_sec", 0.08)
-        )
-        # Arm-only commissioning settings. These are intentionally
-        # independent from normal trajectory control and from the swing test.
+        # Arm-only commissioning settings, independent from trajectory control.
         self.initialization_arm_test_pwm = int(
             clamp(float(initial_position.get("arm_test_pwm", 140)), 0, 255)
         )
@@ -1288,11 +1256,10 @@ class PiExcavatorTrajectoryServer(Node):
         self.initialization_arm_test_off_sec = float(
             initial_position.get("arm_test_off_sec", 0.10)
         )
-        # Production startup correction settings. Every joint is moved
+        # Startup correction settings for boom, arm, and bucket. Each is moved
         # continuously, one axis at a time, while guarded by physical-limit,
         # wrong-way, feedback, target-crossing, and timeout checks.
         default_prod = {
-            "swing_joint": (160, 5.0, 10.0),
             "boom_joint": (140, 5.0, 10.0),
             "arm_joint": (140, 5.0, 10.0),
             "bucket_joint": (80, 5.0, 10.0),
@@ -1307,12 +1274,16 @@ class PiExcavatorTrajectoryServer(Node):
                 "wrong_way_rad": math.radians(float(initial_position.get(f"{short}_wrong_way_deg", wrong_way_deg))),
             }
         initial_positions = initial_position.get("positions", {})
+        if isinstance(initial_positions, dict) and "swing" in initial_positions:
+            self.get_logger().warn(
+                "Ignoring initial_position.positions.swing: startup never moves swing."
+            )
         if self.initialize_on_startup:
             if not isinstance(initial_positions, dict):
                 raise RuntimeError(
                     "initial_position.positions must be a YAML mapping"
                 )
-            required_initial_joints = ("swing", "boom", "arm", "bucket")
+            required_initial_joints = ("boom", "arm", "bucket")
             missing_initial_joints = [
                 name for name in required_initial_joints
                 if name not in initial_positions
@@ -1326,15 +1297,14 @@ class PiExcavatorTrajectoryServer(Node):
         self.initial_position = {
             f"{name}_joint": math.radians(float(value))
             for name, value in initial_positions.items()
-            if name in ("swing", "boom", "arm", "bucket")
+            if name in ("boom", "arm", "bucket")
         }
         self.initialization_complete = not self.initialize_on_startup
         self.initialization_failed = False
 
-        # Command limits validate every FollowJointTrajectory goal before
-        # hardware can move. Swing deliberately uses a narrower command
-        # range than its hard observed range so normal coast is measurable
-        # without allowing goals near the physical boundary.
+        # Swing is a periodic site heading. Its +/-180 degree representation
+        # bounds are not mechanical stops; shortest-angle control may cross
+        # either side of the representation boundary.
         self.joint_limits_rad = {
             "swing_joint": (
                 math.radians(swing_command_min_deg),
@@ -1354,10 +1324,8 @@ class PiExcavatorTrajectoryServer(Node):
             ),
         }
 
-        # Current feedback is checked against physical/hard limits, not the
-        # narrower normal-command envelope. Swing is the important distinction:
-        # coast can legitimately leave it just outside +/-95 deg while still
-        # remaining inside the observed physical range of +/-105 deg.
+        # For swing these are bounds on the reported angle representation,
+        # not physical end stops. The remaining joints have physical limits.
         self.joint_physical_limits_rad = {
             "swing_joint": (
                 math.radians(swing_hard_min_deg),
@@ -1643,7 +1611,7 @@ class PiExcavatorTrajectoryServer(Node):
         )
         self.get_logger().warn("  Calibrate adc_min/adc_max for boom/arm/bucket before real operation!")
         self.get_logger().warn(
-            "  Swing remains disabled until fresh external feedback arrives."
+            "  Swing motion requires fresh external feedback. Startup keeps its current heading."
         )
 
         if self.initialize_on_startup:
@@ -1660,7 +1628,7 @@ class PiExcavatorTrajectoryServer(Node):
             else:
                 self.get_logger().warn(
                     "  Startup initialization MOVE mode enabled. Waiting for ROS callbacks "
-                    "before moving to the configured initial pose: "
+                    "before moving boom/arm/bucket to the configured initial pose: "
                     + targets_deg
                 )
             # Do not initialize inside __init__. Swing feedback arrives through
@@ -1755,7 +1723,7 @@ class PiExcavatorTrajectoryServer(Node):
             self._initialization_wait_log_time = elapsed
 
     def _run_startup_initialization_once(self) -> None:
-        """Run configured four-joint initialization after fresh swing feedback."""
+        """Initialize boom/arm/bucket after observing the stationary swing."""
         if self.initialization_mode == "preflight":
             success = self.preflight_initial_position()
             # Pre-flight deliberately never makes the excavator operational.
@@ -1771,24 +1739,6 @@ class PiExcavatorTrajectoryServer(Node):
                 self.get_logger().error(
                     "[INITIALIZATION PRE-FLIGHT] FAILED - motors remained OFF. "
                     "Trajectory commands will be rejected."
-                )
-            return
-
-        if self.initialization_mode == "swing_test":
-            success = self.swing_only_initialization_test()
-            # A one-axis commissioning test never makes the full excavator
-            # operational.  Normal trajectory goals remain rejected even if
-            # swing reaches its target successfully.
-            self.initialization_complete = False
-            self.initialization_failed = not success
-            if success:
-                self.get_logger().warn(
-                    "[SWING-ONLY TEST] PASSED - swing reached the startup target. "
-                    "Other joints were never energized; trajectory commands remain REJECTED."
-                )
-            else:
-                self.get_logger().error(
-                    "[SWING-ONLY TEST] FAILED - all motors are OFF and trajectory commands remain REJECTED."
                 )
             return
 
@@ -1846,7 +1796,19 @@ class PiExcavatorTrajectoryServer(Node):
             ok = False
 
         corrections = []
-        for joint_name in ("swing_joint", "boom_joint", "arm_joint", "bucket_joint"):
+        if swing is not None and swing.sensor_valid():
+            current_swing = float(swing.read_position_rad())
+            if not (math.isfinite(current_swing) and
+                    self.joint_limits_rad["swing_joint"][0] - 1e-6 <= current_swing <=
+                    self.joint_limits_rad["swing_joint"][1] + 1e-6):
+                self.get_logger().error("[INITIALIZATION PRE-FLIGHT] Invalid swing heading.")
+                ok = False
+            else:
+                self.get_logger().info(
+                    f"[INITIALIZATION PRE-FLIGHT] swing_joint: current="
+                    f"{math.degrees(current_swing):.2f} deg; HOLD (no startup motion)."
+                )
+        for joint_name in ("boom_joint", "arm_joint", "bucket_joint"):
             joint = self.joints[joint_name]
             current = float(joint.read_position_rad())
             target = self.initial_position[joint_name]
@@ -1905,156 +1867,6 @@ class PiExcavatorTrajectoryServer(Node):
 
         self._stop_all()
         return ok
-
-    def swing_only_initialization_test(self) -> bool:
-        """Commission startup motion using *only* the swing joint.
-
-        This is intentionally separate from normal trajectory execution.  It
-        first runs the full no-motion preflight, then allows only swing to
-        receive direction/PWM.  Boom, arm, and bucket are stopped on every
-        cycle.  Fresh feedback, hard limits, maximum travel, timeout, and
-        wrong-way motion are checked continuously.  Passing this test does
-        not mark the excavator READY.
-        """
-        self._stop_all()
-        if not self.preflight_initial_position():
-            self.get_logger().error(
-                "[SWING-ONLY TEST] Preflight failed; refusing to energize swing."
-            )
-            return False
-
-        swing = self.joints.get("swing_joint")
-        if swing is None or not swing.sensor_valid():
-            self.get_logger().error(
-                "[SWING-ONLY TEST] Fresh swing feedback is required."
-            )
-            return False
-
-        target = self.initial_position["swing_joint"]
-        cmd_lower, cmd_upper = self.joint_limits_rad["swing_joint"]
-        hard_lower, hard_upper = self.joint_physical_limits_rad["swing_joint"]
-        start_pos = float(swing.read_position_rad())
-        start_error = target - start_pos
-
-        if not (cmd_lower <= target <= cmd_upper):
-            self.get_logger().error(
-                "[SWING-ONLY TEST] Target is outside the swing command range."
-            )
-            return False
-        if not (hard_lower <= start_pos <= hard_upper):
-            self.get_logger().error(
-                "[SWING-ONLY TEST] Starting feedback is outside the swing hard range."
-            )
-            return False
-        if abs(start_error) <= self.initialization_tolerance_rad:
-            self.get_logger().warn(
-                f"[SWING-ONLY TEST] SKIP - already at target: "
-                f"current={math.degrees(start_pos):.2f} deg, "
-                f"target={math.degrees(target):.2f} deg."
-            )
-            self._stop_all()
-            return True
-
-        desired_direction = 1 if start_error > 0.0 else -1
-        # The test may recover from a position just outside the narrower
-        # command envelope (e.g. +95.8 deg) only when the requested direction
-        # points back toward the target/interior.
-        if start_pos > cmd_upper and desired_direction >= 0:
-            self.get_logger().error(
-                "[SWING-ONLY TEST] Refusing motion farther above command max."
-            )
-            return False
-        if start_pos < cmd_lower and desired_direction <= 0:
-            self.get_logger().error(
-                "[SWING-ONLY TEST] Refusing motion farther below command min."
-            )
-            return False
-
-        self.get_logger().warn(
-            "[SWING-ONLY TEST] ENERGIZING SWING ONLY: "
-            f"current={math.degrees(start_pos):.2f} deg -> "
-            f"target={math.degrees(target):.2f} deg, "
-            f"PWM={self.initialization_swing_test_pwm}, "
-            f"pulse={self.initialization_swing_test_on_sec:.2f}s ON/"
-            f"{self.initialization_swing_test_off_sec:.2f}s OFF, "
-            f"max_travel={math.degrees(self.initialization_swing_test_max_travel_rad):.1f} deg."
-        )
-
-        start_time = time.monotonic()
-        last_log = 0.0
-        try:
-            while rclpy.ok():
-                now = time.monotonic()
-                if now - start_time > self.initialization_swing_test_timeout_sec:
-                    self.get_logger().error(
-                        "[SWING-ONLY TEST] Timeout; stopping swing."
-                    )
-                    return False
-                if not swing.sensor_valid():
-                    self.get_logger().error(
-                        "[SWING-ONLY TEST] Swing feedback became stale; stopping immediately."
-                    )
-                    return False
-
-                pos = float(swing.read_position_rad())
-                error = target - pos
-                travel = pos - start_pos
-
-                if pos < hard_lower or pos > hard_upper:
-                    self.get_logger().error(
-                        f"[SWING-ONLY TEST] HARD LIMIT violation: {math.degrees(pos):.2f} deg."
-                    )
-                    return False
-                if abs(travel) > self.initialization_swing_test_max_travel_rad:
-                    self.get_logger().error(
-                        f"[SWING-ONLY TEST] Maximum test travel exceeded: "
-                        f"{math.degrees(travel):+.2f} deg."
-                    )
-                    return False
-                if travel * desired_direction < -self.initialization_swing_test_wrong_way_rad:
-                    self.get_logger().error(
-                        f"[SWING-ONLY TEST] WRONG-WAY motion detected: "
-                        f"travel={math.degrees(travel):+.2f} deg; stopping immediately."
-                    )
-                    return False
-
-                # Stop on tolerance or as soon as feedback crosses the target.
-                crossed_target = error * start_error <= 0.0
-                if abs(error) <= self.initialization_tolerance_rad or crossed_target:
-                    self.get_logger().warn(
-                        f"[SWING-ONLY TEST] Target reached: "
-                        f"current={math.degrees(pos):.2f} deg, "
-                        f"target={math.degrees(target):.2f} deg, "
-                        f"travel={math.degrees(travel):+.2f} deg."
-                    )
-                    return True
-
-                # Ensure every non-swing direction pin is held OFF.
-                for name, joint in self.joints.items():
-                    if name != "swing_joint":
-                        joint.stop()
-                swing.drive_direction(desired_direction, self.initialization_swing_test_pwm)
-                self.pi.set_PWM_dutycycle(
-                    self.shared_pwm_pin, self.initialization_swing_test_pwm
-                )
-                time.sleep(self.initialization_swing_test_on_sec)
-
-                # Coast/read phase: no motor receives shared PWM.
-                self.pi.set_PWM_dutycycle(self.shared_pwm_pin, 0)
-                swing.stop()
-                time.sleep(self.initialization_swing_test_off_sec)
-
-                if now - last_log >= 0.25:
-                    self.get_logger().info(
-                        f"[SWING-ONLY TEST] current={math.degrees(pos):.2f} deg, "
-                        f"error={math.degrees(error):+.2f} deg, "
-                        f"travel={math.degrees(travel):+.2f} deg"
-                    )
-                    last_log = now
-        finally:
-            self._stop_all()
-
-        return False
 
     def arm_only_initialization_test(self) -> bool:
         """Commission startup motion using *only* the arm joint.
@@ -2346,15 +2158,23 @@ class PiExcavatorTrajectoryServer(Node):
         return False
 
     def _verify_initial_position(self) -> bool:
-        """Require all four measured positions to be within startup tolerance."""
+        """Verify three initial targets and fresh, valid swing feedback."""
         self._stop_all()
         all_ok = True
-        for joint_name in ("swing_joint", "boom_joint", "arm_joint", "bucket_joint"):
+        swing = self.joints["swing_joint"]
+        swing_pos = float(swing.read_position_rad())
+        swing_low, swing_high = self.joint_limits_rad["swing_joint"]
+        if (not swing.sensor_valid() or not math.isfinite(swing_pos) or
+                not swing_low - 1e-6 <= swing_pos <= swing_high + 1e-6):
+            self.get_logger().error("[INITIALIZATION FINAL] swing feedback stale or invalid.")
+            all_ok = False
+        else:
+            self.get_logger().info(
+                f"[INITIALIZATION FINAL] swing_joint: HOLD current="
+                f"{math.degrees(swing_pos):.2f} deg, status=OK"
+            )
+        for joint_name in ("boom_joint", "arm_joint", "bucket_joint"):
             joint = self.joints[joint_name]
-            if joint_name == "swing_joint" and not joint.sensor_valid():
-                self.get_logger().error("[INITIALIZATION FINAL] swing feedback is stale.")
-                all_ok = False
-                continue
             pos = float(joint.read_position_rad())
             target = self.initial_position[joint_name]
             error = target - pos
@@ -2371,10 +2191,10 @@ class PiExcavatorTrajectoryServer(Node):
         return all_ok
 
     def move_to_initial_position(self) -> bool:
-        """Sequentially initialize all four joints, then verify the complete pose."""
+        """Initialize three joints sequentially; never move startup swing."""
         self._stop_all()
         self.get_logger().warn(
-            "[INITIALIZATION] Production four-joint sequential initialization starting."
+            "[INITIALIZATION] Three-joint startup; swing remains stationary."
         )
         if not self.preflight_initial_position():
             self.get_logger().error("[INITIALIZATION] Preflight failed; no motion allowed.")
@@ -2382,7 +2202,7 @@ class PiExcavatorTrajectoryServer(Node):
 
         # Fixed order keeps startup deterministic and guarantees only one axis
         # is energized at a time. Joints already within tolerance are skipped.
-        for joint_name in ("swing_joint", "boom_joint", "arm_joint", "bucket_joint"):
+        for joint_name in ("boom_joint", "arm_joint", "bucket_joint"):
             if not self._correct_initial_joint(joint_name):
                 self._stop_all()
                 self.get_logger().error(
@@ -2397,7 +2217,7 @@ class PiExcavatorTrajectoryServer(Node):
             )
             return False
         self.get_logger().info(
-            "[INITIALIZATION] FINAL VERIFICATION PASSED for all four joints."
+            "[INITIALIZATION] FINAL VERIFICATION PASSED (three targets and swing feedback)."
         )
         return True
 
@@ -2416,6 +2236,10 @@ class PiExcavatorTrajectoryServer(Node):
 
         names = list(goal_request.trajectory.joint_names)
         points = goal_request.trajectory.points
+
+        if "swing_joint" in names and not self.joints["swing_joint"].sensor_valid():
+            self.get_logger().warn("[GOAL REJECTED] Swing feedback is stale or missing.")
+            return GoalResponse.REJECT
 
         try:
             validate_joint_targets(

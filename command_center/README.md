@@ -126,7 +126,7 @@ Fresh Swing Feedback
      Preflight
         │
         ▼
- Initial Position
+ Boom/Arm/Bucket Initial Position
         │
         ▼
 Final Joint Verification
@@ -473,7 +473,7 @@ The physical excavator trajectory server does not immediately accept
 motion goals at startup.
 
 It waits for fresh swing feedback from the overhead AprilTag system and
-then performs startup initialization.
+then initializes boom, arm, and bucket while holding the observed swing heading.
 
 ``` text
 Server Starts
@@ -485,7 +485,7 @@ Wait for Fresh Swing Feedback
 Preflight
      │
      ▼
-Initialize Swing
+Hold Observed Swing Heading
      │
      ▼
 Initialize Boom
@@ -497,7 +497,7 @@ Initialize Arm
 Initialize Bucket
      │
      ▼
-Final Four-Joint Verification
+Verify Three Targets and Swing Feedback
      │
      ▼
 READY
@@ -510,6 +510,13 @@ Do not send a physical trajectory until the excavator reports that
 initialization completed successfully.
 
 ### 3.6 Trajectory Safety
+
+Swing goals are site-frame headings in the range -180 to 180 degrees.
+The controller chooses the shortest rotation across the +/-180 boundary.
+The startup process does not move swing and does not track cable winding.
+A trajectory that begins at a fixed swing heading will move there even
+when the machine started facing a different direction. Confirm its
+starting heading and clear the swept area before each physical run.
 
 Trajectory validation checks software structure and configured limits.
 It does **not** independently prove that a physical motion is safe.

@@ -1,3 +1,5 @@
+# Fixed site-frame swing targets: first target 90 degrees may turn the robot
+# from any starting heading. Check measured heading and swept area before use.
 trajectory_name: excavator3_excavation_cycle_test
 description: Combined excavation, swing, dumping, and return cycle for excavator 3.
 

@@ -121,16 +121,15 @@ joints:
   #
   # Swing feedback comes from an external sensor adapter.
   #
-  # These are hard physical / observed limits, NOT the normal
-  # commanded operating range.
+  # These are bounds of the periodic angle representation.
+  # They are NOT physical stops or a cable-winding limit.
   #
-  # TODO:
-  #   Physically verify these limits for the new excavator.
+  # The AprilTag adapter reports the site heading within +/-180 degrees.
   # --------------------------------------------------------------
 
   swing:
-    min_angle_deg: -105.0
-    max_angle_deg: 105.0
+    min_angle_deg: -180.0
+    max_angle_deg: 180.0
 
 
 # ================================================================
@@ -220,11 +219,11 @@ control:
 #
 #   1. waits for fresh Swing feedback
 #   2. performs startup preflight checks
-#   3. corrects Swing
+#   3. holds Swing at its observed heading
 #   4. corrects Boom
 #   5. corrects Arm
 #   6. corrects Bucket
-#   7. performs final four-joint verification
+#   7. verifies the three targets and fresh Swing feedback
 #   8. becomes READY for normal trajectory goals
 #
 # Motors remain OFF while waiting for fresh Swing feedback.
@@ -258,8 +257,8 @@ initial_position:
   # STARTUP CORRECTION PARAMETERS
   # --------------------------------------------------------------
   #
-  # Production startup corrects one joint at a time using short,
-  # guarded motor pulses.
+  # Production startup corrects boom, arm, and bucket one at a time
+  # while holding the swing motor off.
   #
   # Safety checks include:
   #
@@ -271,10 +270,6 @@ initial_position:
   # TODO:
   #   Validate PWM and pulse timing on each physical excavator.
   # --------------------------------------------------------------
-
-  swing_pwm: 160
-  swing_timeout_sec: 5.0
-  swing_wrong_way_deg: 10.0
 
   boom_pwm: 140
   boom_timeout_sec: 5.0
@@ -289,9 +284,8 @@ initial_position:
   bucket_wrong_way_deg: 10.0
 
   # TODO:
-  #   Select and physically verify a safe startup pose for this machine.
+  #   Select and physically verify safe boom, arm, bucket startup targets.
   positions:
-    swing: 90.0
     boom: -10.0
     arm: 60.0
     bucket: 0.0
@@ -325,8 +319,7 @@ joint_control:
   # Example:
   #   /excavator6/swing_joint_state
   #
-  # command_min_angle_deg / command_max_angle_deg define the normal
-  # commanded range and should remain inside the hard limits above.
+  # command_min_angle_deg / command_max_angle_deg define the allowed site heading representation (-180 to 180 degrees).
   # --------------------------------------------------------------
 
   swing:
@@ -336,8 +329,8 @@ joint_control:
     sensor_timeout_sec: 0.30
 
     # TODO: Physically verify the safe commanded range.
-    command_min_angle_deg: -95.0
-    command_max_angle_deg: 95.0
+    command_min_angle_deg: -180.0
+    command_max_angle_deg: 180.0
 
     far_error_deg: 30.0
     far_pwm: 255

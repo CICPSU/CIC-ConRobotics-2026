@@ -121,7 +121,7 @@ waypoints:
       bucket: 35.0    # REPLACE with approved target angle
 ```
 
-For Excavator 3, the configured startup target is `swing=90, boom=-10, arm=60, bucket=0` degrees; the example bucket target of 35 degrees is a visible but limited motion from that pose. These are **not universal angles**. The instructor must verify the actual pose. All targets are in degrees. Save the file before running it.
+For Excavator 3, the configured startup targets are `boom=-10, arm=60, bucket=0` degrees; swing holds its observed heading; the example bucket target of 35 degrees is a visible but limited motion from that pose. These are **not universal angles**. The instructor must verify the actual pose. All targets are in degrees. Save the file before running it.
 
 > The `joints` list controls which joints the trajectory commands. Each waypoint must contain a position for **every joint listed**, with no extra joint positions. You are writing a motion trajectory, not editing the robot's calibration or GPIO configuration.
 
@@ -229,7 +229,7 @@ Add `swing` and `boom` to `joints`, and give **all four joints** a position at e
 Open/approach → lower → curl arm and bucket → lift → swing → dump → return
 ```
 
-Follow the approved ranges on your station card. Use `excavator3_lab02_example.yaml` as the **Excavator 3 classroom reference**. It begins at the configured initial pose and moves only to `boom=-25`, `arm=80`, `bucket=35`, and `swing=65` before returning. These example targets have not been physically tested for this lab. Confirm the READY pose, direction, and clearance with the instructor. Do not use its angles for another excavator.
+Follow the approved ranges on your station card. Use `excavator3_lab02_example.yaml` as the **Excavator 3 classroom reference**. Its example uses boom, arm, and bucket only; choose swing targets from the observed site heading when building your four-joint cycle. A fixed swing number commands a real turn from any other starting heading. These example targets have not been physically tested for this lab. Confirm the observed starting swing heading, direction, and clearance with the instructor. Plan swing moves of roughly 45 degrees or more for the first physical test; the former 90-to-65-degree example is no longer the commissioning test. Do not use its angles for another excavator.
 
 Run your file using the Step 4 command. The movement can be sequential; this exercise does not require all four motors to run at the same instant.
 

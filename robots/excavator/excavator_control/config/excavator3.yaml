@@ -39,9 +39,9 @@ joints:
     # Swing position comes from a sensor adapter publishing JointState.
     # The controller is deliberately independent of AprilTag or any future
     # replacement sensor.
-    # Hard observed range. This includes expected coast after motor stop.
-    min_angle_deg: -105.0
-    max_angle_deg: 105.0
+    # Periodic site-frame angle representation, NOT physical end stops.
+    min_angle_deg: -180.0
+    max_angle_deg: 180.0
 
 # ================================================================
 # GPIO
@@ -101,10 +101,8 @@ home:
 # ================================================================
 # STARTUP INITIAL POSITION
 # ================================================================
-# Scenario-start pose for Excavator 3. This is intentionally separate
-# from calibration/homing. When enabled, the controller waits until ROS
-# callbacks are active, moves all four joints to this pose, verifies the
-# targets, and only then accepts normal trajectory goals.
+# Swing stays at its observed starting heading. Fresh swing feedback is
+# required, then only boom, arm, and bucket move to these initial targets.
 
 initial_position:
   enabled: true
@@ -125,10 +123,6 @@ initial_position:
   # Production initialization moves one joint at a time with continuous drive.
   # Feedback, physical limits, wrong-way motion, target crossing, and per-joint
   # timeout are checked continuously while the selected joint is moving.
-  swing_pwm: 160
-  swing_timeout_sec: 5.0
-  swing_wrong_way_deg: 10.0
-
   boom_pwm: 140
   boom_timeout_sec: 5.0
   boom_wrong_way_deg: 10.0
@@ -142,7 +136,6 @@ initial_position:
   bucket_wrong_way_deg: 10.0
 
   positions:
-    swing: 90.0
     boom: -10.0
     arm: 60.0
     bucket: 0.0
@@ -157,9 +150,9 @@ joint_control:
     position_topic: /excavator3/swing_joint_state
     sensor_timeout_sec: 0.30
 
-    # Normal commanded range stays inside the hard observed range.
-    command_min_angle_deg: -95.0
-    command_max_angle_deg: 95.0
+    # Canonical site heading; +/-180 are the same direction.
+    command_min_angle_deg: -180.0
+    command_max_angle_deg: 180.0
 
     far_error_deg: 30.0
     far_pwm: 255
