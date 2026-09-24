@@ -173,7 +173,7 @@ joint_control:
   swing:
     position_topic: /excavator1/swing_joint_state
     # Allow brief camera/AprilTag gaps; motion stops if feedback is older.
-    sensor_timeout_sec: 0.75
+    sensor_timeout_sec: 1.0
 
     # Allowed target headings; feedback still spans the full circle.
     command_min_angle_deg: -180.0

@@ -1149,7 +1149,7 @@ class PiExcavatorTrajectoryServer(Node):
         )
         self.declare_parameter(
             "swing_sensor_timeout_sec",
-            float(swing_control.get("sensor_timeout_sec", 0.75)),
+            float(swing_control.get("sensor_timeout_sec", 1.0)),
         )
         self.declare_parameter(
             "swing_pulse_err_deg",

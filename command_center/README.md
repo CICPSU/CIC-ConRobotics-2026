@@ -523,7 +523,7 @@ observed heading before assigning clockwise or counterclockwise labels.
 The clients carry the sign in the `swing_joint` JointTrajectoryPoint velocity
 slot; that slot is a direction marker, not a speed. Other velocity slots are 0.
 Goals with missing or invalid swing direction are rejected by the Pi.
-The swing feedback timeout is 0.75 seconds; a longer loss stops motion.
+The swing feedback timeout is 1.0 second; a longer loss stops motion.
 The startup process does not move swing and does not track cable winding.
 A trajectory that begins at a fixed swing heading will move there even
 when the machine started facing a different direction. Confirm its
