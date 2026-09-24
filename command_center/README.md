@@ -364,6 +364,7 @@ joints:
 
 waypoints:
   - name: position_1
+    swing_direction: +1
     positions:
       swing: 90.0
       boom: -40.0
@@ -371,6 +372,7 @@ waypoints:
       bucket: 15.0
 
   - name: position_2
+    swing_direction: -1
     positions:
       swing: 45.0
       boom: -35.0
@@ -511,8 +513,17 @@ initialization completed successfully.
 
 ### 3.6 Trajectory Safety
 
-Swing goals are site-frame headings in the range -180 to 180 degrees.
-The controller chooses the shortest rotation across the +/-180 boundary.
+Swing targets are site-frame headings in the range -180 to 180 degrees.
+Every waypoint containing swing must include `swing_direction: +1` (increasing
+observed heading) or `swing_direction: -1` (decreasing observed heading).
+Observed headings wrap at +/-180; direction stays fixed through the wrap.
+For example, -175 to +95 with -1 travels about 90 degrees; with +1 it
+travels about 270 degrees. Verify which physical rotation increases the
+observed heading before assigning clockwise or counterclockwise labels.
+The clients carry the sign in the `swing_joint` JointTrajectoryPoint velocity
+slot; that slot is a direction marker, not a speed. Other velocity slots are 0.
+Goals with missing or invalid swing direction are rejected by the Pi.
+The swing feedback timeout is 0.75 seconds; a longer loss stops motion.
 The startup process does not move swing and does not track cable winding.
 A trajectory that begins at a fixed swing heading will move there even
 when the machine started facing a different direction. Confirm its

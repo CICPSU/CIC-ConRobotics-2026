@@ -61,14 +61,14 @@ def test_shortest_rotation_crosses_either_side_of_boundary():
 def test_motor_drives_across_boundary_and_velocity_stays_small():
     motor = make_motor()
     motor.update_position(math.radians(170))
-    _, err, reached, direction, pwm = motor.plan_toward_target(math.radians(-145))
+    _, err, reached, direction, pwm = motor.plan_toward_target(math.radians(-145), +1)
     assert (round(math.degrees(err)), reached, direction, pwm) == (45, False, 1, 255)
     motor.update_position(math.radians(179))
     motor.update_position(math.radians(-179))
     assert math.isclose(
         math.degrees(shortest_angle_error(motor.read_position_rad(),
                                           math.radians(179))), 2.0)
-    _, err, _, direction, _ = motor.plan_toward_target(math.radians(-145))
+    _, err, _, direction, _ = motor.plan_toward_target(math.radians(-145), +1)
     assert round(math.degrees(err)) == 34
     assert direction == 1
 
@@ -76,9 +76,9 @@ def test_motor_drives_across_boundary_and_velocity_stays_small():
 def test_latched_arrival_still_rejects_stale_feedback():
     motor = make_motor()
     motor.update_position(math.radians(40))
-    assert motor.plan_toward_target(math.radians(45))[2]
+    assert motor.plan_toward_target(math.radians(45), +1)[2]
     motor._last_sensor_receive -= 1.0
-    _, _, reached, direction, pwm = motor.plan_toward_target(math.radians(45))
+    _, _, reached, direction, pwm = motor.plan_toward_target(math.radians(45), +1)
     assert not reached and (direction, pwm) == (0, 0)
     assert "stale" in motor._swing_fault
 
@@ -87,7 +87,7 @@ def test_boundary_is_not_a_motor_stop():
     motor = make_motor()
     motor.update_position(math.pi)
     _, err, reached, direction, pwm = motor.plan_toward_target(
-        math.radians(-135))
+        math.radians(-135), +1)
     assert round(math.degrees(err)) == 45
     assert not reached and direction == 1 and pwm == 255
 
@@ -95,12 +95,37 @@ def test_boundary_is_not_a_motor_stop():
 def test_watchdog_counts_forward_progress_across_wrap():
     motor = make_motor()
     motor.update_position(math.radians(179))
-    motor.plan_toward_target(math.radians(-135))
+    motor.plan_toward_target(math.radians(-135), +1)
     motor._watch_started -= 0.4
     motor.update_position(math.radians(-179))
-    _, _, reached, direction, _ = motor.plan_toward_target(math.radians(-135))
+    _, _, reached, direction, _ = motor.plan_toward_target(math.radians(-135), +1)
     assert not reached and direction == 1
     assert motor._swing_fault is None
+
+
+def test_explicit_negative_direction_persists_across_wrap_and_arrives():
+    motor = make_motor()
+    motor.update_position(math.radians(-175))
+    _, err, _, direction, _ = motor.plan_toward_target(math.radians(95), -1)
+    assert round(math.degrees(err)) == -90 and direction == -1
+    motor.update_position(math.radians(-179))
+    motor.update_position(math.radians(179))
+    _, err, _, direction, _ = motor.plan_toward_target(math.radians(95), -1)
+    assert round(math.degrees(err)) == -84 and direction == -1
+    motor.update_position(math.radians(95))
+    _, err, reached, direction, pwm = motor.plan_toward_target(math.radians(95), -1)
+    assert reached and direction == 0 and pwm == 0 and abs(err) < 1e-8
+
+
+def test_explicit_positive_direction_takes_long_route():
+    motor = make_motor()
+    motor.update_position(math.radians(-175))
+    _, err, _, direction, _ = motor.plan_toward_target(math.radians(95), +1)
+    assert round(math.degrees(err)) == 270 and direction == 1
+    for heading in (-100, -20, 60):
+        motor.update_position(math.radians(heading))
+    _, err, reached, direction, _ = motor.plan_toward_target(math.radians(95), +1)
+    assert not reached and round(math.degrees(err)) == 35 and direction == 1
 
 
 def test_startup_corrects_only_three_joints():

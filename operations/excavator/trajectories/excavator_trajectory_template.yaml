@@ -49,6 +49,7 @@
 # Example:
 #
 #   - name: approach
+#     swing_direction: +1  # increasing site heading (not necessarily clockwise)
 #     positions:
 #       swing: 0.0
 #       boom: -20.0
@@ -62,6 +63,8 @@
 
 
 trajectory_name: example_excavation_cycle
+
+joints: [swing, boom, arm, bucket]
 
 description: >
   Template trajectory for the CIC model excavator.
@@ -79,6 +82,7 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: home
+    swing_direction: +1
 
     positions:
       swing: 0.0
@@ -92,6 +96,7 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: approach
+    swing_direction: +1
 
     positions:
       swing: 0.0
@@ -105,6 +110,7 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: dig
+    swing_direction: +1
 
     positions:
       swing: 0.0
@@ -118,6 +124,7 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: lift
+    swing_direction: +1
 
     positions:
       swing: 0.0
@@ -131,6 +138,7 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: swing_to_dump
+    swing_direction: +1
 
     positions:
       swing: 60.0
@@ -144,6 +152,7 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: dump
+    swing_direction: +1
 
     positions:
       swing: 60.0
@@ -157,6 +166,7 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: return_home
+    swing_direction: -1
 
     positions:
       swing: 0.0

@@ -142,6 +142,12 @@ class ExcavatorTrajectoryClient(Node):
                 for joint in trajectory.joints
             ]
 
+            if "swing" in trajectory.joints:
+                point.velocities = [
+                    float(waypoint.swing_direction) if joint == "swing" else 0.0
+                    for joint in trajectory.joints
+                ]
+
             time_from_start = (
                 (index + 1)
                 * seconds_per_waypoint

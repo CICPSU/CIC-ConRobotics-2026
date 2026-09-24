@@ -96,3 +96,22 @@ def validate_joint_targets(
                     f"[{math.degrees(lower):+.2f}, "
                     f"{math.degrees(upper):+.2f}] deg"
                 )
+
+
+def validate_swing_directions(joint_names, points) -> None:
+    """Internal protocol: swing velocity slot carries a direction sign, not speed."""
+    if "swing_joint" not in joint_names:
+        return
+    index = list(joint_names).index("swing_joint")
+    for point_index, point in enumerate(points):
+        velocities = list(point.velocities)
+        if len(velocities) != len(joint_names) or velocities[index] not in (-1.0, 1.0):
+            raise ExcavatorGoalValidationError(
+                f"Point {point_index} must specify swing_direction +1 or -1 "
+                "in the swing_joint velocity slot"
+            )
+        if any(not math.isfinite(value) or value != 0.0
+               for i, value in enumerate(velocities) if i != index):
+            raise ExcavatorGoalValidationError(
+                f"Point {point_index} non-swing velocity slots must be zero"
+            )

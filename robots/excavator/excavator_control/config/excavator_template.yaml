@@ -319,14 +319,14 @@ joint_control:
   # Example:
   #   /excavator6/swing_joint_state
   #
-  # command_min_angle_deg / command_max_angle_deg define the allowed site heading representation (-180 to 180 degrees).
+  # Commands specify headings within +/-180 degrees; observed heading wraps.
   # --------------------------------------------------------------
 
   swing:
 
     # TODO: Replace excavatorX with the actual excavator name.
     position_topic: /excavatorX/swing_joint_state
-    sensor_timeout_sec: 0.30
+    sensor_timeout_sec: 0.75
 
     # TODO: Physically verify the safe commanded range.
     command_min_angle_deg: -180.0

@@ -1,6 +1,5 @@
 # Lab 02 example trajectory for Excavator 3.
-# Starting pose from excavator3.yaml initial_position.positions:
-#   swing=90, boom=-10, arm=60, bucket=0 degrees.
+# Startup holds its observed swing heading; boom/arm/bucket have configured targets.
 # This is a classroom example, not a validated physical test.
 # Check the actual READY pose and clear the workspace before running.
 #
@@ -18,6 +17,7 @@ joints:
 
 waypoints:
   - name: initial
+    swing_direction: +1
     positions:
       swing: 90.0
       boom: -10.0
@@ -25,6 +25,7 @@ waypoints:
       bucket: 0.0
 
   - name: lower_boom
+    swing_direction: +1
     positions:
       swing: 90.0
       boom: -25.0
@@ -32,13 +33,15 @@ waypoints:
       bucket: 0.0
 
   - name: small_scoop
+    swing_direction: +1
     positions:
       swing: 90.0
       boom: -25.0
       arm: 80.0
       bucket: 90.0
 
-  - name: initial
+  - name: return_initial
+    swing_direction: +1
     positions:
       swing: 90.0
       boom: -10.0

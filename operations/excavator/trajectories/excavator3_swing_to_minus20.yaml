@@ -6,5 +6,6 @@ joints:
 
 waypoints:
   - name: swing_to_20
+    swing_direction: -1
     positions:
       swing: -20.0

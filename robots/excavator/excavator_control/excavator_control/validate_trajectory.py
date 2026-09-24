@@ -1,6 +1,8 @@
 import argparse
 import sys
 
+import yaml
+
 from excavator_control.config_loader import (
     ExcavatorConfigError,
     load_excavator_config,
@@ -33,6 +35,7 @@ def _get_joint_limits(
 def validate_trajectory_against_config(
     config,
     trajectory,
+    swing_command_limits_deg=None,
 ) -> None:
     for waypoint in trajectory.waypoints:
         for joint_name in trajectory.joints:
@@ -48,6 +51,9 @@ def validate_trajectory_against_config(
                     joint_name,
                 )
             )
+
+            if joint_name == "swing" and swing_command_limits_deg is not None:
+                min_angle_deg, max_angle_deg = swing_command_limits_deg
 
             if (
                 position_deg
@@ -101,6 +107,13 @@ def main():
         config = load_excavator_config(
             args.config
         )
+        with open(args.config, "r", encoding="utf-8") as stream:
+            runtime_config = yaml.safe_load(stream)
+        swing_control = runtime_config.get("joint_control", {}).get("swing", {})
+        swing_command_limits_deg = (
+            float(swing_control.get("command_min_angle_deg", config.swing.min_angle_deg)),
+            float(swing_control.get("command_max_angle_deg", config.swing.max_angle_deg)),
+        )
 
         trajectory = (
             load_excavator_trajectory(
@@ -111,6 +124,7 @@ def main():
         validate_trajectory_against_config(
             config,
             trajectory,
+            swing_command_limits_deg=swing_command_limits_deg,
         )
 
     except (

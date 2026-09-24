@@ -409,12 +409,24 @@ def load_excavator_trajectory(
                 value
             )
 
+        direction = waypoint.get('swing_direction')
+        if 'swing' in normalized_joints:
+            if type(direction) is not int or direction not in (-1, 1):
+                raise RuntimeError(
+                    f'Waypoint "{waypoint_name}" requires swing_direction: +1 or -1.'
+                )
+        elif 'swing_direction' in waypoint:
+            raise RuntimeError(
+                f'Waypoint "{waypoint_name}" specifies swing_direction without swing.'
+            )
+
         normalized_waypoints.append(
             {
                 'name': waypoint_name,
                 'positions_deg': (
                     position_values
                 ),
+                'swing_direction': direction,
             }
         )
 
@@ -1377,6 +1389,12 @@ class ScenarioManager(Node):
                     ]
                 )
             ]
+
+            if 'swing' in trajectory['joints']:
+                point.velocities = [
+                    float(waypoint['swing_direction']) if joint == 'swing' else 0.0
+                    for joint in trajectory['joints']
+                ]
 
             waypoint_time = (
                 (index + 1)

@@ -50,7 +50,7 @@ import os
 import sys
 import time
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -74,6 +74,7 @@ from excavator_control.swing_angles import shortest_angle_error
 from excavator_control.goal_validation import (
     ExcavatorGoalValidationError,
     validate_joint_targets,
+    validate_swing_directions,
 )
 
 
@@ -187,6 +188,7 @@ def clamp(value: float, lo: float, hi: float) -> float:
 class Waypoint:
     t: float
     positions: List[float]
+    velocities: List[float] = field(default_factory=list)
 
 # this function cleans the trajectory points before the robot follows them 
 #traj point = time and positions 
@@ -204,10 +206,10 @@ def normalize_waypoints(
         last_t = t
         if len(p.positions) != n_joints: # making sure each point has the correct number of joint values
             return []
-        out.append(Waypoint(t=t, positions=list(p.positions)))
+        out.append(Waypoint(t=t, positions=list(p.positions), velocities=list(p.velocities)))
 
     if out and out[0].t > 1e-9: #if the first waypoint starts at 2 sec instead of 0, it sets a fake starting point at 0 using the same position. t= 2, boom = 0.5 -> t= 0, boom=0.5 then t=2, boom = 0.5
-        out.insert(0, Waypoint(t=0.0, positions=list(out[0].positions)))
+        out.insert(0, Waypoint(t=0.0, positions=list(out[0].positions), velocities=list(out[0].velocities)))
     return out
 
 
@@ -861,6 +863,11 @@ class ExternalSwingJointMotor:
         self._last_requested_target_rad = None
         self._last_effective_target_rad = None
         self._goal_reached_latched = False
+        # Travel is relative to this waypoint only; it is not a winding count.
+        self._directed_last_position = None
+        self._travel_rad = 0.0
+        self._planned_travel_rad = None
+        self._target_direction = None
 
         pi.set_mode(cfg.in1_pin, pigpio.OUTPUT)
         pi.set_mode(cfg.in2_pin, pigpio.OUTPUT)
@@ -873,6 +880,11 @@ class ExternalSwingJointMotor:
             return
         now = time.monotonic()
         with self._lock:
+            if self._directed_last_position is not None:
+                self._travel_rad += shortest_angle_error(
+                    position_rad, self._directed_last_position
+                )
+                self._directed_last_position = position_rad
             if self._last_sensor_position is not None and self._last_sensor_time is not None:
                 dt = max(1e-6, now - self._last_sensor_time)
                 self._last_velocity_rad_s = (
@@ -939,13 +951,42 @@ class ExternalSwingJointMotor:
         self._swing_pulse_tick = 0
         self._reset_progress_watch()
 
+        with self._lock:
+            self._directed_last_position = self._last_position_rad
+            self._travel_rad = 0.0
+            self._planned_travel_rad = None
+            self._target_direction = None
+
     def plan_toward_target(
-        self, target_rad: float
+        self, target_rad: float, requested_direction: int
     ) -> Tuple[float, float, bool, int, int]:
-        pos = self.read_position_rad()
+        with self._lock:
+            pos = float(self._last_position_rad)
+            travel = self._travel_rad
         self._last_requested_target_rad = target_rad
         self._last_effective_target_rad = target_rad
-        err = shortest_angle_error(target_rad, pos)
+        wrapped_err = shortest_angle_error(target_rad, pos)
+
+        if requested_direction not in (-1, 1):
+            self._swing_fault = "invalid swing direction; expected +1 or -1"
+            return pos, wrapped_err, False, 0, 0
+
+        if self._planned_travel_rad is None:
+            with self._lock:
+                self._directed_last_position = pos
+            if abs(wrapped_err) <= self.cfg.stop_tolerance_rad:
+                planned = 0.0
+            else:
+                planned = wrapped_err % (2.0 * math.pi)
+                if requested_direction < 0:
+                    planned -= 2.0 * math.pi
+            self._planned_travel_rad = planned
+            self._target_direction = requested_direction
+        elif self._target_direction != requested_direction:
+            self._swing_fault = "swing direction changed within a waypoint"
+            return pos, wrapped_err, False, 0, 0
+
+        err = self._planned_travel_rad - travel
         abs_err = abs(err)
 
         if self._swing_fault is not None:
@@ -972,23 +1013,24 @@ class ExternalSwingJointMotor:
             self._reset_progress_watch()
             return pos, err, True, 0, 0
 
-        if abs_err <= self.cfg.stop_tolerance_rad:
+        if (abs(err) <= self.cfg.stop_tolerance_rad or
+                requested_direction * err < -self.cfg.stop_tolerance_rad):
             self._goal_reached_latched = True
             self._reset_progress_watch()
-            return pos, err, True, 0, 0
+            return pos, wrapped_err, True, 0, 0
 
-        direction = 1 if err > 0.0 else -1
+        direction = requested_direction
 
         if direction != self._watch_direction:
             self._watch_direction = direction
-            self._watch_position = pos
+            self._watch_position = travel
             self._watch_started = time.monotonic()
         elif (
             self._watch_started is not None
             and time.monotonic() - self._watch_started
             >= self.cfg.progress_timeout_sec
         ):
-            progress = shortest_angle_error(pos, self._watch_position) * direction
+            progress = (travel - self._watch_position) * direction
             if progress < self.cfg.min_progress_rad:
                 # The controller aims for stop_tolerance_rad, but a joint
                 # already inside tolerance_rad is operationally acceptable.
@@ -1011,7 +1053,7 @@ class ExternalSwingJointMotor:
                 )
                 self._reset_progress_watch()
                 return pos, err, False, 0, 0
-            self._watch_position = pos
+            self._watch_position = travel
             self._watch_started = time.monotonic()
 
         if (
@@ -1107,7 +1149,7 @@ class PiExcavatorTrajectoryServer(Node):
         )
         self.declare_parameter(
             "swing_sensor_timeout_sec",
-            float(swing_control.get("sensor_timeout_sec", 0.30)),
+            float(swing_control.get("sensor_timeout_sec", 0.75)),
         )
         self.declare_parameter(
             "swing_pulse_err_deg",
@@ -2247,6 +2289,7 @@ class PiExcavatorTrajectoryServer(Node):
                 points=points,
                 joint_limits_rad=self.joint_limits_rad,
             )
+            validate_swing_directions(names, points)
         except ExcavatorGoalValidationError as exc:
             self.get_logger().warn(
                 f"[GOAL REJECTED] {exc}"
@@ -2292,6 +2335,11 @@ class PiExcavatorTrajectoryServer(Node):
         #gets which joints to move
         joint_names = list(goal.trajectory.joint_names)
         waypoints = normalize_waypoints(goal.trajectory.points, len(joint_names)) #cleans and validates the trajectory points and turns them into usable Waypoint objects
+        # Pi swing holds the next waypoint directly. A synthetic t=0 point
+        # duplicates the first goal and prevents a one-point goal completing
+        # on arrival, so use only the operator's actual waypoints here.
+        if "swing_joint" in joint_names and len(waypoints) > len(goal.trajectory.points):
+            waypoints.pop(0)
 
         result = FollowJointTrajectory.Result() # this will get sendt back to the client 
         if not waypoints:
@@ -2387,11 +2435,17 @@ class PiExcavatorTrajectoryServer(Node):
 
             # Phase 1: ask every joint what it wants to do. No hardware yet.
             actual_positions, errors = [], []
+            reached_targets = {}
             plans: Dict[str, Tuple[int, int, float]] = {}
 
             for jn, tgt in zip(joint_names, desired):
-                pos, err, _, direction, pwm = self.joints[jn].plan_toward_target(tgt)
+                if jn == "swing_joint":
+                    swing_direction = int(waypoints[active_swing_waypoint_index].velocities[joint_names.index(jn)])
+                    pos, err, reached, direction, pwm = self.joints[jn].plan_toward_target(tgt, swing_direction)
+                else:
+                    pos, err, reached, direction, pwm = self.joints[jn].plan_toward_target(tgt)
                 plans[jn] = (direction, pwm, err)
+                reached_targets[jn] = reached
                 actual_positions.append(pos)
                 errors.append(err)
 
@@ -2405,6 +2459,26 @@ class PiExcavatorTrajectoryServer(Node):
                 self._stop_all()
                 goal_handle.abort()
                 return FollowJointTrajectory.Result()
+
+            # A single swing-only target is controlled directly rather than
+            # interpolated over its time_from_start. Finish once measured
+            # feedback confirms arrival, instead of idling until the nominal
+            # waypoint time while camera feedback might subsequently disappear.
+            if (
+                len(waypoints) == 1
+                and joint_names == ["swing_joint"]
+                and reached_targets["swing_joint"]
+                and swing.sensor_valid()
+                and abs(errors[0]) <= swing.cfg.tolerance_rad
+            ):
+                self._stop_all()
+                goal_handle.succeed()
+                result.error_code = FollowJointTrajectory.Result.SUCCESSFUL
+                result.error_string = "Swing target reached"
+                self.get_logger().info(
+                    f"[PI] Swing target reached: error={math.degrees(errors[0]):.2f} deg"
+                )
+                return result
 
             # building feedback messages 
             if elapsed >= next_fb:
@@ -2466,7 +2540,11 @@ class PiExcavatorTrajectoryServer(Node):
             final_errors = {}
 
             for jn, tgt in zip(joint_names, final_target):
-                _, err, _, direction, pwm = self.joints[jn].plan_toward_target(tgt)
+                if jn == "swing_joint":
+                    swing_direction = int(waypoints[-1].velocities[joint_names.index(jn)])
+                    _, err, _, direction, pwm = self.joints[jn].plan_toward_target(tgt, swing_direction)
+                else:
+                    _, err, _, direction, pwm = self.joints[jn].plan_toward_target(tgt)
                 plans[jn] = (direction, pwm, err)
                 final_errors[jn] = abs(err)
 

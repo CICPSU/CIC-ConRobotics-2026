@@ -126,3 +126,34 @@ def test_reject_subset_trajectory_outside_joint_limits(
             config,
             trajectory,
         )
+
+
+@pytest.mark.parametrize("swing_target", [-180.0, 180.0])
+def test_swing_command_boundaries_are_allowed(tmp_path: Path, swing_target):
+    trajectory_path = write_trajectory_yaml(tmp_path, {
+        "trajectory_name": "swing_limits",
+        "joints": ["swing"],
+        "waypoints": [{"name": "target", "swing_direction": 1, "positions": {"swing": swing_target}}],
+    })
+    config = load_excavator_config(REAL_CONFIG_PATH)
+    trajectory = load_excavator_trajectory(trajectory_path)
+    validate_trajectory_against_config(
+        config, trajectory, swing_command_limits_deg=(-180.0, 180.0)
+    )
+
+
+@pytest.mark.parametrize("swing_target", [-180.1, 180.1])
+def test_swing_goals_outside_command_range_are_rejected(
+    tmp_path: Path, swing_target
+):
+    trajectory_path = write_trajectory_yaml(tmp_path, {
+        "trajectory_name": "swing_limits",
+        "joints": ["swing"],
+        "waypoints": [{"name": "target", "swing_direction": -1, "positions": {"swing": swing_target}}],
+    })
+    config = load_excavator_config(REAL_CONFIG_PATH)
+    trajectory = load_excavator_trajectory(trajectory_path)
+    with pytest.raises(ExcavatorTrajectoryError, match="outside configured range"):
+        validate_trajectory_against_config(
+            config, trajectory, swing_command_limits_deg=(-180.0, 180.0)
+        )

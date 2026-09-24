@@ -7,36 +7,6 @@ steps:
     task_file: excavator3_excavation_cycle_test.yaml
     seconds_per_waypoint: 5.0
 
-  - id: excavator3_move
-    type: excavator_trajectory
-    robot: excavator3
-    task_file: excavator3_excavation_cycle_test.yaml
-    seconds_per_waypoint: 5.0
-
-  - id: excavator3_move
-    type: excavator_trajectory
-    robot: excavator3
-    task_file: excavator3_excavation_cycle_test.yaml
-    seconds_per_waypoint: 5.0
-
-  - id: excavator3_move
-    type: excavator_trajectory
-    robot: excavator3
-    task_file: excavator3_excavation_cycle_test.yaml
-    seconds_per_waypoint: 5.0
-
-  - id: excavator3_move
-    type: excavator_trajectory
-    robot: excavator3
-    task_file: excavator3_excavation_cycle_test.yaml
-    seconds_per_waypoint: 5.0
-
-  - id: excavator3_move
-    type: excavator_trajectory
-    robot: excavator3
-    task_file: excavator3_excavation_cycle_test.yaml
-    seconds_per_waypoint: 5.0
-
   - id: truck1_short_move
     type: task
     robot: truck1
