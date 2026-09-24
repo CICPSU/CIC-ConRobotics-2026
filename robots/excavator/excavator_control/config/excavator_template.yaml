@@ -155,7 +155,7 @@ gpio:
     in2_pin: 20
 
     # TODO: Verify on this excavator.
-    invert_motor: false
+    invert_motor: true
 
   boom:
     in1_pin: 8
