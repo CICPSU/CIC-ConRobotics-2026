@@ -12,57 +12,57 @@ joints:
 waypoints:
 
   - name: open_bucket_for_approach
-    swing_direction: +1
+    swing_direction: -1
     positions:
-      swing: 90.0
+      swing: -175.0
       boom: -10.0
       arm: 60.0
       bucket: 0.0
 
   - name: lower_boom_to_dig
-    swing_direction: +1
+    swing_direction: -1
     positions:
-      swing: 90.0
-      boom: -40.0
+      swing: -175.0
+      boom: -50.0
       arm: 60.0
       bucket: 0.0
 
   - name: curl_bucket_and_arm_in
-    swing_direction: +1
+    swing_direction: -1
     positions:
-      swing: 90.0
-      boom: -40.0
-      arm: 90.0
+      swing: -175.0
+      boom: -50.0
+      arm: 100.0
       bucket: 90.0
 
   - name: lift_boom
-    swing_direction: +1
-    positions:
-      swing: 90.0
-      boom: -20.0
-      arm: 90.0
-      bucket: 90.0
-
-  - name: swing_to_dump
     swing_direction: -1
     positions:
-      swing: 0.0
-      boom: -20.0
-      arm: 90.0
+      swing: -175.0
+      boom: -10.0
+      arm: 100.0
+      bucket: 90.0
+
+  - name: swing
+    swing_direction: +1
+    positions:
+      swing: -90.0
+      boom: -10.0
+      arm: 100.0
       bucket: 90.0
 
   - name: dump_bucket
-    swing_direction: -1
+    swing_direction: +1
     positions:
-      swing: 0.0
+      swing: -90.0
       boom: -10.0
       arm: 60.0
       bucket: 0.0
 
   - name: swing_back
-    swing_direction: +1
+    swing_direction: -1
     positions:
-      swing: 90.0
+      swing: -175.0
       boom: -10.0
       arm: 60.0
       bucket: 0.0

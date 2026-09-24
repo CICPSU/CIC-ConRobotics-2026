@@ -222,7 +222,7 @@ class DumpTruckWaypointActionServer(Node):
 
         self.declare_parameter(
             'goal_tolerance',
-            0.20,
+            0.10,
         )
 
         self.base_speed = float(
@@ -1092,6 +1092,14 @@ class DumpTruckWaypointActionServer(Node):
                 ) > 1.2:
 
                     speed = 0.12
+
+                # Slow down within 40 cm of the waypoint.
+                if distance < 0.40:
+
+                    speed = min(
+                        speed,
+                        self.slow_speed,
+                    )
 
                 cmd.linear.x = (
                     direction
