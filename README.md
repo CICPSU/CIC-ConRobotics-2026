@@ -1,6 +1,13 @@
 # CIC-ConRobotics-2026
 
-Welcome to ROS 2-based construction robotics platform for **SITE (Systems Integration and Technology Education) Robotics Arena in AE 573: Robotics and Automation in Construction, Fall 2026** at Penn State.
+> **Development Branch**
+>
+> This is the `dev` version of the CIC-ConRobotics-2026 repository.
+> Active development, hardware testing, integration, and validation are performed on this branch.
+>
+> **Students should use the `main` branch only.**
+
+Welcome to the ROS 2-based construction robotics platform for **SITE (Systems Integration and Technology Education) Robotics Arena in AE 573: Robotics and Automation in Construction, Fall 2026** at Penn State.
 
 This repository contains the software, configuration, operational data, and course materials used to operate and coordinate physical construction robot models.
 
@@ -15,7 +22,44 @@ The platform includes:
 
 ---
 
-# 1. Start Here
+# 1. Branch Policy
+
+This repository uses two primary branches with different purposes.
+
+| Branch | Purpose | Primary Users |
+|---|---|---|
+| `main` | Stable, course-ready release | AE 573 students |
+| `dev` | Development, testing, integration, and validation | Development team |
+
+## `main`
+
+`main` is the stable version used for course activities.
+
+Students should interact **only with `main`** unless specifically instructed otherwise.
+
+Routine development should not be performed directly on `main`.
+
+## `dev`
+
+`dev` is the active development branch.
+
+Use `dev` for:
+
+- robot software development
+- hardware configuration and calibration
+- trajectory and waypoint development
+- Command Center development
+- perception and AprilTag integration
+- network configuration development
+- lab development
+- documentation updates
+- system integration and testing
+
+Changes should be tested on `dev` before being released to `main`.
+
+---
+
+# 2. Start Here
 
 For normal robot operation, use:
 
@@ -40,7 +84,7 @@ For network, SSH, Raspberry Pi setup, and Zenoh configuration, use:
 network/README.md
 ```
 
-For a course lab, follow the instructions under:
+For course labs, follow the instructions under:
 
 ```text
 labs/
@@ -50,38 +94,38 @@ Do not try to operate the complete system from this root README.
 
 ---
 
-# 2. System Overview
+# 3. System Overview
 
 The platform represents a small-scale robotic construction site.
 
 ```text
                    OPERATIONS
           Waypoints / Trajectories / Scenarios
-                         │
-                         ▼
+                        │
+                        ▼
                   COMMAND CENTER
-                         │
-                    ROS 2 Actions
-                         │
-              ┌──────────┴──────────┐
-              │                     │
-              ▼                     ▼
-         DUMP TRUCKS            EXCAVATORS
-              │                     │
-              └──────────┬──────────┘
-                         │
-                       Zenoh
-                         │
-                         ▼
-                  PHYSICAL ROBOTS
+                        │
+                   ROS 2 Actions
+                        │
+              ┌─────────┴─────────┐
+              │                   │
+              ▼                   ▼
+         DUMP TRUCKS          EXCAVATORS
+              │                   │
+              └─────────┬─────────┘
+                        │
+                      Zenoh
+                        │
+                        ▼
+                 PHYSICAL ROBOTS
 
-               SHARED PERCEPTION
+                SHARED PERCEPTION
           Overhead Camera / AprilTags
-                         │
-                         ▼
-                    LOCALIZATION
-                         │
-                         └──────► Robot Control
+                        │
+                        ▼
+                   LOCALIZATION
+                        │
+                        └──────► Robot Control
 ```
 
 ROS 2 provides the software interfaces between perception, robot control, and higher-level coordination.
@@ -90,7 +134,7 @@ Zenoh (`rmw_zenoh_cpp`) is the standard ROS 2 communication layer for the physic
 
 ---
 
-# 3. Repository Structure
+# 4. Repository Structure
 
 ```text
 CIC-ConRobotics-2026/
@@ -121,353 +165,78 @@ CIC-ConRobotics-2026/
 └── tools/
 ```
 
-The repository is organized by **system responsibility**:
-
-| Directory | Responsibility |
-|---|---|
-| `robots/` | Robot-specific hardware, control, configuration, and bringup |
-| `common/` | Shared ROS 2 interfaces |
-| `perception/` | Shared sensing and localization |
-| `command_center/` | High-level robot task and multi-robot coordination |
-| `operations/` | Waypoints, excavator trajectories, and scenarios |
-| `network/` | Raspberry Pi setup, SSH, device registry, and Zenoh |
-| `labs/` | Student-facing lab activities |
-| `docs/` | Supporting technical documentation |
-| `tools/` | Utility and diagnostic scripts |
-
 ---
 
-# 4. Software Environment
+# 5. Development Workflow
 
-The Fall 2026 platform uses:
-
-```text
-Ubuntu 24.04
-ROS 2 Jazzy
-Python 3
-rmw_zenoh_cpp
-```
-
-Normal physical multi-machine communication uses **one active Zenoh router**.
-
-Detailed network configuration belongs in:
-
-```text
-network/README.md
-```
-
----
-
-# 5. Clone the Repository
-
-```bash
-cd ~
-
-mkdir -p ws_conrobotics
-cd ws_conrobotics
-
-git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
-cd CIC-ConRobotics-2026
-```
-
-## Branches
-
-### `main`
-
-Stable, course-ready material.
-
-### `dev`
-
-Active development, integration, and testing before changes are promoted to `main`.
-
-Use the branch specified for the current course activity or development task.
-
-To switch branches:
-
-```bash
-git checkout main
-```
-
-or:
+All development is performed on `dev`.
 
 ```bash
 git checkout dev
-```
+git pull origin dev
 
-Then update the local repository:
+# Make and test changes
 
-```bash
-git pull
-```
-
-> Branch-specific operating instructions belong **only in this root README**. Internal READMEs should remain branch-agnostic.
-
----
-
-# 6. Build the ROS 2 Workspace
-
-From the repository root:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-source /opt/ros/jazzy/setup.bash
-
-colcon build --symlink-install
-
-source install/setup.bash
-```
-
-Verify package discovery if needed:
-
-```bash
-colcon list
-```
-
-Do not commit generated workspace directories:
-
-```text
-build/
-install/
-log/
-```
-
-A clean build is not normally required. If the workspace structure changes substantially or a normal rebuild cannot resolve a build problem:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-rm -rf build install log
-
-source /opt/ros/jazzy/setup.bash
-
-colcon build --symlink-install
-
-source install/setup.bash
-```
-
----
-
-# 7. Operating the Robots
-
-After cloning, building, and completing the required network setup, continue with:
-
-```text
-command_center/README.md
-```
-
-The normal operational architecture is:
-
-```text
-ONE active Zenoh router
-        +
-ONE Command Center
-        +
-N physical robot clients
-```
-
-The Command Center README contains the current commands for:
-
-- ROS PC startup
-- physical robot startup
-- dump truck waypoint tasks
-- excavator trajectories
-- multi-robot scenarios
-- individual robot validation
-- adding new robots
-- development and troubleshooting
-
-Do **not** use older subsystem launch instructions elsewhere in the repository as the default operational workflow.
-
----
-
-# 8. Key Documentation
-
-## System Operation
-
-```text
-command_center/README.md
-```
-
-Primary manual for operating and developing the integrated construction robotics system.
-
-## Network / Raspberry Pi / Zenoh
-
-```text
-network/README.md
-```
-
-Use for:
-
-- preparing a new Raspberry Pi
-- IoT network device registration
-- SSH
-- device addresses
-- Zenoh router/client configuration
-- ROS 2 multi-machine communication troubleshooting
-
-## AprilTag Calibration
-
-```text
-docs/perception/apriltag/
-```
-
-Use for camera/AprilTag calibration and supporting perception procedures.
-
-## Course Labs
-
-```text
-labs/
-```
-
-Students should follow the README or instructions for the specific lab.
-
----
-
-# 9. Development Workflow
-
-A typical development cycle is:
-
-```text
-Pull
-  ↓
-Modify
-  ↓
-Build
-  ↓
-Test
-  ↓
-Review
-  ↓
-Commit
-  ↓
-Push
-```
-
-Before making changes:
-
-```bash
-git status
-git pull
-```
-
-After making changes:
-
-```bash
 git status
 git diff
+
+git add .
+git diff --cached --check
+git commit -m "Describe the change"
+git push origin dev
 ```
 
-Then commit:
+Do not make routine development changes directly on `main`.
+
+---
+
+# 6. Release to `main`
+
+Release to `main` only after the changes have been tested on `dev`.
 
 ```bash
-git add .
-git commit -m "Describe the change"
-git push
+git checkout main
+git pull origin main
+
+git merge dev --no-commit --no-ff
+
+# Keep the student-facing main README
+git checkout HEAD -- README.md
+
+git commit -m "Merge dev into main for AE 573 course release"
+git push origin main
+
+git checkout dev
 ```
 
-Robot-specific development, validation, and instructions for adding new physical robots are documented in:
+Students interact only with `main`.
+
+---
+
+# 7. README Policy
+
+The root `README.md` intentionally differs between branches:
+
+- `dev` — development and branch-management information
+- `main` — stable, student-facing information
+
+All subdirectory READMEs should normally be identical between branches and branch-independent.
+
+Do not add `dev`-specific instructions to:
 
 ```text
 command_center/README.md
+network/README.md
+labs/*/README.md
 ```
 
 ---
 
-# 10. Design Principle
+# 8. Branch Rule
 
-The repository separates **what the construction operation should do** from **how each robot performs it**.
+> **Develop and test on `dev`. Release validated changes to `main`. Students use `main`.**
 
-```text
-OPERATIONS
-What should happen?
-      │
-      ▼
-COMMAND CENTER
-Which robot should perform which task?
-      │
-      ▼
-ROBOT CONTROL
-How should the robot move?
-      │
-      ▼
-HARDWARE
-How are the physical actuators commanded?
-```
-
-Perception provides information about the physical environment and robot state across these layers.
-
-Operational data therefore belongs under:
-
-```text
-operations/
-```
-
-while reusable robot software and machine-specific configuration remain under:
-
-```text
-robots/
-```
-
----
-
-# 11. For Students
-
-You do **not** need to understand every package in this repository before using the robots.
-
-Start with the instructions for your lab or activity.
-
-A useful directory map is:
-
-```text
-Operate robots / run scenarios?
-    → command_center/README.md
-
-Set up a Pi / SSH / Zenoh?
-    → network/README.md
-
-Change robot hardware or machine configuration?
-    → robots/
-
-Change localization or perception?
-    → perception/
-
-Change a waypoint, trajectory, or scenario?
-    → operations/
-
-Complete a course lab?
-    → labs/
-
-Need supporting calibration documentation?
-    → docs/
-```
-
-When in doubt, start with:
-
-```text
-command_center/README.md
-```
-
----
-
-# 12. Course and Research Context
-
-This platform is developed through the **Computer Integrated Construction (CIC) Research Program at Penn State** for educational and research activities in construction robotics.
-
-The model construction site provides hands-on experience integrating:
-
-- physical robots
-- sensors
-- ROS 2
-- localization
-- robot control
-- task planning
-- multi-robot coordination
-
----
-
-**CIC-ConRobotics-2026**
-Penn State
-Computer Integrated Construction (CIC) Research Program
+**CIC-ConRobotics-2026**  
+Penn State  
+Computer Integrated Construction (CIC) Research Program  
 AE 573 — Robotics and Automation in Construction
-Fall 2026
