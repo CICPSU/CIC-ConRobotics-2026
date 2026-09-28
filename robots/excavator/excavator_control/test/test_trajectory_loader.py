@@ -43,7 +43,6 @@ def make_full_trajectory():
         "waypoints": [
             {
                 "name": "start",
-                "swing_direction": 1,
                 "positions": {
                     "swing": 0.0,
                     "boom": -20.0,
@@ -53,7 +52,6 @@ def make_full_trajectory():
             },
             {
                 "name": "finish",
-                "swing_direction": 1,
                 "positions": {
                     "swing": 30.0,
                     "boom": -30.0,
@@ -65,12 +63,13 @@ def make_full_trajectory():
     }
 
 
-def test_swing_direction_is_required_and_rejects_invalid_sign(tmp_path: Path):
+def test_swing_direction_is_forbidden(tmp_path: Path):
     data = make_full_trajectory()
-    data["waypoints"][0].pop("swing_direction")
+    assert len(load_excavator_trajectory(write_yaml(tmp_path, data)).waypoints) == 2
+    data["waypoints"][0]["swing_direction"] = 1
     with pytest.raises(ExcavatorTrajectoryError, match="swing_direction"):
         load_excavator_trajectory(write_yaml(tmp_path, data))
-    data["waypoints"][0]["swing_direction"] = 0
+    data["waypoints"][0]["swing_direction"] = None
     with pytest.raises(ExcavatorTrajectoryError, match="swing_direction"):
         load_excavator_trajectory(write_yaml(tmp_path, data))
 

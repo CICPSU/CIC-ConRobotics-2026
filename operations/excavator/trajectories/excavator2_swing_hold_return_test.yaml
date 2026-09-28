@@ -4,14 +4,11 @@ joints:
   - swing
 waypoints:
   - name: swing_to_minus100
-    swing_direction: +1
     positions:
       swing: -100.0
   - name: hold_minus100
-    swing_direction: +1
     positions:
       swing: -100.0
   - name: return_to_minus145
-    swing_direction: -1
     positions:
       swing: -145.0

@@ -364,7 +364,6 @@ joints:
 
 waypoints:
   - name: position_1
-    swing_direction: +1
     positions:
       swing: 90.0
       boom: -40.0
@@ -372,7 +371,6 @@ waypoints:
       bucket: 15.0
 
   - name: position_2
-    swing_direction: -1
     positions:
       swing: 45.0
       boom: -35.0
@@ -514,17 +512,20 @@ initialization completed successfully.
 ### 3.6 Trajectory Safety
 
 Swing targets are site-frame headings in the range -180 to 180 degrees.
-Every waypoint containing swing must include `swing_direction: +1` (increasing
-observed heading) or `swing_direction: -1` (decreasing observed heading).
-Observed headings wrap at +/-180; direction stays fixed through the wrap.
-For example, -175 to +95 with -1 travels about 90 degrees; with +1 it
-travels about 270 degrees. Verify which physical rotation increases the
-observed heading before assigning clockwise or counterclockwise labels.
-The clients carry the sign in the `swing_joint` JointTrajectoryPoint velocity
-slot; that slot is a direction marker, not a speed. Other velocity slots are 0.
-Goals with missing or invalid swing direction are rejected by the Pi.
-The swing feedback timeout is 1.0 second; a longer loss stops motion.
+Do not include `swing_direction` in a waypoint. The Pi reads the current
+heading when each new swing target begins and chooses the shortest rotation
+(less than 180 degrees). It holds that direction until the target is reached;
+repeated headings at later waypoints keep the same stop state. A new action
+goal selects its path again from current feedback, including on a second
+excavation cycle. For example, from -90 to -175 it turns -85 degrees; from
++176 to -175 it turns +9 degrees across the wrap. A target exactly 180
+degrees from the current heading is ambiguous and the action aborts before
+that waypoint can move any joints.
+The clients leave JointTrajectoryPoint velocities empty. The Pi rejects
+nonzero velocity or legacy direction markers for swing.
+The swing feedback timeout is configured per excavator; a longer loss stops motion.
 The startup process does not move swing and does not track cable winding.
+A shortest route per waypoint does not enforce a cumulative cable-winding limit.
 A trajectory that begins at a fixed swing heading will move there even
 when the machine started facing a different direction. Confirm its
 starting heading and clear the swept area before each physical run.

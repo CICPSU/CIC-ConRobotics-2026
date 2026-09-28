@@ -133,7 +133,7 @@ def test_swing_command_boundaries_are_allowed(tmp_path: Path, swing_target):
     trajectory_path = write_trajectory_yaml(tmp_path, {
         "trajectory_name": "swing_limits",
         "joints": ["swing"],
-        "waypoints": [{"name": "target", "swing_direction": 1, "positions": {"swing": swing_target}}],
+        "waypoints": [{"name": "target", "positions": {"swing": swing_target}}],
     })
     config = load_excavator_config(REAL_CONFIG_PATH)
     trajectory = load_excavator_trajectory(trajectory_path)
@@ -149,7 +149,7 @@ def test_swing_goals_outside_command_range_are_rejected(
     trajectory_path = write_trajectory_yaml(tmp_path, {
         "trajectory_name": "swing_limits",
         "joints": ["swing"],
-        "waypoints": [{"name": "target", "swing_direction": -1, "positions": {"swing": swing_target}}],
+        "waypoints": [{"name": "target", "positions": {"swing": swing_target}}],
     })
     config = load_excavator_config(REAL_CONFIG_PATH)
     trajectory = load_excavator_trajectory(trajectory_path)

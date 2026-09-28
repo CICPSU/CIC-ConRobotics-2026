@@ -6,6 +6,7 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 from excavator_control.goal_validation import (
     ExcavatorGoalValidationError,
     validate_joint_targets,
+    validate_swing_velocities,
 )
 
 
@@ -57,6 +58,16 @@ def test_valid_goal_passes():
         points,
         JOINT_LIMITS_RAD,
     )
+
+
+def test_swing_accepts_unspecified_velocities_and_rejects_legacy_direction():
+    point = make_point(0.0, 0.0)
+    validate_swing_velocities(["swing_joint", "boom_joint"], [point])
+    point.velocities = [0.0, 0.0]
+    validate_swing_velocities(["swing_joint", "boom_joint"], [point])
+    point.velocities = [1.0, 0.0]
+    with pytest.raises(ExcavatorGoalValidationError, match="must not specify"):
+        validate_swing_velocities(["swing_joint", "boom_joint"], [point])
 
 
 def test_rejects_boom_above_maximum():

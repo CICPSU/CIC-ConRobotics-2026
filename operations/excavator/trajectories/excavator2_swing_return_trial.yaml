@@ -4,6 +4,5 @@ joints:
   - swing
 waypoints:
   - name: return_to_131
-    swing_direction: -1
     positions:
       swing: 131.0

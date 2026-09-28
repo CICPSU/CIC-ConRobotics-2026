@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import math
 import yaml
@@ -22,7 +22,6 @@ VALID_JOINTS = (
 class ExcavatorWaypoint:
     name: str
     positions_deg: Dict[str, float]
-    swing_direction: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -245,15 +244,10 @@ def _parse_waypoints(
 
         positions_deg: Dict[str, float] = {}
 
-        direction = waypoint.get("swing_direction")
-        if "swing" in joints:
-            if type(direction) is not int or direction not in (-1, 1):
-                raise ExcavatorTrajectoryError(
-                    f"Waypoint '{name}' requires swing_direction: +1 or -1"
-                )
-        elif "swing_direction" in waypoint:
+        if "swing_direction" in waypoint:
             raise ExcavatorTrajectoryError(
-                f"Waypoint '{name}' specifies swing_direction without swing"
+                f"Waypoint '{name}' must not specify swing_direction; "
+                "swing uses the shortest route from measured heading"
             )
 
         for joint in joints:
@@ -271,7 +265,6 @@ def _parse_waypoints(
             ExcavatorWaypoint(
                 name=name,
                 positions_deg=positions_deg,
-                swing_direction=direction,
             )
         )
 

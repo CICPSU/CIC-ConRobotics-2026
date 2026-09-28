@@ -17,7 +17,6 @@ joints:
 
 waypoints:
   - name: initial
-    swing_direction: +1
     positions:
       swing: 90.0
       boom: -10.0
@@ -25,7 +24,6 @@ waypoints:
       bucket: 0.0
 
   - name: lower_boom
-    swing_direction: +1
     positions:
       swing: 90.0
       boom: -25.0
@@ -33,7 +31,6 @@ waypoints:
       bucket: 0.0
 
   - name: small_scoop
-    swing_direction: +1
     positions:
       swing: 90.0
       boom: -25.0
@@ -41,7 +38,6 @@ waypoints:
       bucket: 90.0
 
   - name: return_initial
-    swing_direction: +1
     positions:
       swing: 90.0
       boom: -10.0

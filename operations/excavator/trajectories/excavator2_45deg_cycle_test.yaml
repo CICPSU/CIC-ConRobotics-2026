@@ -12,7 +12,6 @@ joints:
 
 waypoints:
   - name: lower_boom
-    swing_direction: -1
     positions:
       swing: 180.0
       boom: -30.0

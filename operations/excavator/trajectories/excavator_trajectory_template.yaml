@@ -49,12 +49,15 @@
 # Example:
 #
 #   - name: approach
-#     swing_direction: +1  # increasing site heading (not necessarily clockwise)
 #     positions:
 #       swing: 0.0
 #       boom: -20.0
 #       arm: 80.0
 #       bucket: 30.0
+#
+# Swing always takes the shortest route from the measured heading when a new
+# target begins. A heading exactly 180 degrees away is rejected. Do not add
+# swing_direction to any waypoint.
 #
 # The exact execution behavior (simultaneous/sequential joint movement,
 # tolerance, timeout, etc.) is handled by the trajectory server.
@@ -82,7 +85,6 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: home
-    swing_direction: +1
 
     positions:
       swing: 0.0
@@ -96,7 +98,6 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: approach
-    swing_direction: +1
 
     positions:
       swing: 0.0
@@ -110,7 +111,6 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: dig
-    swing_direction: +1
 
     positions:
       swing: 0.0
@@ -124,7 +124,6 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: lift
-    swing_direction: +1
 
     positions:
       swing: 0.0
@@ -138,7 +137,6 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: swing_to_dump
-    swing_direction: +1
 
     positions:
       swing: 60.0
@@ -152,7 +150,6 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: dump
-    swing_direction: +1
 
     positions:
       swing: 60.0
@@ -166,7 +163,6 @@ waypoints:
   # --------------------------------------------------------------------------
 
   - name: return_home
-    swing_direction: -1
 
     positions:
       swing: 0.0

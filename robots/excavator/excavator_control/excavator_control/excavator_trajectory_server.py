@@ -74,7 +74,7 @@ from excavator_control.swing_angles import shortest_angle_error
 from excavator_control.goal_validation import (
     ExcavatorGoalValidationError,
     validate_joint_targets,
-    validate_swing_directions,
+    validate_swing_velocities,
 )
 
 
@@ -966,9 +966,7 @@ class ExternalSwingJointMotor:
             self._target_direction = None
         return True
 
-    def plan_toward_target(
-        self, target_rad: float, requested_direction: int
-    ) -> Tuple[float, float, bool, int, int]:
+    def plan_toward_target(self, target_rad: float) -> Tuple[float, float, bool, int, int]:
         with self._lock:
             pos = float(self._last_position_rad)
             travel = self._travel_rad
@@ -976,24 +974,20 @@ class ExternalSwingJointMotor:
         self._last_effective_target_rad = target_rad
         wrapped_err = shortest_angle_error(target_rad, pos)
 
-        if requested_direction not in (-1, 1):
-            self._swing_fault = "invalid swing direction; expected +1 or -1"
-            return pos, wrapped_err, False, 0, 0
-
         if self._planned_travel_rad is None:
             with self._lock:
                 self._directed_last_position = pos
-            if abs(wrapped_err) <= self.cfg.stop_tolerance_rad:
-                planned = 0.0
-            else:
-                planned = wrapped_err % (2.0 * math.pi)
-                if requested_direction < 0:
-                    planned -= 2.0 * math.pi
+            # Choose the shortest route once from fresh feedback. Never
+            # reverse direction just because the sensor crosses the target.
+            if not self.sensor_valid():
+                self._swing_fault = "swing feedback stale before path selection"
+                return pos, wrapped_err, False, 0, 0
+            if abs(abs(wrapped_err) - math.pi) < 1e-6:
+                self._swing_fault = "ambiguous 180 degree swing target"
+                return pos, wrapped_err, False, 0, 0
+            planned = 0.0 if abs(wrapped_err) <= self.cfg.stop_tolerance_rad else wrapped_err
             self._planned_travel_rad = planned
-            self._target_direction = requested_direction
-        elif self._target_direction != requested_direction:
-            self._swing_fault = "swing direction changed within a waypoint"
-            return pos, wrapped_err, False, 0, 0
+            self._target_direction = 1 if planned > 0 else -1 if planned < 0 else 0
 
         err = self._planned_travel_rad - travel
         abs_err = abs(err)
@@ -1023,12 +1017,12 @@ class ExternalSwingJointMotor:
             return pos, err, True, 0, 0
 
         if (abs(err) <= self.cfg.stop_tolerance_rad or
-                requested_direction * err < -self.cfg.stop_tolerance_rad):
+                self._target_direction * err < -self.cfg.stop_tolerance_rad):
             self._goal_reached_latched = True
             self._reset_progress_watch()
             return pos, wrapped_err, True, 0, 0
 
-        direction = requested_direction
+        direction = self._target_direction
 
         if direction != self._watch_direction:
             self._watch_direction = direction
@@ -2294,7 +2288,7 @@ class PiExcavatorTrajectoryServer(Node):
                 points=points,
                 joint_limits_rad=self.joint_limits_rad,
             )
-            validate_swing_directions(names, points)
+            validate_swing_velocities(names, points)
         except ExcavatorGoalValidationError as exc:
             self.get_logger().warn(
                 f"[GOAL REJECTED] {exc}"
@@ -2426,7 +2420,6 @@ class PiExcavatorTrajectoryServer(Node):
         feedback.joint_names = joint_names
         start = time.monotonic()
         active_swing_waypoint_index = None
-        active_swing_direction = None
         
         while rclpy.ok(): # while ROS alive keep running, check cancel, check if done, calculate desired joint angles, tell each joint to move toward its target, wai 0.02 sec, repeat 
             elapsed = time.monotonic() - start # how far into the trajectory we are 
@@ -2463,10 +2456,8 @@ class PiExcavatorTrajectoryServer(Node):
 
                     if swing_waypoint_index != active_swing_waypoint_index:
                         swing = self.joints.get("swing_joint")
-                        if swing is not None and swing.start_new_target(swing_target):
-                            active_swing_direction = int(
-                                waypoints[swing_waypoint_index].velocities[i]
-                            )
+                        if swing is not None:
+                            swing.start_new_target(swing_target)
                         active_swing_waypoint_index = swing_waypoint_index
                         self.get_logger().info(
                             f"[PI] Swing waypoint {swing_waypoint_index}: "
@@ -2481,26 +2472,25 @@ class PiExcavatorTrajectoryServer(Node):
             plans: Dict[str, Tuple[int, int, float]] = {}
 
             for jn, tgt in zip(joint_names, desired):
-                if jn == "swing_joint":
-                    swing_direction = active_swing_direction
-                    pos, err, reached, direction, pwm = self.joints[jn].plan_toward_target(tgt, swing_direction)
-                else:
-                    pos, err, reached, direction, pwm = self.joints[jn].plan_toward_target(tgt)
+                pos, err, reached, direction, pwm = self.joints[jn].plan_toward_target(tgt)
                 plans[jn] = (direction, pwm, err)
                 reached_targets[jn] = reached
                 actual_positions.append(pos)
                 errors.append(err)
 
-            # Phase 2: arbitrate the single shared PWM pin, then commit.
-            self._apply_plans(plans)
-
-            # Abort immediately on a latched swing watchdog fault.
+            # Abort before committing any joint plan if swing path selection,
+            # feedback, or progress is invalid.
             swing = self.joints.get("swing_joint")
             if swing is not None and getattr(swing, "_swing_fault", None):
-                self.get_logger().error(f"[PI] SWING WATCHDOG: {swing._swing_fault}")
+                self.get_logger().error(f"[PI] SWING FAULT: {swing._swing_fault}")
                 self._stop_all()
                 goal_handle.abort()
-                return FollowJointTrajectory.Result()
+                result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+                result.error_string = swing._swing_fault
+                return result
+
+            # Phase 2: arbitrate the single shared PWM pin, then commit.
+            self._apply_plans(plans)
 
             # A single swing-only target is controlled directly rather than
             # interpolated over its time_from_start. Finish once measured
@@ -2582,13 +2572,17 @@ class PiExcavatorTrajectoryServer(Node):
             final_errors = {}
 
             for jn, tgt in zip(joint_names, final_target):
-                if jn == "swing_joint":
-                    swing_direction = active_swing_direction
-                    _, err, _, direction, pwm = self.joints[jn].plan_toward_target(tgt, swing_direction)
-                else:
-                    _, err, _, direction, pwm = self.joints[jn].plan_toward_target(tgt)
+                _, err, _, direction, pwm = self.joints[jn].plan_toward_target(tgt)
                 plans[jn] = (direction, pwm, err)
                 final_errors[jn] = abs(err)
+
+            if swing is not None and getattr(swing, "_swing_fault", None):
+                self.get_logger().error(f"[PI] SWING FAULT: {swing._swing_fault}")
+                self._stop_all()
+                goal_handle.abort()
+                result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+                result.error_string = swing._swing_fault
+                return result
 
             duty = self._apply_plans(plans)
             swing_sensor_age = swing.sensor_age_sec() if swing else float("nan")
@@ -2628,12 +2622,6 @@ class PiExcavatorTrajectoryServer(Node):
                     f"pwm_owner={getattr(self, '_last_pwm_winner', None)} "
                     f"sensor_age={swing_sensor_age:.3f}s duty={duty}"
                 )
-
-            if swing is not None and getattr(swing, "_swing_fault", None):
-                self.get_logger().error(f"[PI] SWING WATCHDOG: {swing._swing_fault}")
-                self._stop_all()
-                goal_handle.abort()
-                return FollowJointTrajectory.Result()
 
             all_within_tolerance = all(
                 final_errors[jn] <= self.joints[jn].cfg.tolerance_rad
