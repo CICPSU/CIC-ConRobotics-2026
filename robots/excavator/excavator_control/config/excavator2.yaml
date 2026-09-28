@@ -74,11 +74,8 @@ joints:
     min_angle_deg: -60.0
     max_angle_deg: 5.0
 
-    # TODO: Measure on this excavator at min_angle_deg.
     raw_at_min_angle: 5950
-
-    # TODO: Measure on this excavator at max_angle_deg.
-    raw_at_max_angle: 380
+    raw_at_max_angle: 1050
 
 
   # --------------------------------------------------------------
@@ -91,10 +88,7 @@ joints:
     min_angle_deg: 52.0
     max_angle_deg: 112.0
 
-    # TODO: Measure on this excavator at min_angle_deg.
     raw_at_min_angle: 17550
-
-    # TODO: Measure on this excavator at max_angle_deg.
     raw_at_max_angle: 12200
 
 
@@ -108,10 +102,7 @@ joints:
     min_angle_deg: 0.0
     max_angle_deg: 90.0
 
-    # TODO: Measure on this excavator at min_angle_deg.
     raw_at_min_angle: 20300
-
-    # TODO: Measure on this excavator at max_angle_deg.
     raw_at_max_angle: 24200
 
 
