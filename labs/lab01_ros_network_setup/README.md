@@ -1068,7 +1068,7 @@ You should see:
 
 **Keep this terminal running.**
 
-<img src="images/Listner-Talker.png" width="900">
+<img src="images/Listener-Talker.png" width="900">
 ---
 
 ## Step 11 — Configure the Raspberry Pi and Start the Listener
@@ -1180,7 +1180,7 @@ ROS PC
              │
              └── ROS 2 Listener
 ```
-or
+or 
 ```text
 Your Laptop
 │
