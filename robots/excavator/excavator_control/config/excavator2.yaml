@@ -223,14 +223,14 @@ initial_position:
 
   # A joint already within this tolerance is skipped during startup
   # correction.
-  tolerance_deg: 3.0
+  tolerance_deg: 5.0
 
   # Final READY verification uses a slightly wider tolerance to avoid
   # rejecting a successful initialization because of small sensor noise
   # or coast after motor stop.
   verification_tolerance_deg: 5.0
 
-  current_limit_tolerance_deg: 1.0
+  current_limit_tolerance_deg: 2.0
   limit_margin_deg: 3.0
 
   # Also used as the startup wait timeout for fresh Swing feedback.
