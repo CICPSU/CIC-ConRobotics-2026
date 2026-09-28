@@ -1,0 +1,9 @@
+trajectory_name: excavator2_swing_positive_trial
+description: Single positive swing trial from approximately +175 to -140 degrees.
+joints:
+  - swing
+waypoints:
+  - name: swing_positive_45
+    swing_direction: +1
+    positions:
+      swing: -90.0

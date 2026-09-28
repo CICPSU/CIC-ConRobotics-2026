@@ -320,9 +320,6 @@ joint_control:
     near_pwm: 255
 
     stop_tolerance_rad: 0.1396  # 8 degrees
-    # First positive-direction trial: 26.6 deg coast after cutting PWM near 180 deg.
-    # Negative-direction stopping keeps the 8-degree setting above.
-    positive_stop_tolerance_deg: 30.0
     tolerance_rad: 0.2618       # 15 degrees
 
     pulse_err_deg: 30.0

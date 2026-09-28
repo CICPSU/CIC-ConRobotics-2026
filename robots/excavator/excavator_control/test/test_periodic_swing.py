@@ -145,24 +145,6 @@ def test_explicit_positive_direction_takes_long_route():
     assert not reached and round(math.degrees(err)) == 35 and direction == 1
 
 
-def test_early_positive_stop_does_not_change_negative_stop():
-    positive = make_motor()
-    positive.cfg.positive_stop_tolerance_rad = math.radians(30)
-    positive.update_position(math.radians(104))
-    assert positive.start_new_target(math.radians(180))
-    assert positive.plan_toward_target(math.radians(180), +1)[3:] == (1, 255)
-    positive.update_position(math.radians(155))
-    assert positive.plan_toward_target(math.radians(180), +1)[2:] == (True, 0, 0)
-
-    negative = make_motor()
-    negative.cfg.positive_stop_tolerance_rad = math.radians(30)
-    negative.update_position(math.radians(176))
-    assert negative.start_new_target(math.radians(131))
-    assert negative.plan_toward_target(math.radians(131), -1)[3:] == (-1, 255)
-    negative.update_position(math.radians(158))
-    assert negative.plan_toward_target(math.radians(131), -1)[2:] == (False, -1, 255)
-
-
 def test_repeated_heading_preserves_stop_after_overshoot():
     motor = make_motor()
     motor.update_position(math.radians(146))

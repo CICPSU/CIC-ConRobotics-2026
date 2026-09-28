@@ -838,7 +838,6 @@ class ExternalSwingConfig:
     pulse_err_rad: float
     pulse_on_cycles: int
     pulse_off_cycles: int
-    positive_stop_tolerance_rad: Optional[float] = None
     pwm_frequency_hz: int = 1000
 
 
@@ -981,16 +980,10 @@ class ExternalSwingJointMotor:
             self._swing_fault = "invalid swing direction; expected +1 or -1"
             return pos, wrapped_err, False, 0, 0
 
-        stop_tolerance_rad = (
-            self.cfg.positive_stop_tolerance_rad
-            if requested_direction > 0 and self.cfg.positive_stop_tolerance_rad is not None
-            else self.cfg.stop_tolerance_rad
-        )
-
         if self._planned_travel_rad is None:
             with self._lock:
                 self._directed_last_position = pos
-            if abs(wrapped_err) <= stop_tolerance_rad:
+            if abs(wrapped_err) <= self.cfg.stop_tolerance_rad:
                 planned = 0.0
             else:
                 planned = wrapped_err % (2.0 * math.pi)
@@ -1029,8 +1022,8 @@ class ExternalSwingJointMotor:
             self._reset_progress_watch()
             return pos, err, True, 0, 0
 
-        if (abs(err) <= stop_tolerance_rad or
-                requested_direction * err < -stop_tolerance_rad):
+        if (abs(err) <= self.cfg.stop_tolerance_rad or
+                requested_direction * err < -self.cfg.stop_tolerance_rad):
             self._goal_reached_latched = True
             self._reset_progress_watch()
             return pos, wrapped_err, True, 0, 0
@@ -1472,10 +1465,6 @@ class PiExcavatorTrajectoryServer(Node):
                     pulse_err_rad=swing_pulse_err_rad,
                     pulse_on_cycles=swing_pulse_on,
                     pulse_off_cycles=swing_pulse_off,
-                    positive_stop_tolerance_rad=(
-                        math.radians(float(swing_control["positive_stop_tolerance_deg"]))
-                        if "positive_stop_tolerance_deg" in swing_control else None
-                    ),
                     pwm_frequency_hz=pwm_frequency_hz,
                 ),
             ),
