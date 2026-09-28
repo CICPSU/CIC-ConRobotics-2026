@@ -309,7 +309,7 @@ joint_control:
 
     # TODO: Replace excavatorX with the actual excavator name.
     position_topic: /excavator2/swing_joint_state
-    sensor_timeout_sec: 1.0
+    sensor_timeout_sec: 1.5
 
     # TODO: Physically verify the safe commanded range.
     command_min_angle_deg: -180.0
@@ -339,7 +339,7 @@ joint_control:
 
     kp: 120.0
 
-    min_pwm: 130
+    min_pwm: 150
     max_pwm: 255
     kick_pwm: 180
 
