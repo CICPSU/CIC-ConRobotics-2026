@@ -1,0 +1,8 @@
+trajectory_name: excavator2_swing_positive_trial
+description: Single swing trial to the fixed site heading -90 degrees.
+joints:
+  - swing
+waypoints:
+  - name: swing_to_minus90
+    positions:
+      swing: -90.0

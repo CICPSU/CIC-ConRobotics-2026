@@ -1,0 +1,14 @@
+trajectory_name: boom_small_test
+
+description: >
+  Boom-only physical hardware test trajectory.
+  This trajectory intentionally commands only the boom joint.
+  Other excavator joints must not receive trajectory commands.
+
+joints:
+  - boom
+
+waypoints:
+  - name: boom_test_position
+    positions:
+      boom: -14.3

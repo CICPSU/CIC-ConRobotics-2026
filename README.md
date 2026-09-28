@@ -1,100 +1,473 @@
 # CIC-ConRobotics-2026
 
-## Description
-This repository is used for CIC ConRobotics course AE 573, Fall 2026. ROS 2 Jazzy + Isaac Sim 5.1.0 course project.
+Welcome to ROS 2-based construction robotics platform for **SITE (Systems Integration and Technology Education) Robotics Arena in AE 573: Robotics and Automation in Construction, Fall 2026** at Penn State.
 
-The project integrates:
-- ROS 2 (Jazzy)
-- NVIDIA Isaac Sim 5.1.0
+This repository contains the software, configuration, operational data, and course materials used to operate and coordinate physical construction robot models.
 
+The platform includes:
 
-## Branch policy
-- `main`: stable branch for students (exercises)
-- `dev`: development/integration branch for the dev team
+- Multiple autonomous dump truck models
+- Multiple independently namespaced robotic excavators
+- Overhead camera and AprilTag-based perception/localization
+- ROS 2 Action-based robot control
+- Waypoint, trajectory, and multi-robot scenario execution
+- Multi-machine ROS 2 communication using Zenoh
 
-## Repository Structure
+---
 
+# 1. Start Here
+
+For normal robot operation, use:
+
+```text
+command_center/README.md
 ```
+
+That README is the **primary operational manual** for:
+
+- starting the physical system
+- launching the Command Center
+- operating dump trucks
+- operating excavators
+- running trajectories and waypoint tasks
+- creating and running multi-robot scenarios
+- adding and validating new robots
+- system-level troubleshooting and development
+
+For network, SSH, Raspberry Pi setup, and Zenoh configuration, use:
+
+```text
+network/README.md
+```
+
+For a course lab, follow the instructions under:
+
+```text
+labs/
+```
+
+Do not try to operate the complete system from this root README.
+
+---
+
+# 2. System Overview
+
+The platform represents a small-scale robotic construction site.
+
+```text
+                   OPERATIONS
+          Waypoints / Trajectories / Scenarios
+                         │
+                         ▼
+                  COMMAND CENTER
+                         │
+                    ROS 2 Actions
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+              ▼                     ▼
+         DUMP TRUCKS            EXCAVATORS
+              │                     │
+              └──────────┬──────────┘
+                         │
+                       Zenoh
+                         │
+                         ▼
+                  PHYSICAL ROBOTS
+
+               SHARED PERCEPTION
+          Overhead Camera / AprilTags
+                         │
+                         ▼
+                    LOCALIZATION
+                         │
+                         └──────► Robot Control
+```
+
+ROS 2 provides the software interfaces between perception, robot control, and higher-level coordination.
+
+Zenoh (`rmw_zenoh_cpp`) is the standard ROS 2 communication layer for the physical multi-machine system.
+
+---
+
+# 3. Repository Structure
+
+```text
 CIC-ConRobotics-2026/
-├── docs/  # Documentation and launch instructions
-│   ├── ROS2/
-│   │   └── launch.md
-│   └── isaac_sim/
-│       └── launch.md
-├── zx200_digging_stack/  # ROS2 and Isaac Sim packages for the real size excavator(zx200) control
-├── model_digging_stack/  # ROS2 and Isaac Sim packages for the model excavator control   
-├── .gitattributes
-├── .gitignore
-└── README.md
+├── robots/
+│   ├── dump_truck/
+│   └── excavator/
+│
+├── common/
+│   └── construction_site_interfaces/
+│
+├── perception/
+│   └── construction_robot_perception/
+│
+├── command_center/
+│   ├── dump_truck_action_server/
+│   └── construction_site_control/
+│
+├── operations/
+│   ├── dump_truck/
+│   │   └── waypoints/
+│   ├── excavator/
+│   │   └── trajectories/
+│   └── scenarios/
+│
+├── network/
+├── labs/
+├── docs/
+└── tools/
 ```
 
+The repository is organized by **system responsibility**:
 
-## Clone
-### 1. Go to your home directory
+| Directory | Responsibility |
+|---|---|
+| `robots/` | Robot-specific hardware, control, configuration, and bringup |
+| `common/` | Shared ROS 2 interfaces |
+| `perception/` | Shared sensing and localization |
+| `command_center/` | High-level robot task and multi-robot coordination |
+| `operations/` | Waypoints, excavator trajectories, and scenarios |
+| `network/` | Raspberry Pi setup, SSH, device registry, and Zenoh |
+| `labs/` | Student-facing lab activities |
+| `docs/` | Supporting technical documentation |
+| `tools/` | Utility and diagnostic scripts |
+
+---
+
+# 4. Software Environment
+
+The Fall 2026 platform uses:
+
+```text
+Ubuntu 24.04
+ROS 2 Jazzy
+Python 3
+rmw_zenoh_cpp
+```
+
+Normal physical multi-machine communication uses **one active Zenoh router**.
+
+Detailed network configuration belongs in:
+
+```text
+network/README.md
+```
+
+---
+
+# 5. Clone the Repository
+
 ```bash
 cd ~
-```
-### 2. Create a workspace directory
-You can name this however you like. Below we use ws_conrobotics as an example.
-```bash
+
 mkdir -p ws_conrobotics
 cd ws_conrobotics
-```
-### 3. Clone the repository
-```bash
-git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
-```
-After cloning, your directory structure should look like this:
-~/ws_conrobotics/
-└── CIC-ConRobotics-2026/
 
-### 4. Move into the project directory
-```bash
+git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
 cd CIC-ConRobotics-2026
 ```
-You are now ready to continue with the next steps.
 
-### Note
-	•	Each user/group should work in their own home directory. Do not clone this repository into a shared system directory (e.g., /opt, /usr, etc.).
+## Branches
 
+### `main`
 
-## Project status (important)
+Stable, course-ready material.
 
-These directories (`zx200_digging_stack` and 'model_excavator') is **NOT a ROS 2 package** at the moment.
+### `dev`
 
-- There is **no `package.xml`**
-- There is **no `setup.py`**
-- You do **NOT** run `colcon build` for this stack
-- Scripts are executed directly with `python3`
+Active development, integration, and testing before changes are promoted to `main`.
 
-### Why it is not a ROS 2 package (yet)
+Use the branch specified for the current course activity or development task.
 
-The current goal is to:
-- Rapidly iterate on excavator motion logic
-- Share a working stack easily with new team members
-- Run the same control logic in:
-  - Isaac Sim (simulation)
-  - Physical scale models (Raspberry Pi + motor drivers)
+To switch branches:
 
-To achieve this, we keep the stack as:
-- Plain Python scripts
-- ROS 2 used only as a communication layer (`rclpy`, topics, actions)
-- No build step (Colcon Build) required
+```bash
+git checkout main
+```
 
-This allows:
-- `git clone` → `python3 run_*` → motion
-- Faster debugging and experimentation
-- Lower onboarding cost for new contributors
+or:
 
-### When this *will* become a ROS 2 package
+```bash
+git checkout dev
+```
 
-This stack is expected to be converted into a proper ROS 2 package in a later phase, when:
-- Interfaces are stable
-- Motion primitives are finalized
+Then update the local repository:
 
-At that point, we will:
-- Add `package.xml` and `setup.py`
-- Support `colcon build`
-- Split modules into reusable ROS 2 nodes
+```bash
+git pull
+```
 
-Until then, **treat this as a prototyping stack**, not a packaged ROS product.
+> Branch-specific operating instructions belong **only in this root README**. Internal READMEs should remain branch-agnostic.
+
+---
+
+# 6. Build the ROS 2 Workspace
+
+From the repository root:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+
+colcon build --symlink-install
+
+source install/setup.bash
+```
+
+Verify package discovery if needed:
+
+```bash
+colcon list
+```
+
+Do not commit generated workspace directories:
+
+```text
+build/
+install/
+log/
+```
+
+A clean build is not normally required. If the workspace structure changes substantially or a normal rebuild cannot resolve a build problem:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+rm -rf build install log
+
+source /opt/ros/jazzy/setup.bash
+
+colcon build --symlink-install
+
+source install/setup.bash
+```
+
+---
+
+# 7. Operating the Robots
+
+After cloning, building, and completing the required network setup, continue with:
+
+```text
+command_center/README.md
+```
+
+The normal operational architecture is:
+
+```text
+ONE active Zenoh router
+        +
+ONE Command Center
+        +
+N physical robot clients
+```
+
+The Command Center README contains the current commands for:
+
+- ROS PC startup
+- physical robot startup
+- dump truck waypoint tasks
+- excavator trajectories
+- multi-robot scenarios
+- individual robot validation
+- adding new robots
+- development and troubleshooting
+
+Do **not** use older subsystem launch instructions elsewhere in the repository as the default operational workflow.
+
+---
+
+# 8. Key Documentation
+
+## System Operation
+
+```text
+command_center/README.md
+```
+
+Primary manual for operating and developing the integrated construction robotics system.
+
+## Network / Raspberry Pi / Zenoh
+
+```text
+network/README.md
+```
+
+Use for:
+
+- preparing a new Raspberry Pi
+- IoT network device registration
+- SSH
+- device addresses
+- Zenoh router/client configuration
+- ROS 2 multi-machine communication troubleshooting
+
+## AprilTag Calibration
+
+```text
+docs/perception/apriltag/
+```
+
+Use for camera/AprilTag calibration and supporting perception procedures.
+
+## Course Labs
+
+```text
+labs/
+```
+
+Students should follow the README or instructions for the specific lab.
+
+---
+
+# 9. Development Workflow
+
+A typical development cycle is:
+
+```text
+Pull
+  ↓
+Modify
+  ↓
+Build
+  ↓
+Test
+  ↓
+Review
+  ↓
+Commit
+  ↓
+Push
+```
+
+Before making changes:
+
+```bash
+git status
+git pull
+```
+
+After making changes:
+
+```bash
+git status
+git diff
+```
+
+Then commit:
+
+```bash
+git add .
+git commit -m "Describe the change"
+git push
+```
+
+Robot-specific development, validation, and instructions for adding new physical robots are documented in:
+
+```text
+command_center/README.md
+```
+
+---
+
+# 10. Design Principle
+
+The repository separates **what the construction operation should do** from **how each robot performs it**.
+
+```text
+OPERATIONS
+What should happen?
+      │
+      ▼
+COMMAND CENTER
+Which robot should perform which task?
+      │
+      ▼
+ROBOT CONTROL
+How should the robot move?
+      │
+      ▼
+HARDWARE
+How are the physical actuators commanded?
+```
+
+Perception provides information about the physical environment and robot state across these layers.
+
+Operational data therefore belongs under:
+
+```text
+operations/
+```
+
+while reusable robot software and machine-specific configuration remain under:
+
+```text
+robots/
+```
+
+---
+
+# 11. For Students
+
+You do **not** need to understand every package in this repository before using the robots.
+
+Start with the instructions for your lab or activity.
+
+A useful directory map is:
+
+```text
+Operate robots / run scenarios?
+    → command_center/README.md
+
+Set up a Pi / SSH / Zenoh?
+    → network/README.md
+
+Change robot hardware or machine configuration?
+    → robots/
+
+Change localization or perception?
+    → perception/
+
+Change a waypoint, trajectory, or scenario?
+    → operations/
+
+Complete a course lab?
+    → labs/
+
+Need supporting calibration documentation?
+    → docs/
+```
+
+When in doubt, start with:
+
+```text
+command_center/README.md
+```
+
+---
+
+# 12. Course and Research Context
+
+This platform is developed through the **Computer Integrated Construction (CIC) Research Program at Penn State** for educational and research activities in construction robotics.
+
+The model construction site provides hands-on experience integrating:
+
+- physical robots
+- sensors
+- ROS 2
+- localization
+- robot control
+- task planning
+- multi-robot coordination
+
+---
+
+**CIC-ConRobotics-2026**
+Penn State
+Computer Integrated Construction (CIC) Research Program
+AE 573 — Robotics and Automation in Construction
+Fall 2026

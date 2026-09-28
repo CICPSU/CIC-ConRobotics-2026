@@ -1,0 +1,13 @@
+# Goal
+string robot_name
+string task_type
+string task_file
+---
+# Result
+bool success
+string message
+---
+# Feedback
+string state
+float32 progress
+string detail

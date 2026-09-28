@@ -1,0 +1,13 @@
+scenario_name: Excavator Integration Test
+
+steps:
+
+  - id: excavator_boom_test
+    type: excavator_trajectory
+    robot: excavator1
+    task_file: boom_small_test.yaml
+    seconds_per_waypoint: 2.0
+
+  - id: wait_after_excavator
+    type: wait
+    duration: 1.0

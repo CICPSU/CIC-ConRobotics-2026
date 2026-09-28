@@ -1,0 +1,24 @@
+# This is when using tag family 36h11 and using the size of 172mm square AprilTag
+# Update the family name and the size accordingly if needed
+
+/**:
+  ros__parameters:
+    image_transport: raw
+
+    family: 36h11
+    size: 0.172
+
+    detector:
+      threads: 2
+      decimate: 2.0
+      blur: 0.0
+      refine: true
+      sharpening: 0.25
+      debug: false
+
+    pose_estimation_method: "pnp"
+
+    tag:
+      ids: [0]
+      frames: ["tag36h11_0"]
+      sizes: [0.172]

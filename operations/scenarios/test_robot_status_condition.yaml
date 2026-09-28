@@ -1,0 +1,30 @@
+scenario_name: test_robot_status_condition
+
+steps:
+
+  - id: wait_for_truck1_idle
+    type: condition
+
+    condition:
+      source: topic
+      topic: /truck1/status
+      msg_type: construction_site_interfaces/msg/RobotStatus
+      field: state
+      equals: idle
+      timeout: 10.0
+
+    then:
+
+      - id: truck1_is_idle
+        type: wait
+        duration: 2.0
+
+    else:
+
+      - id: truck1_not_idle
+        type: wait
+        duration: 5.0
+
+  - id: final_wait
+    type: wait
+    duration: 1.0

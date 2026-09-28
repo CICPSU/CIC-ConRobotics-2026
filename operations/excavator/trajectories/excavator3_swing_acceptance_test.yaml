@@ -1,0 +1,10 @@
+trajectory_name: excavator3_swing_acceptance_test
+description: Verify acceptable swing residual error does not trigger an abort.
+
+joints:
+  - swing
+
+waypoints:
+  - name: swing_to_plus9
+    positions:
+      swing: 9.0

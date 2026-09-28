@@ -1,0 +1,34 @@
+scenario_name: truck1_complete_then_truck3
+
+steps:
+
+  - id: truck1_run
+    type: task
+    robot: truck1
+    task_type: waypoint
+    task_file: truck1_waypoints.yaml
+
+  - id: verify_truck1_completed
+    type: condition
+
+    condition:
+      source: topic
+      topic: /truck1/status
+      msg_type: construction_site_interfaces/msg/RobotStatus
+      field: state
+      equals: completed
+      timeout: 10.0
+
+    then:
+
+      - id: truck3_run
+        type: task
+        robot: truck3
+        task_type: waypoint
+        task_file: truck3_waypoints.yaml
+
+    else:
+
+      - id: completion_check_failed
+        type: wait
+        duration: 2.0

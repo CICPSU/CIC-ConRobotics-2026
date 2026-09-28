@@ -1,0 +1,21 @@
+# Lab 04 — concurrent execution on Truck 1 and Excavator 3
+# Both child Action goals are dispatched in one parallel block.
+# Check separate movement areas and restart poses before physical execution.
+
+scenario_name: lab04_truck_and_excavator_parallel
+
+steps:
+  - id: truck_and_excavator_together
+    type: parallel
+    tasks:
+      - id: truck1_parallel_route
+        type: task
+        robot: truck1
+        task_type: waypoint
+        task_file: truck1_waypoints3.yaml
+
+      - id: excavator3_parallel_cycle
+        type: excavator_trajectory
+        robot: excavator3
+        task_file: excavator3_excavation_cycle_test.yaml
+        seconds_per_waypoint: 5.0

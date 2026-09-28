@@ -189,6 +189,8 @@ log/
 *.bag.active
 *.db3
 rosbag2_*
+__pycache__
+*.pyc
 
 # ROS 2 generated/temporary
 **/COLCON_IGNORE
@@ -236,3 +238,6 @@ Thumbs.db
 # *.fbx
 # *.glb
 # *.gltf
+
+# ---------------- Runtime logs ----------------
+runtime_logs/

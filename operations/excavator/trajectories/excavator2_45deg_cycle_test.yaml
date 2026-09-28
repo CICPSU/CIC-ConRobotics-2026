@@ -1,0 +1,19 @@
+# Excavator 2 trial from the measured READY pose on 2026-09-28.
+# Starting pose: swing ~144 deg, boom ~-21 deg, arm ~58 deg, bucket ~27 deg.
+# Recheck the current pose and the swing swept area before running again.
+trajectory_name: excavator2_45deg_cycle_test
+description: Dig, lift, swing about 45 degrees, dump, and return on excavator 2.
+
+joints:
+  - swing
+  - boom
+  - arm
+  - bucket
+
+waypoints:
+  - name: lower_boom
+    positions:
+      swing: 180.0
+      boom: -30.0
+      arm: 70.0
+      bucket: 0.0

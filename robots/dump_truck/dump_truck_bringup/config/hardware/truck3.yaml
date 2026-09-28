@@ -1,0 +1,18 @@
+bucket_action_node:
+  ros__parameters:
+    servo_center: 1500
+    servo_dump: 2000
+
+motor_drive_node:
+  ros__parameters:
+    swap_encoders: false
+
+tag_odom_fusion_landmarks_node:
+  ros__parameters:
+    robot_tag_child_frame: tag36h11_2
+
+    tag_yaw_offset: 1.57079632679
+
+    odom_x_scale: 1.0
+    odom_y_scale: 1.0
+    odom_yaw_scale: 1.0

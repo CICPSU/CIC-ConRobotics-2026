@@ -1,0 +1,5 @@
+# Run from approximately (-1.45, 0.0) with the truck initially facing
+# approximately -130 degrees. Repeat from the same pose for both conditions.
+# direction -1 means drive backward toward the map-frame destination.
+waypoints:
+  - [0.0, 0.0, -1]

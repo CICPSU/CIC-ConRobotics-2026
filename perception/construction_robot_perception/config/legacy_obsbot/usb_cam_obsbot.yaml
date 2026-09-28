@@ -1,0 +1,19 @@
+/**:
+
+  ros__parameters:
+
+    video_device: "/dev/video4"
+
+    image_width: 1920
+
+    image_height: 1080
+
+    pixel_format: "mjpeg2rgb"
+
+    framerate: 30.0
+
+    camera_name: "obsbot_tiny_2_lite"
+
+    camera_frame_id: "camera"
+
+    io_method: "mmap"

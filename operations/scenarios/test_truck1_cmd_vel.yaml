@@ -1,0 +1,25 @@
+scenario_name: test_truck1_cmd_vel
+
+steps:
+
+  - id: direct_move_truck1
+    type: topic_publish
+    topic: /truck1/cmd_vel
+    msg_type: geometry_msgs/Twist
+    duration: 1.0
+    rate_hz: 10.0
+
+    message:
+      linear:
+        x: 0.10
+        y: 0.0
+        z: 0.0
+
+      angular:
+        x: 0.0
+        y: 0.0
+        z: 0.0
+
+  - id: finish_wait
+    type: wait
+    duration: 1.0

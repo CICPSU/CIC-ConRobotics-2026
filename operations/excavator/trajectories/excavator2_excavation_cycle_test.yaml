@@ -1,0 +1,61 @@
+# Fixed site-frame swing targets: first target -175 degrees may turn the robot
+# from any starting heading. Check measured heading and swept area before use.
+trajectory_name: excavator2_excavation_cycle_test
+description: Combined excavation, swing, dumping, and return cycle for excavator 2
+
+joints:
+  - swing
+  - boom
+  - arm
+  - bucket
+
+waypoints:
+
+  - name: open_bucket_for_approach
+    positions:
+      swing: -180.0
+      boom: -10.0
+      arm: 60.0
+      bucket: 0.0
+
+  - name: lower_boom_to_dig
+    positions:
+      swing: -180.0
+      boom: -50.0
+      arm: 60.0
+      bucket: 0.0
+
+  - name: curl_bucket_and_arm_in
+    positions:
+      swing: -180.0
+      boom: -50.0
+      arm: 100.0
+      bucket: 90.0
+
+  - name: lift_boom
+    positions:
+      swing: -180.0
+      boom: -10.0
+      arm: 100.0
+      bucket: 90.0
+
+  - name: swing
+    positions:
+      swing: -95.0
+      boom: -10.0
+      arm: 100.0
+      bucket: 90.0
+
+  - name: dump_bucket
+    positions:
+      swing: -95.0
+      boom: -10.0
+      arm: 60.0
+      bucket: 0.0
+
+  - name: swing_back
+    positions:
+      swing: -180.0
+      boom: -10.0
+      arm: 60.0
+      bucket: 0.0

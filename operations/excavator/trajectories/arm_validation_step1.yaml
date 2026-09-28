@@ -1,0 +1,12 @@
+trajectory_name: arm_validation_step1
+description: >
+  Excavator 3 arm-only closed-loop validation.
+  Move the arm from approximately 91 degrees to 96 degrees.
+
+joints:
+  - arm
+
+waypoints:
+  - name: arm_96
+    positions:
+      arm: 96.0

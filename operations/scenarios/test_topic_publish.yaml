@@ -1,0 +1,15 @@
+scenario_name: test_topic_publish
+
+steps:
+
+  - id: publish_test_message
+    type: topic_publish
+    topic: /test_command
+    msg_type: std_msgs/String
+
+    message:
+      data: hello_from_command_center
+
+  - id: finish_wait
+    type: wait
+    duration: 1.0

@@ -1,0 +1,14 @@
+trajectory_name: excavator2_swing_hold_return_test
+description: Swing 45 degrees, hold the same heading, then return 45 degrees.
+joints:
+  - swing
+waypoints:
+  - name: swing_to_minus100
+    positions:
+      swing: -100.0
+  - name: hold_minus100
+    positions:
+      swing: -100.0
+  - name: return_to_minus145
+    positions:
+      swing: -145.0

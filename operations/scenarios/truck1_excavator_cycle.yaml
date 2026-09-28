@@ -1,0 +1,21 @@
+scenario_name: truck1_excavator_cycle
+
+steps:
+
+  - id: truck1_arrive
+    type: task
+    robot: truck1
+    task_type: waypoint
+    task_file: truck1_waypoints3.yaml
+
+  - id: excavator_load
+    type: excavator_trajectory
+    robot: excavator1
+    task_file: boom_small_test.yaml
+    seconds_per_waypoint: 2.0
+
+  - id: truck1_depart
+    type: task
+    robot: truck1
+    task_type: waypoint
+    task_file: truck1_waypoints.yaml

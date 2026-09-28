@@ -1,0 +1,33 @@
+scenario_name: test_condition
+
+steps:
+
+  - id: initial_wait
+    type: wait
+    duration: 2.0
+
+  - id: wait_for_ready
+    type: condition
+
+    condition:
+      source: topic
+      topic: /test_condition
+      msg_type: std_msgs/String
+      equals: ready
+      timeout: 10.0
+
+    then:
+
+      - id: condition_success_wait
+        type: wait
+        duration: 2.0
+
+    else:
+
+      - id: condition_timeout_wait
+        type: wait
+        duration: 5.0
+
+  - id: final_wait
+    type: wait
+    duration: 1.0
