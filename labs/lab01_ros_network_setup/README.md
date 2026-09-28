@@ -2,6 +2,8 @@
 
 In this lab, you will configure remote access to the course ROS computer, connect to a Raspberry Pi, and establish ROS 2 communication between two computers.
 
+The course has two ROS PCs. **One active Zenoh router** serves the system, and the instructor will identify whether it runs on `ros-pc` or `ros-backup-pc`. In Step 10, you will select that router and make sure every ROS client uses it.
+
 By the end of this lab, you will be able to:
 
 - remotely access the ROS computer using SSH
@@ -18,8 +20,6 @@ The CIC ConRobotics system uses the following basic network architecture:
 Your Laptop
      │
      │ SSH
-     ▼
-   ROS PC
      │
      ├── Zenoh Router
      │
@@ -28,7 +28,21 @@ Your Laptop
                     ▼
                Raspberry Pi
 ```
+or
 
+```text
+ROS PC
+     │
+     │ SSH
+     ▼
+     │
+     ├── Zenoh Router
+     │
+     └──────────────┐
+                    │
+                    ▼
+               Raspberry Pi
+```
 For ROS 2 communication, the important architecture is:
 
 ```text
@@ -510,6 +524,26 @@ Host excavator3
     User besure
     IdentityFile ~/.ssh/id_ed25519
 
+Host excavator4
+    HostName 10.170.xx.xxx
+    User besure
+    IdentityFile ~/.ssh/id_ed25519
+
+Host excavator5
+    HostName 10.170.xx.xxx
+    User besure
+    IdentityFile ~/.ssh/id_ed25519
+
+Host excavator6
+    HostName 10.170.xx.xxx
+    User besure
+    IdentityFile ~/.ssh/id_ed25519
+
+Host excavator7
+    HostName 10.170.xx.xxx
+    User besure
+    IdentityFile ~/.ssh/id_ed25519
+
 Host ROS-PC-1
     HostName 10.170.xx.xxx
     User YOUR_PSU_ID@AD.PSU.EDU
@@ -784,6 +818,10 @@ dumptruck5
 excavator1
 excavator2
 excavator3
+excavator4
+excavator5
+excavator6
+excavator7
 ```
 
 ---
@@ -854,141 +892,167 @@ Confirm that:
 
 # Part E — Configure ROS 2 Communication
 
-## Step 8 — Install Zenoh Support
-
-The CIC ConRobotics system uses **Zenoh** for ROS 2 communication between computers.
-
-Zenoh must be installed on both machines.
-
-> This installation only needs to be completed once per computer.
 
 ---
 
-### ROS PC
+## Step 8 — Select the Correct Router
 
-In the **ROS PC** terminal:
+Before starting ROS 2 nodes, ask the instructor **which PC is hosting the active Zenoh router**.
+
+| Router host | Router profile to use |
+|---|---|
+| Primary ROS PC | `ros-pc` |
+| Backup ROS PC | `ros-backup-pc` |
+
+Use the instructor's choice for every participating computer. The ROS PC running your applications and the PC hosting the router may be different.
+
+### 1. Identify Your Computer and the Active Router
+
+Open `network/devices.sh` in the course repository. This file contains the device profiles and their assigned IP addresses.
+
+Match your assigned ROS PC's SSH address from Step 4 to its entry in `network/devices.sh`. The SSH aliases `ROS-PC-1` and `ROS-PC-2` are connection names; confirm which network profile each represents with the instructor.
+
+Before continuing, record:
+
+| Item | Your assignment |
+|---|---|
+| ROS PC application profile | `ros-pc` or `ros-backup-pc` |
+| Raspberry Pi profile | Your assigned robot, such as `dumptruck1` |
+| Active router profile | Instructor-selected `ros-pc` or `ros-backup-pc` |
+
+Look up the selected router's IP in `network/devices.sh`; you will compare it with the configuration output below. Do not edit device addresses to select a router.
+
+### 2. Understand the Two Profile Arguments
+
+The client command has this form:
+
+```text
+source network/setup_zenoh.sh client <this-computer-profile> <active-router-profile>
+```
+
+For example:
 
 ```bash
-sudo apt update
-sudo apt install ros-jazzy-rmw-zenoh-cpp
+source network/setup_zenoh.sh client dumptruck1 ros-backup-pc
 ```
+
+This configures **Dumptruck1** to use the router on **the backup ROS PC**.
+
+> **Important:** Always include the final router profile in this lab. The network README specifies `ros-pc` as the default when the router argument is omitted. Selecting a router profile configures the current terminal; it does not connect your SSH session to another computer or start a router there.
+
+Run the setup command again in **every new ROS terminal**, using that terminal's computer profile and the same instructor-selected router.
+
+### Checkpoint — Router Selected
+
+- [ ] I know the network profile of my assigned ROS PC and Raspberry Pi.
+- [ ] The instructor has identified the active router host.
+- [ ] I have located that router's IP in `network/devices.sh`.
 
 ---
 
-### Raspberry Pi
+## Step 9 — Start or Confirm the Zenoh Router
 
-In the **Raspberry Pi** terminal:
+**Machine: the instructor-selected router host.**
 
-```bash
-sudo apt update
-sudo apt install ros-jazzy-rmw-zenoh-cpp
-```
+If the instructor or another group already runs the shared router, confirm it is running on the selected host and continue to Step 12. **Do not start a second router.**
 
----
-
-## Step 9 — Prepare the Repository on the Raspberry Pi
-
-The Raspberry Pi also needs the course repository because the network setup script is stored in the repository.
-
-In the **Raspberry Pi** terminal:
+If you are assigned to start it, open a VS Code Remote SSH terminal on the selected router host. Check the connection indicator and run:
 
 ```bash
-mkdir -p ~/ws_conrobotics
-cd ~/ws_conrobotics
+hostname
 ```
 
-If the repository has not already been cloned:
-
-```bash
-git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
-```
-
-Then:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-git checkout dev
-
-source /opt/ros/jazzy/setup.bash
-
-colcon build --symlink-install
-
-source install/setup.bash
-```
-
-If the repository already exists, do **not** clone it again.
-
-Instead:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
-git pull
-
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-```
-
----
-
-## Step 10 — Start the Zenoh Router
-
-The Zenoh router runs on the ROS computer.
-
-### ROS PC — Terminal 1
-
-**Keep this terminal running.**
+Confirm this is the computer identified by the instructor, then prepare the terminal:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
+```
 
-source network/setup_zenoh.sh router
+Run **only one** of these commands, matching the host you are connected to.
 
+**Primary ROS PC hosts the router:**
+
+```bash
+source network/setup_zenoh.sh router ros-pc
+```
+
+**Backup ROS PC hosts the router:**
+
+```bash
+source network/setup_zenoh.sh router ros-backup-pc
+```
+
+Check the selected router and compare its IP with `network/devices.sh`:
+
+```bash
+echo "Router: $CIC_ZENOH_ROUTER"
+echo "Router IP: $CIC_ZENOH_ROUTER_IP"
+```
+
+If these match the instructor's selection, start the router:
+
+```bash
 ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
-> **Do not close this terminal.**
-
-This terminal is now the communication router between the ROS PC and Raspberry Pi.
+**Keep this terminal running.** The application terminals and robot clients will use this router.
 
 ---
 
-## Step 12 — Start the ROS 2 Talker
+## Step 10 — Configure the ROS PC and Start the Talker
 
-Open a **second terminal on the ROS PC**.
+Open a **new terminal on your assigned application ROS PC**. Keep the router terminal running if it is on this computer.
 
-### ROS PC — Terminal 2
-
-First configure this terminal as a Zenoh client:
+Prepare this terminal:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-
-source network/setup_zenoh.sh client ros-pc
 ```
 
-You should see the network configuration printed in the terminal.
+### 1. Select the Correct Client Command
 
-Confirm the middleware:
+Run **only the row matching both your current computer and the active router**:
+
+| Computer running this terminal | Active router | Command |
+|---|---|---|
+| `ros-pc` | `ros-pc` | `source network/setup_zenoh.sh client ros-pc ros-pc` |
+| `ros-pc` | `ros-backup-pc` | `source network/setup_zenoh.sh client ros-pc ros-backup-pc` |
+| `ros-backup-pc` | `ros-pc` | `source network/setup_zenoh.sh client ros-backup-pc ros-pc` |
+| `ros-backup-pc` | `ros-backup-pc` | `source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc` |
+
+### 2. Verify the Router Before Running the Talker
+
+Run:
 
 ```bash
-echo $RMW_IMPLEMENTATION
+hostname
+echo "Device: $CIC_ZENOH_DEVICE"
+echo "Router: $CIC_ZENOH_ROUTER"
+echo "Router IP: $CIC_ZENOH_ROUTER_IP"
+echo "Middleware: $RMW_IMPLEMENTATION"
+echo "ROS domain: $ROS_DOMAIN_ID"
+echo "Zenoh configuration: $ZENOH_CONFIG_OVERRIDE"
 ```
 
-Expected:
+Confirm:
 
-```text
-rmw_zenoh_cpp
-```
+- **Device** matches the ROS PC profile you are using.
+- **Router** matches the instructor-selected router.
+- **Router IP** matches that profile's address in `network/devices.sh`.
+- **Middleware** is `rmw_zenoh_cpp` and **ROS domain** is `10`.
+- In the Zenoh configuration, the connection endpoint is `tcp/127.0.0.1:7447` when this PC also hosts the active router. If the router is on the other PC, the endpoint must use that router's IP on port `7447`.
 
-Now start the talker:
+> If the selected router is wrong or the values are blank, stop here. Open a fresh terminal, source ROS and the workspace, and use the correct row above. If the values remain wrong, ask the instructor to check the setup script. Do not manually change the environment variables.
+
+These checks confirm the terminal's configuration. The talker/listener test below checks actual message transfer.
+
+### 3. Start the Talker
 
 ```bash
 ros2 run demo_nodes_cpp talker
@@ -1004,15 +1068,12 @@ You should see:
 
 **Keep this terminal running.**
 
+<img src="images/Listner-Talker.png" width="900">
 ---
 
-## Step 12 — Start the ROS 2 Listener
+## Step 11 — Configure the Raspberry Pi and Start the Listener
 
-Go to your Raspberry Pi VS Code window.
-
-### Raspberry Pi — Terminal 1
-
-First go to the repository:
+Go to your assigned Raspberry Pi VS Code window and open a terminal.
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -1021,65 +1082,63 @@ source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 ```
 
-Configure the Raspberry Pi as its assigned Zenoh client.
+### 1. Select the Same Active Router
 
-For example, for Dumptruck1:
+Use your assigned Pi profile: `dumptruck1`, `dumptruck3`, `dumptruck4`, `dumptruck5`, `excavator1`, `excavator2`, or `excavator3`.
 
-```bash
-source network/setup_zenoh.sh client dumptruck1
-```
+The following examples use `dumptruck1`. **Replace `dumptruck1` with your assigned Pi profile** and run only the command for the instructor-selected router.
 
-For Dumptruck3:
+**If the active router is `ros-pc`:**
 
 ```bash
-source network/setup_zenoh.sh client dumptruck3
+source network/setup_zenoh.sh client dumptruck1 ros-pc
 ```
 
-For Dumptruck4:
+**If the active router is `ros-backup-pc`:**
 
 ```bash
-source network/setup_zenoh.sh client dumptruck4
+source network/setup_zenoh.sh client dumptruck1 ros-backup-pc
 ```
 
-For Dumptruck5:
+### 2. Compare the Pi Configuration with the ROS PC
 
 ```bash
-source network/setup_zenoh.sh client dumptruck5
+hostname
+echo "Device: $CIC_ZENOH_DEVICE"
+echo "Router: $CIC_ZENOH_ROUTER"
+echo "Router IP: $CIC_ZENOH_ROUTER_IP"
+echo "Middleware: $RMW_IMPLEMENTATION"
+echo "ROS domain: $ROS_DOMAIN_ID"
+echo "Zenoh configuration: $ZENOH_CONFIG_OVERRIDE"
 ```
 
-For Excavator1:
-
-```bash
-source network/setup_zenoh.sh client excavator1
-```
-
-For Excavator2:
-
-```bash
-source network/setup_zenoh.sh client excavator2
-```
-
-For Excavator3:
-
-```bash
-source network/setup_zenoh.sh client excavator3
-```
-
-Use **only the command corresponding to your assigned Raspberry Pi**.
-
-Confirm:
-
-```bash
-echo $RMW_IMPLEMENTATION
-```
-
-Expected:
+For Dumptruck1 using the backup router, the relevant output should be:
 
 ```text
-rmw_zenoh_cpp
+Device: dumptruck1
+Router: ros-backup-pc
+Router IP: <ros-backup-pc address from network/devices.sh>
+Middleware: rmw_zenoh_cpp
+ROS domain: 10
 ```
 
-Now start the listener:
+The IP placeholder above represents the actual address shown by your terminal.
+
+Compare the Pi's output with the ROS PC's output from Step 12:
+
+| Check | Required result |
+|---|---|
+| Device | Each terminal shows its own assigned computer profile. |
+| Router | Both show the same instructor-selected router profile. |
+| Router IP | Both match the selected router's IP in `network/devices.sh`. |
+| Middleware and ROS domain | Both show `rmw_zenoh_cpp` and `10`. |
+| Pi connection endpoint | Uses the selected ROS PC's IP on port `7447`; it must not use `127.0.0.1`, which would refer to the Pi itself. |
+
+> **Do not continue if the router names or router IPs differ.** Open a fresh Pi terminal, source ROS and the workspace, and select the correct router again. Checking only `RMW_IMPLEMENTATION` is not enough to identify the selected router.
+
+<!-- Suggested image: images/step13_router_match.png. Show ROS PC and Pi terminals side by side; highlight the matching Router and Router IP values and their distinct Device values. -->
+
+### 3. Start the Listener
 
 ```bash
 ros2 run demo_nodes_cpp listener
@@ -1093,14 +1152,37 @@ If communication is working, you should see:
 [INFO] [listener]: I heard: [Hello World: 3]
 ```
 
+
+
 ---
 
-## Step 13 — Understand What Just Happened
+## Step 12 — Understand What Just Happened
 
-Your system now looks like this:
+When the application ROS PC also hosts the selected router, your system looks like this:
 
 ```text
 ROS PC
+│
+├── Terminal 1
+│   │
+│   └── Zenoh Router
+│
+└── Terminal 2
+    │
+    └── ROS 2 Talker
+             │
+             │
+             ▼
+        Zenoh Router
+             │
+             ▼
+      Raspberry Pi
+             │
+             └── ROS 2 Listener
+```
+or
+```text
+Your Laptop
 │
 ├── Terminal 1
 │   │
@@ -1123,6 +1205,8 @@ ROS PC
 The talker and listener are running on **different computers**.
 
 Zenoh transports the ROS 2 messages between them.
+
+If the router runs on the other ROS PC, both the talker computer and the Raspberry Pi connect to that selected router instead. The device profiles differ, but their `CIC_ZENOH_ROUTER` and `CIC_ZENOH_ROUTER_IP` values must match.
 
 The same architecture will later be used for:
 
@@ -1152,7 +1236,7 @@ You do **not** manually configure a list of ROS peers.
 
 # Part F — Verify ROS 2 Communication
 
-## Step 14 — Inspect the ROS Network
+## Step 13 — Inspect the ROS Network
 
 While the talker and listener are running, open another Zenoh-configured ROS PC terminal.
 
@@ -1163,9 +1247,18 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-
-source network/setup_zenoh.sh client ros-pc
 ```
+
+Run the **same complete client command you selected in Step 12**, including both the computer profile and the active router profile. Each new terminal needs its own configuration.
+
+Check before continuing:
+
+```bash
+echo "Router: $CIC_ZENOH_ROUTER"
+echo "Router IP: $CIC_ZENOH_ROUTER_IP"
+```
+
+These must match the router selected in Step 10. Do not use an abbreviated command that omits the router profile.
 
 Check the nodes:
 
@@ -1209,10 +1302,12 @@ to stop `ros2 topic echo`.
 
 Confirm that:
 
-- [ ] The Zenoh router is running on the ROS computer.
-- [ ] The talker terminal was configured with `client ros-pc`.
+- [ ] One intended Zenoh router is running on the instructor-selected ROS PC.
+- [ ] The talker terminal was configured with its own PC profile and the selected router profile.
 - [ ] The Raspberry Pi was configured using its correct robot profile.
-- [ ] `RMW_IMPLEMENTATION` reports `rmw_zenoh_cpp`.
+- [ ] Both clients show the same instructor-selected `CIC_ZENOH_ROUTER`.
+- [ ] Both clients show the same `CIC_ZENOH_ROUTER_IP`, matching `network/devices.sh`.
+- [ ] Both clients report `RMW_IMPLEMENTATION=rmw_zenoh_cpp` and `ROS_DOMAIN_ID=10`.
 - [ ] The talker is running on the ROS computer.
 - [ ] The listener is running on the Raspberry Pi.
 - [ ] The Raspberry Pi receives multiple `Hello World` messages.
@@ -1225,31 +1320,22 @@ If all items are complete:
 
 # Part G — Lab Submission
 
-## Step 15 — Submit Your Result
+## Step 14 — Submit Your Result
 
-Submit **one screenshot** showing successful ROS 2 communication between the ROS computer and Raspberry Pi.
+State your assigned ROS PC, Raspberry Pi, and the **instructor-selected active router**.
 
-Your screenshot must clearly show:
+Submit **one combined screenshot** showing the ROS PC and Pi terminals side by side. If the text would be too small, submit two readable screenshots instead.
 
-- the Raspberry Pi VS Code window or terminal
-- the Raspberry Pi hostname in the terminal prompt
-- the Zenoh client configuration output or `RMW_IMPLEMENTATION=rmw_zenoh_cpp`
-- the ROS 2 listener
-- multiple `I heard: [Hello World: ...]` messages
+Your evidence must clearly show:
 
-Example:
+- the ROS PC and Raspberry Pi hostnames or VS Code Remote SSH connection indicators
+- each terminal's `Device`, `Router`, `Router IP`, `Middleware`, and `ROS domain` output from Steps 12 and 13
+- the **same selected router name and router IP on both computers**
+- the talker publishing on the ROS PC and at least five `I heard: [Hello World: ...]` messages on the Pi
 
-```text
-besure@Dumptruck1:~$ echo $RMW_IMPLEMENTATION
+Capture the configuration output before it scrolls out of view. If necessary, include an additional screenshot of the checks.
 
-rmw_zenoh_cpp
-
-besure@Dumptruck1:~$ ros2 run demo_nodes_cpp listener
-
-[INFO] [listener]: I heard: [Hello World: 1]
-[INFO] [listener]: I heard: [Hello World: 2]
-[INFO] [listener]: I heard: [Hello World: 3]
-```
+> A screenshot showing only `rmw_zenoh_cpp` does not identify which PC's router was selected. Include the router name and IP as well as the received messages.
 
 ---
 
@@ -1265,9 +1351,7 @@ Stop the talker.
 
 Stop the listener.
 
-Stop the Zenoh router after your group has finished using it.
-
-If other groups are using the same Zenoh router, **do not stop the shared router**.
+Stop the Zenoh router only if you are responsible for it and the instructor confirms that no other group needs it. **Do not stop a shared router while other groups are using it.**
 
 You can then close your VS Code Remote SSH connections.
 
@@ -1286,8 +1370,9 @@ You have now:
 - built the ROS 2 workspace
 - connected to a Raspberry Pi
 - installed ROS 2 Zenoh support
-- started a Zenoh router
-- configured ROS 2 Zenoh clients
+- selected the instructor-designated router on `ros-pc` or `ros-backup-pc`
+- started or confirmed the shared Zenoh router
+- configured ROS 2 Zenoh clients and verified matching router names and IP addresses
 - tested ROS 2 communication between two computers
 - inspected ROS 2 nodes and topics across the network
 
