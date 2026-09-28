@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import threading
 import time
-from typing import Tuple
+from typing import Optional, Tuple
 
 from excavator_control.swing_angles import shortest_angle_error
 
@@ -34,7 +34,8 @@ def make_motor():
                and node.name in ("ExternalSwingConfig", "ExternalSwingJointMotor")]
     namespace = {
         "dataclass": dataclass, "math": math, "threading": threading,
-        "time": time, "Tuple": Tuple, "shortest_angle_error": shortest_angle_error,
+        "time": time, "Optional": Optional, "Tuple": Tuple,
+        "shortest_angle_error": shortest_angle_error,
         "clamp": lambda value, lo, hi: max(lo, min(hi, value)),
         "pigpio": type("Pigpio", (), {"OUTPUT": 1}),
     }
@@ -142,6 +143,49 @@ def test_explicit_positive_direction_takes_long_route():
         motor.update_position(math.radians(heading))
     _, err, reached, direction, _ = motor.plan_toward_target(math.radians(95), +1)
     assert not reached and round(math.degrees(err)) == 35 and direction == 1
+
+
+def test_early_positive_stop_does_not_change_negative_stop():
+    positive = make_motor()
+    positive.cfg.positive_stop_tolerance_rad = math.radians(30)
+    positive.update_position(math.radians(104))
+    assert positive.start_new_target(math.radians(180))
+    assert positive.plan_toward_target(math.radians(180), +1)[3:] == (1, 255)
+    positive.update_position(math.radians(155))
+    assert positive.plan_toward_target(math.radians(180), +1)[2:] == (True, 0, 0)
+
+    negative = make_motor()
+    negative.cfg.positive_stop_tolerance_rad = math.radians(30)
+    negative.update_position(math.radians(176))
+    assert negative.start_new_target(math.radians(131))
+    assert negative.plan_toward_target(math.radians(131), -1)[3:] == (-1, 255)
+    negative.update_position(math.radians(158))
+    assert negative.plan_toward_target(math.radians(131), -1)[2:] == (False, -1, 255)
+
+
+def test_repeated_heading_preserves_stop_after_overshoot():
+    motor = make_motor()
+    motor.update_position(math.radians(146))
+    assert motor.start_new_target(math.radians(101))
+    assert motor.plan_toward_target(math.radians(101), -1)[3:] == (-1, 255)
+    motor.update_position(math.radians(80))
+    assert motor.plan_toward_target(math.radians(101), -1)[2:] == (True, 0, 0)
+
+    # Next arm/bucket waypoint holds the same swing heading.
+    assert not motor.start_new_target(math.radians(101))
+    assert motor.plan_toward_target(math.radians(101), -1)[2:] == (True, 0, 0)
+
+    # An actual new swing heading starts a new directed move.
+    assert motor.start_new_target(math.radians(146))
+    assert motor.plan_toward_target(math.radians(146), +1)[3:] == (1, 255)
+
+
+def test_equivalent_boundary_heading_is_a_hold():
+    motor = make_motor()
+    motor.update_position(math.radians(170))
+    assert motor.start_new_target(math.pi)
+    motor.plan_toward_target(math.pi, +1)
+    assert not motor.start_new_target(-math.pi)
 
 
 def test_startup_corrects_only_three_joints():

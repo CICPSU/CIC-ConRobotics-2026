@@ -1,0 +1,9 @@
+trajectory_name: excavator2_swing_return_trial
+description: Single swing return from approximately 176 to 131 degrees.
+joints:
+  - swing
+waypoints:
+  - name: return_to_131
+    swing_direction: -1
+    positions:
+      swing: 131.0

@@ -838,6 +838,7 @@ class ExternalSwingConfig:
     pulse_err_rad: float
     pulse_on_cycles: int
     pulse_off_cycles: int
+    positive_stop_tolerance_rad: Optional[float] = None
     pwm_frequency_hz: int = 1000
 
 
@@ -868,6 +869,7 @@ class ExternalSwingJointMotor:
         self._travel_rad = 0.0
         self._planned_travel_rad = None
         self._target_direction = None
+        self._waypoint_target_rad = None
 
         pi.set_mode(cfg.in1_pin, pigpio.OUTPUT)
         pi.set_mode(cfg.in2_pin, pigpio.OUTPUT)
@@ -945,8 +947,15 @@ class ExternalSwingJointMotor:
         self._swing_fault = None
         self.start_new_target()
 
-    def start_new_target(self) -> None:
-        """Clear target-local state when advancing to a new waypoint."""
+    def start_new_target(self, target_rad: Optional[float] = None) -> bool:
+        """Reset only when the commanded heading changes; keep repeated holds latched."""
+        if (
+            target_rad is not None
+            and self._waypoint_target_rad is not None
+            and abs(shortest_angle_error(target_rad, self._waypoint_target_rad)) <= 1e-6
+        ):
+            return False
+        self._waypoint_target_rad = target_rad
         self._goal_reached_latched = False
         self._swing_pulse_tick = 0
         self._reset_progress_watch()
@@ -956,6 +965,7 @@ class ExternalSwingJointMotor:
             self._travel_rad = 0.0
             self._planned_travel_rad = None
             self._target_direction = None
+        return True
 
     def plan_toward_target(
         self, target_rad: float, requested_direction: int
@@ -971,10 +981,16 @@ class ExternalSwingJointMotor:
             self._swing_fault = "invalid swing direction; expected +1 or -1"
             return pos, wrapped_err, False, 0, 0
 
+        stop_tolerance_rad = (
+            self.cfg.positive_stop_tolerance_rad
+            if requested_direction > 0 and self.cfg.positive_stop_tolerance_rad is not None
+            else self.cfg.stop_tolerance_rad
+        )
+
         if self._planned_travel_rad is None:
             with self._lock:
                 self._directed_last_position = pos
-            if abs(wrapped_err) <= self.cfg.stop_tolerance_rad:
+            if abs(wrapped_err) <= stop_tolerance_rad:
                 planned = 0.0
             else:
                 planned = wrapped_err % (2.0 * math.pi)
@@ -1013,8 +1029,8 @@ class ExternalSwingJointMotor:
             self._reset_progress_watch()
             return pos, err, True, 0, 0
 
-        if (abs(err) <= self.cfg.stop_tolerance_rad or
-                requested_direction * err < -self.cfg.stop_tolerance_rad):
+        if (abs(err) <= stop_tolerance_rad or
+                requested_direction * err < -stop_tolerance_rad):
             self._goal_reached_latched = True
             self._reset_progress_watch()
             return pos, wrapped_err, True, 0, 0
@@ -1456,6 +1472,10 @@ class PiExcavatorTrajectoryServer(Node):
                     pulse_err_rad=swing_pulse_err_rad,
                     pulse_on_cycles=swing_pulse_on,
                     pulse_off_cycles=swing_pulse_off,
+                    positive_stop_tolerance_rad=(
+                        math.radians(float(swing_control["positive_stop_tolerance_deg"]))
+                        if "positive_stop_tolerance_deg" in swing_control else None
+                    ),
                     pwm_frequency_hz=pwm_frequency_hz,
                 ),
             ),
@@ -2417,6 +2437,7 @@ class PiExcavatorTrajectoryServer(Node):
         feedback.joint_names = joint_names
         start = time.monotonic()
         active_swing_waypoint_index = None
+        active_swing_direction = None
         
         while rclpy.ok(): # while ROS alive keep running, check cancel, check if done, calculate desired joint angles, tell each joint to move toward its target, wai 0.02 sec, repeat 
             elapsed = time.monotonic() - start # how far into the trajectory we are 
@@ -2453,8 +2474,10 @@ class PiExcavatorTrajectoryServer(Node):
 
                     if swing_waypoint_index != active_swing_waypoint_index:
                         swing = self.joints.get("swing_joint")
-                        if swing is not None and hasattr(swing, "start_new_target"):
-                            swing.start_new_target()
+                        if swing is not None and swing.start_new_target(swing_target):
+                            active_swing_direction = int(
+                                waypoints[swing_waypoint_index].velocities[i]
+                            )
                         active_swing_waypoint_index = swing_waypoint_index
                         self.get_logger().info(
                             f"[PI] Swing waypoint {swing_waypoint_index}: "
@@ -2470,7 +2493,7 @@ class PiExcavatorTrajectoryServer(Node):
 
             for jn, tgt in zip(joint_names, desired):
                 if jn == "swing_joint":
-                    swing_direction = int(waypoints[active_swing_waypoint_index].velocities[joint_names.index(jn)])
+                    swing_direction = active_swing_direction
                     pos, err, reached, direction, pwm = self.joints[jn].plan_toward_target(tgt, swing_direction)
                 else:
                     pos, err, reached, direction, pwm = self.joints[jn].plan_toward_target(tgt)
@@ -2571,7 +2594,7 @@ class PiExcavatorTrajectoryServer(Node):
 
             for jn, tgt in zip(joint_names, final_target):
                 if jn == "swing_joint":
-                    swing_direction = int(waypoints[-1].velocities[joint_names.index(jn)])
+                    swing_direction = active_swing_direction
                     _, err, _, direction, pwm = self.joints[jn].plan_toward_target(tgt, swing_direction)
                 else:
                     _, err, _, direction, pwm = self.joints[jn].plan_toward_target(tgt)
