@@ -41,14 +41,14 @@ waypoints:
 
   - name: swing
     positions:
-      swing: -90.0
+      swing: -95.0
       boom: -10.0
       arm: 100.0
       bucket: 90.0
 
   - name: dump_bucket
     positions:
-      swing: -90.0
+      swing: -95.0
       boom: -10.0
       arm: 60.0
       bucket: 0.0

@@ -322,7 +322,7 @@ joint_control:
     stop_tolerance_rad: 0.1396  # 8 degrees
     tolerance_rad: 0.2618       # 15 degrees
 
-    pulse_err_deg: 20.0
+    pulse_err_deg: 30.0
     pulse_on_cycles: 2
     pulse_off_cycles: 4
 
