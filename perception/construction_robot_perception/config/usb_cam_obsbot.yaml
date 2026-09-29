@@ -7,5 +7,5 @@
     pixel_format: "mjpeg2rgb"
     camera_name: "obsbot_tiny_2_lite"
     camera_info_url: "package://construction_robot_perception/config/obsbot_tiny_2_lite.yaml"
-    camera_frame_id: "camera"
+    frame_id: "default_cam"
     io_method: "mmap"
