@@ -1,111 +1,220 @@
 # Lab 02 — ROS 2 Excavator Control
 
-In Lab 01, you connected to the ROS PC and Raspberry Pi using VS Code Remote SSH, built the course workspace, and used Zenoh to send `Hello World` messages from a talker to a listener on different computers. You also inspected nodes and topics with the ROS 2 command line.
+In this lab, your team will control a physical model excavator using ROS 2.
 
-In this lab, you will control a **physical model excavator**. You will first learn its joints with a handheld controller, then create a YAML trajectory that moves one joint, two joints, and finally all four. You will use `rqt_graph` to see how your commands reach the robot.
+You will:
 
-**Estimated time: 30 minutes. Work with your assigned group.**
+1. Prepare your assigned Excavator Raspberry Pi
+2. Identify the four excavator joints
+3. Start the excavator ROS 2 system
+4. Control one, two, and four joints using a YAML trajectory
+5. Observe the ROS 2 system using `rqt_graph`
+6. Create and record a short excavation motion
 
-By the end of this lab, you will be able to:
-
-- identify the swing, boom, arm, and bucket joints
-- create a ROS 2 excavator trajectory in YAML
-- send that trajectory to the robot's Action server
-- identify the trajectory client, controller, and feedback in the ROS graph
-- record a short dig-and-dump sequence
-
-> **Instructor preparation:** Before class, fill in the station card below; start or verify the shared Zenoh router, the robot Pi, and the Command Center with the excavator's overhead camera and swing adapter. Wait for the excavator to report READY. Confirm the ROS PC desktop can run `rqt_graph`. Students should not spend this 30-minute lab installing packages or calibrating robots.
-
-| Your station | Instructor fills in |
-| --- | --- |
-| Robot name (`excavator1`, `excavator3`, etc.) | __________ |
-| Approved starting pose and target ranges, in degrees | __________ |
-| ROS PC and excavator Pi | __________ |
-| Stop/power cutoff procedure | __________ |
+**Estimated time: 30 minutes**
 
 ---
 
-# Part A — Explore the Physical Excavator
+# Part 1 — Prepare Your Excavator Pi
 
-## Step 1 — Identify the Four Joints (4 minutes)
+## Step 1 — Connect to Your Assigned Excavator
 
-With the handheld controller, move **one joint at a time**. Keep each movement small. Watch what changes at the bucket tip.
+Your instructor will assign an excavator to your group.
 
-| Joint | What moved? |
-| --- | --- |
-| Swing | |
-| Boom | |
-| Arm | |
-| Bucket | |
+Examples:
 
-Which joint points the excavator toward a truck? Which joints lower, reach, and scoop?
+- `excavator1`
+- `excavator2`
+- `excavator3`
+- `excavator5`
+- `excavator6`
+- `excavator7`
 
-<!-- INSERT IMAGE: images/step01_excavator_joints.png
-Photograph of the actual course model with arrows labeling swing, boom, arm, and bucket.
-Place here after capturing; same ~900 px display width as Lab 01. -->
+Using **VS Code Remote SSH**, connect to the Raspberry Pi of your assigned excavator just as you did in Lab 01.
 
-### Checkpoint — Joint Identification
+Make sure the VS Code window is connected to the **Excavator Pi**, not the ROS PC.
 
-- [ ] We can identify all four joints on the physical robot.
-- [ ] We know which joint turns the upper structure toward the dump location.
-
-Return the excavator to the instructor-approved starting pose before switching from the handheld controller to the ROS trajectory. Confirm the handheld controller is no longer issuing motion commands.
+> 🖼️ **SCREENSHOT PLACEHOLDER 01 — VS Code Remote SSH**
+>
+> Add a screenshot showing VS Code connected to an Excavator Raspberry Pi.
 
 ---
 
-# Part B — Create and Run a Trajectory
+## Step 2 — Download a Fresh Copy of the Repository
 
-## Step 2 — Prepare a ROS PC Terminal (2 minutes)
+For this lab, **do not use an old copy of the repository on the Excavator Pi.**
 
-Open a terminal on the **ROS PC** as in Lab 01. Make sure your terminal prompt is from the ROS PC, not the Raspberry Pi.
+Open a terminal on the Excavator Pi and run:
+
+```bash
+cd ~/ws_conrobotics || exit 1
+
+rm -rf CIC-ConRobotics-2026
+
+git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
+
+cd CIC-ConRobotics-2026
+```
+
+This intentionally removes the old course repository from the Excavator Pi and downloads a clean copy.
+
+> ⚠️ Make sure you are working on your assigned **Excavator Pi** before running these commands.
+
+> 🖼️ **SCREENSHOT PLACEHOLDER 02 — Fresh Git Clone**
+>
+> Add a screenshot showing the completed `git clone` and the new repository.
+
+---
+
+## Step 3 — Build the Workspace
+
+After downloading a fresh copy, **always build the workspace before running the robot.**
+
+Run:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+
+colcon build --symlink-install
+
+source install/setup.bash
+```
+
+Wait until the build completes successfully.
+
+If the build fails, stop here and ask the instructor.
+
+> 🖼️ **SCREENSHOT PLACEHOLDER 03 — Successful Build**
+>
+> Add a screenshot showing a successful `colcon build`.
+
+### Checkpoint
+
+Before continuing:
+
+- [ ] We are connected to the correct Excavator Pi.
+- [ ] We downloaded a fresh copy of the repository.
+- [ ] `colcon build --symlink-install` completed successfully.
+
+---
+
+# Part 2 — Explore the Excavator
+
+## Step 4 — Identify the Four Joints
+
+Before controlling the robot with ROS 2, use the handheld controller to understand how the excavator moves.
+
+Move **one joint at a time**.
+
+Keep the movements small.
+
+Identify:
+
+| Joint | Motion |
+|---|---|
+| **Swing** | Rotates the upper body |
+| **Boom** | Raises and lowers the main boom |
+| **Arm** | Extends and retracts the arm |
+| **Bucket** | Opens and closes the bucket |
+
+Think about:
+
+- Which joints create a digging motion?
+- Which joint turns the excavator toward a dump location?
+
+> 🖼️ **SCREENSHOT PLACEHOLDER 04 — Excavator Joints**
+>
+> Add a photo or diagram identifying Swing, Boom, Arm, and Bucket.
+
+### Checkpoint
+
+- [ ] We can identify all four joints.
+- [ ] We understand which joint rotates the excavator.
+- [ ] We returned the robot to the instructor-approved starting position.
+
+---
+
+# Part 3 — Start the Excavator ROS 2 System
+
+## Step 5 — Wait for the Shared Perception System
+
+The excavator uses the overhead camera and AprilTag system for **Swing feedback**.
+
+Your instructor will start this system on the ROS PC.
+
+**Do not continue until the instructor confirms that the shared perception system is running.**
+
+---
+
+## Step 6 — Start Your Excavator
+
+Return to the terminal connected to your **Excavator Pi**.
+
+The example below uses `excavator3`.
+
+Replace `excavator3` with your assigned excavator name.
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client excavator3
+
+sudo pigpiod
+
+ros2 launch excavator_control \
+  excavator.launch.py \
+  mode:=pi \
+  robot_name:=excavator3
+```
+
+Keep this terminal running.
+
+Wait until the excavator completes startup.
+
+Do not send a trajectory while the robot is still initializing.
+
+> 🖼️ **SCREENSHOT PLACEHOLDER 05 — Excavator Running**
+>
+> Add a screenshot showing the Excavator Pi terminal after the ROS 2 system has started successfully.
+
+---
+
+# Part 4 — Control the Excavator
+
+You will now send trajectories from the **ROS PC**.
+
+Open a VS Code window connected to the ROS PC.
+
+Then open a terminal.
+
+Run:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 source network/setup_zenoh.sh client ros-pc
 ```
 
-Set the robot assigned to your group (replace the example name):
+---
 
-```bash
-ROBOT_NAME=excavator3
-```
+## Step 7 — Create a One-Joint Trajectory
 
-Check the middleware and the robot's Action server:
-
-```bash
-echo "$RMW_IMPLEMENTATION"
-ros2 action list
-```
-
-Expected middleware: `rmw_zenoh_cpp`. Look for an Action named like:
+Create a new file:
 
 ```text
-/excavator3/upper_arm_controller/follow_joint_trajectory
+~/ws_conrobotics/lab02/my_excavator_trajectory.yaml
 ```
 
-If the Action is missing, ask the instructor to check the robot. Do not start a second controller on the same excavator.
-The excavator must also finish startup and report `READY` before receiving a trajectory. The instructor will check the robot Pi.
+Start with **one joint only**.
 
-<!-- INSERT IMAGE: images/step02_action_list.png
-ROS PC terminal showing rmw_zenoh_cpp and the assigned excavator Action.
-Crop to emphasize terminal hostname and Action name. -->
-
-## Step 3 — Create a One-Joint YAML File (3 minutes)
-
-In the ROS PC's VS Code window, create a file in your own group's working area. For example:
-
-```bash
-mkdir -p ~/ws_conrobotics/lab02
-TRAJECTORY_FILE=~/ws_conrobotics/lab02/my_excavator_trajectory.yaml
-code "$TRAJECTORY_FILE"
-```
-
-Copy this structure into the file. Replace the two bucket angles with the **instructor-approved starting and target angles** for your assigned robot. Make a small change.
+Example:
 
 ```yaml
-trajectory_name: my_excavator_lab
+trajectory_name: lab02_one_joint
 description: One-joint bucket test
 
 joints:
@@ -114,87 +223,97 @@ joints:
 waypoints:
   - name: start
     positions:
-      bucket: 0.0     # REPLACE with approved starting angle
+      bucket: REPLACE_WITH_START_ANGLE
 
-  - name: move_bucket
+  - name: move
     positions:
-      bucket: 35.0    # REPLACE with approved target angle
+      bucket: REPLACE_WITH_TARGET_ANGLE
 ```
 
-For Excavator 3, the configured startup targets are `boom=-10, arm=60, bucket=0` degrees; swing holds its observed heading; the example bucket target of 35 degrees is a visible but limited motion from that pose. These are **not universal angles**. The instructor must verify the actual pose. All targets are in degrees. Save the file before running it.
+Replace both placeholders with the angles provided by your instructor.
 
-> The `joints` list controls which joints the trajectory commands. Each waypoint must contain a position for **every joint listed**, with no extra joint positions. You are writing a motion trajectory, not editing the robot's calibration or GPIO configuration.
+Use only a **small movement** for your first test.
 
-<!-- INSERT IMAGE: images/step03_bucket_yaml.png
-VS Code editor with the one-joint YAML, highlighting joints and positions. -->
+Save the file.
 
-## Step 4 — Send the One-Joint Trajectory (2 minutes)
+> 🖼️ **SCREENSHOT PLACEHOLDER 06 — One-Joint YAML**
+>
+> Add a screenshot showing the YAML file open in VS Code.
 
-In the same configured **ROS PC** terminal, run:
+---
+
+## Step 8 — Run the One-Joint Trajectory
+
+From the ROS PC terminal, run:
 
 ```bash
 ros2 run construction_site_control \
   excavator_task_client \
-  "$TRAJECTORY_FILE" \
-  --robot "$ROBOT_NAME" \
+  ~/ws_conrobotics/lab02/my_excavator_trajectory.yaml \
+  --robot excavator3 \
   --seconds-per-waypoint 5.0
 ```
 
-The task client reads the YAML when you run it, so editing this trajectory file does **not** require `colcon build`. Watch the excavator and the terminal for goal acceptance, feedback, and a successful result.
+Replace `excavator3` with your assigned excavator.
 
-If the motion is unexpected, use the station's stop procedure and tell the instructor. If a goal is rejected, check the robot name, Action name, angles, and YAML indentation before retrying.
+Watch the physical excavator.
 
-### Checkpoint — One Joint
+Only the joint listed in the YAML file should be commanded.
 
-- [ ] The file saved correctly.
-- [ ] The goal was accepted.
-- [ ] Only the bucket was commanded.
-- [ ] We observed feedback or a result.
+### Checkpoint
+
+- [ ] The trajectory was accepted.
+- [ ] The expected joint moved.
+- [ ] The movement stayed within the approved range.
 
 ---
 
-# Part C — Inspect the ROS Graph
+# Part 5 — Look at the ROS Graph
 
-## Step 5 — Open `rqt_graph` (2 minutes)
+## Step 9 — Open `rqt_graph`
 
-Use a **graphical terminal on the ROS PC desktop** with the same ROS/Zenoh setup as Step 2. Run:
+On the **ROS PC desktop**, open a terminal and use the same ROS 2 / Zenoh setup:
 
 ```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-pc
+
 rqt_graph
 ```
 
-If the command is unavailable or the graphical window does not open, ask the instructor. Your VS Code Remote SSH terminal may not display a GUI without graphical forwarding.
+Run your one-joint trajectory again while `rqt_graph` is open.
 
-While a trajectory is running, find the `excavator3_task_client` (for Excavator 3) and excavator controller. In the graph options, enable Action-related connections if they are hidden. Some nodes may disappear after the short client program exits; run the trajectory again while observing the graph.
+Look for the trajectory client and the excavator controller.
 
-Take a screenshot named `graph_one_joint.png`. The graph may also show other course nodes, such as the camera or AprilTag system.
+Take a screenshot.
 
-<!-- INSERT IMAGE: images/step05_rqt_one_joint.png
-Actual rqt_graph showing trajectory client, controller/Action connections, and relevant feedback.
-Annotate the two nodes and the command path without obscuring graph labels. -->
+Save it as:
 
-### Checkpoint — First Graph
+```text
+graph_one_joint.png
+```
 
-- [ ] We can locate the trajectory client while it is running.
-- [ ] We can identify the excavator controller/Action connection.
-- [ ] We saved `graph_one_joint.png`.
+> 🖼️ **SCREENSHOT PLACEHOLDER 07 — rqt_graph**
+>
+> Add an example screenshot showing the trajectory client and excavator ROS 2 nodes.
 
 ---
 
-# Part D — Add More Joints
+# Part 6 — Add More Joints
 
-## Step 6 — Command Two Joints (5 minutes)
+## Step 10 — Control Two Joints
 
-Edit the **same** YAML file:
+Modify your YAML file so it controls **two joints**.
 
-1. Add `arm` under `joints`.
-2. Add an `arm` position to **every** waypoint.
-3. Add one or two short waypoints so the **arm and bucket** produce a scooping movement. Use only approved angles.
-4. Save the file and repeat the command from Step 4.
-
-The required shape is:
+For example:
 
 ```yaml
+trajectory_name: lab02_two_joints
+description: Arm and bucket test
+
 joints:
   - arm
   - bucket
@@ -202,135 +321,193 @@ joints:
 waypoints:
   - name: start
     positions:
-      arm: APPROVED_START_ARM
-      bucket: APPROVED_START_BUCKET
+      arm: REPLACE_WITH_START_ANGLE
+      bucket: REPLACE_WITH_START_ANGLE
 
   - name: scoop
     positions:
-      arm: APPROVED_TARGET_ARM
-      bucket: APPROVED_TARGET_BUCKET
+      arm: REPLACE_WITH_TARGET_ANGLE
+      bucket: REPLACE_WITH_TARGET_ANGLE
 ```
 
-Replace **every** uppercase placeholder with a numeric angle before running. A joint missing from any waypoint will make the YAML invalid.
+Every waypoint must contain a position for **both joints**.
 
-For Excavator 3, a small example starts at `arm: 60.0, bucket: 0.0` and moves to `arm: 80.0, bucket: 35.0`. The physical response depends on the robot. Get the instructor's go-ahead before running it.
+Save the file and run the same command again:
 
-### Checkpoint — Two Joints
+```bash
+ros2 run construction_site_control \
+  excavator_task_client \
+  ~/ws_conrobotics/lab02/my_excavator_trajectory.yaml \
+  --robot excavator3 \
+  --seconds-per-waypoint 5.0
+```
+
+### Checkpoint
 
 - [ ] Both joints are listed under `joints`.
-- [ ] Every waypoint has positions for both joints.
-- [ ] The robot performed the intended movement.
-
-## Step 7 — Build a Four-Joint Cycle (7 minutes)
-
-Add `swing` and `boom` to `joints`, and give **all four joints** a position at every waypoint. Use a few short waypoints to approximate:
-
-```text
-Open/approach → lower → curl arm and bucket → lift → swing → dump → return
-```
-
-Follow the approved ranges on your station card. Use `excavator3_lab02_example.yaml` as the **Excavator 3 classroom reference**. Its example uses boom, arm, and bucket only; choose swing targets from the observed site heading when building your four-joint cycle. A fixed swing number commands a real turn from any other starting heading. These example targets have not been physically tested for this lab. Confirm the observed starting swing heading, direction, and clearance with the instructor. Plan swing moves of roughly 45 degrees or more for the first physical test; the former 90-to-65-degree example is no longer the commissioning test. Do not use its angles for another excavator.
-
-Run your file using the Step 4 command. The movement can be sequential; this exercise does not require all four motors to run at the same instant.
-
-<!-- INSERT IMAGE: images/step07_four_joint_yaml.png
-VS Code screenshot of the student trajectory showing the four names under joints
-and one complete waypoint with four positions. -->
-
-### Checkpoint — Four Joints
-
-- [ ] The YAML lists swing, boom, arm, and bucket.
-- [ ] Every waypoint specifies the four corresponding positions.
-- [ ] The motion resembles a short excavation cycle.
-
-## Step 8 — Compare the Graph (2 minutes)
-
-Open or refresh `rqt_graph` and rerun the trajectory if needed to make the client visible. Save `graph_four_joints.png`.
-
-Compare the two screenshots: Did changing the YAML from one joint to four add ROS nodes, or did the **same client and controller** exchange a different trajectory? Identify the connection that carries the command and any feedback you can observe.
-
-<!-- INSERT IMAGE: images/step08_rqt_four_joints.png
-Second real rqt_graph screenshot, using the same view settings as Step 5 for comparison. -->
+- [ ] Every waypoint contains both joints.
+- [ ] The excavator performs the expected motion.
 
 ---
 
-# Part E — Record and Submit
+# Part 7 — Create a Four-Joint Excavation Motion
 
-## Step 9 — Film the Excavation Motion (3 minutes)
+## Step 11 — Use All Four Joints
 
-Record a short video showing your group's model excavator performing a recognizable **scoop → lift → turn → dump** motion. Keep people outside the robot's movement area.
+Now modify the YAML file to use:
+
+```yaml
+joints:
+  - swing
+  - boom
+  - arm
+  - bucket
+```
+
+Create a short sequence similar to:
+
+```text
+Approach
+   ↓
+Lower
+   ↓
+Scoop
+   ↓
+Lift
+   ↓
+Swing
+   ↓
+Dump
+   ↓
+Return
+```
+
+Each waypoint must include:
+
+```yaml
+positions:
+  swing: ...
+  boom: ...
+  arm: ...
+  bucket: ...
+```
+
+Use only instructor-approved joint angles.
+
+### Swing Direction
+
+For Swing:
+
+- `0°` points away from the window (`+x` direction of the construction site)
+- Clockwise rotation is **positive**
+- Counterclockwise rotation is **negative**
+- Swing targets must stay between `-180°` and `+180°`
+
+Choose a target that does not require rotating beyond this range.
+
+For the first test, avoid very small Swing movements. Use a clearly visible but safe movement approved by the instructor.
+
+---
+
+## Step 12 — Run the Four-Joint Trajectory
+
+Run the same trajectory command:
+
+```bash
+ros2 run construction_site_control \
+  excavator_task_client \
+  ~/ws_conrobotics/lab02/my_excavator_trajectory.yaml \
+  --robot excavator3 \
+  --seconds-per-waypoint 5.0
+```
+
+Replace `excavator3` with your assigned excavator.
+
+Watch the complete excavation motion.
+
+> 🖼️ **SCREENSHOT PLACEHOLDER 08 — Four-Joint Trajectory**
+>
+> Add a screenshot showing the final four-joint YAML or the trajectory running.
+
+---
+
+# Part 8 — Compare the ROS Graph
+
+Open `rqt_graph` again and run the four-joint trajectory.
+
+Take another screenshot.
+
+Save it as:
+
+```text
+graph_four_joints.png
+```
+
+Compare it with your first graph.
+
+Think about this question:
+
+> Did adding more joints create a completely new ROS 2 system, or did the same ROS 2 nodes send a different trajectory?
+
+---
+
+# Part 9 — Final Excavation Motion
+
+Create a short final motion that includes:
+
+1. Lower
+2. Scoop
+3. Lift
+4. Swing
+5. Dump
+6. Return
+
+Record a short video of the excavator performing the motion.
+
+Keep everyone clear of the robot while it is moving.
+
+> 🖼️ **SCREENSHOT PLACEHOLDER 09 — Final Motion**
+>
+> Add a photo or screenshot showing the completed excavation cycle.
+
+---
+
+# Submission
 
 Submit **one set per group**:
 
-- the final `my_excavator_trajectory.yaml`
-- `graph_one_joint.png` and `graph_four_joints.png`
-- the short video
-- one or two sentences: Which joints produced the scooping motion, and which joint turned toward the dump location?
+- `my_excavator_trajectory.yaml`
+- `graph_one_joint.png`
+- `graph_four_joints.png`
+- Short video of the final excavation motion
 
-### Before You Leave
+---
 
-Stop your own trajectory program and close `rqt_graph`. Follow the instructor's directions for robot power. **Do not stop the shared Zenoh router** while other groups are working.
+# Before You Leave
+
+- Stop your trajectory program.
+- Close `rqt_graph`.
+- Follow the instructor's directions before turning off the excavator.
+- Do **not** stop the shared Zenoh router or shared camera system.
 
 ---
 
 # Lab Complete
 
-You have moved from Lab 01's ROS 2 talker/listener to an Action client controlling a real robot. Your trajectory describes the excavator's joint targets; later labs will coordinate the excavator with a dump truck and run an integrated scenario.
+You have now moved from basic ROS 2 communication to controlling a physical robot.
 
-<!-- INSTRUCTOR IMAGE CHECKLIST
-Capture actual screenshots before release, then replace the comments above with:
-<img src="images/step01_excavator_joints.png" width="900">
-<img src="images/step02_action_list.png" width="900">
-<img src="images/step03_bucket_yaml.png" width="900">
-<img src="images/step05_rqt_one_joint.png" width="900">
-<img src="images/step07_four_joint_yaml.png" width="900">
-<img src="images/step08_rqt_four_joints.png" width="900">
-Use real course equipment, terminal output, and graph state. Do not publish broken image links.
--->
----
+You used:
 
-# Instructor Setup — Complete Before the 30-Minute Student Activity
-
-The repository root README directs normal physical operation to `command_center/README.md`. The commands below follow that guide for **Excavator 3 alone**. Use the machine-specific configuration already installed on the Pi. Start the shared router only once; if it is running, reuse it.
-
-### ROS PC — Router terminal
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_zenoh.sh router ros-pc
-ros2 run rmw_zenoh_cpp rmw_zenohd
+```text
+YAML Trajectory
+      ↓
+ROS 2 Client
+      ↓
+ROS 2 Action
+      ↓
+Excavator Controller
+      ↓
+Physical Excavator
 ```
 
-### Excavator 3 Pi — Hardware terminal
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_zenoh.sh client excavator3
-sudo pigpiod
-ros2 launch excavator_control \
-  excavator.launch.py \
-  mode:=pi \
-  robot_name:=excavator3
-```
-
-### ROS PC — Command Center terminal
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_zenoh.sh client ros-pc
-ros2 launch construction_site_control \
-  command_center.launch.py \
-  trucks:="" \
-  excavators:=excavator3 \
-  start_scenario_manager:=false
-```
-
-The Command Center provides the shared camera, AprilTag detection, and swing adapter. Wait for fresh swing feedback and the Pi's final `READY` confirmation. Do not have students send Action goals while initialization is in progress. Confirm the RC controller and ROS controller will not issue conflicting commands during the exercise.
-
-Before release, copy the supplied `excavator3_lab02_example.yaml` to the lab folder or `operations/excavator/trajectories/` on the course ROS PC, check the machine's actual starting pose and physical clearance, and run the sample under instructor supervision. It has been checked against the repository's YAML structure and the configured joint ranges, **not tested on the physical machine**.
+In the next lab, you will use these robot-level tasks as part of a larger construction operation.
