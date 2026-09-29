@@ -610,6 +610,8 @@ excavator7
 
 > Only connect to the Raspberry Pi assigned to your group.
 
+**Before continuing, configure SSH access to your assigned Raspberry Pi using the same procedure you used earlier for the ROS PC.**
+
 ### 1. Keep Your ROS PC Window Open
 
 You should already have one VS Code window connected to:
