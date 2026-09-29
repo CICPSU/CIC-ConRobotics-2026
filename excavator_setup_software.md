@@ -203,7 +203,6 @@ After creating or changing `excavatorX.yaml`:
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
-source ~/excavator_env/bin/activate
 
 colcon build --symlink-install \
   --packages-select excavator_control
@@ -337,7 +336,6 @@ source network/setup_zenoh.sh client ros-pc
 
 ros2 launch construction_site_control \
   command_center.launch.py \
-  trucks:="" \
   excavators:=excavatorX \
   start_scenario_manager:=false
 ```
@@ -352,7 +350,6 @@ ros2 launch construction_site_control \
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
-source ~/excavator_env/bin/activate
 source install/setup.bash
 
 source network/setup_zenoh.sh client excavatorX
@@ -423,10 +420,17 @@ Never command a swing target outside ±180°.
 Avoid a move that is exactly 180° from the current heading.
 
 ---
+## 4.5 Check the Current Joint Positions and Test trajectory
 
-# 4.5 Test About 30 to 45°
+Before creating a test trajectory, check the excavator's current joint positions.
 
-Create one small test trajectory:
+From **ROS PC — Terminal 3**:
+
+```bash
+ros2 topic echo /excavatorX/joint_states --once
+
+
+Create one small test trajectory on the ROS computer:
 
 ```text
 operations/excavator/trajectories/excavatorX_joint_test.yaml
@@ -486,6 +490,7 @@ For every joint:
 
 ## If Direction is Wrong
 
+**On the Pi**
 Open:
 
 ```text
@@ -557,7 +562,6 @@ Build again:
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
-source ~/excavator_env/bin/activate
 
 colcon build --symlink-install \
   --packages-select excavator_control
