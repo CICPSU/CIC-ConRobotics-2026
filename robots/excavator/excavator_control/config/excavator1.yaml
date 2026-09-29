@@ -27,22 +27,22 @@ joints:
     adc_channel: 2
     min_angle_deg: -60.0
     max_angle_deg: 5.0
-    raw_at_min_angle: 18950
-    raw_at_max_angle: 17280
+    raw_at_min_angle: 17940
+    raw_at_max_angle: 12045
 
   arm:
     adc_channel: 1
     min_angle_deg: 52.0
     max_angle_deg: 112.0
-    raw_at_min_angle: 16800
-    raw_at_max_angle: 11170
+    raw_at_min_angle: 17450
+    raw_at_max_angle: 11750
 
   bucket:
     adc_channel: 0
     min_angle_deg: 0.0
     max_angle_deg: 90.0
-    raw_at_min_angle: 11830
-    raw_at_max_angle: 13760
+    raw_at_min_angle: 14270
+    raw_at_max_angle: 13100
 
   swing:
     # Swing position comes from the site perception / sensor adapter.
