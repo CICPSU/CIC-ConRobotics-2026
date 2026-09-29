@@ -24,21 +24,21 @@ excavator_name: excavator1
 joints:
 
   boom:
-    adc_channel: 2
+    adc_channel: 0
     min_angle_deg: -60.0
     max_angle_deg: 5.0
-    raw_at_min_angle: 18950
-    raw_at_max_angle: 17280
+    raw_at_min_angle: 21250
+    raw_at_max_angle: 15500
 
   arm:
-    adc_channel: 1
+    adc_channel: 2
     min_angle_deg: 52.0
     max_angle_deg: 112.0
     raw_at_min_angle: 16800
     raw_at_max_angle: 11170
 
   bucket:
-    adc_channel: 0
+    adc_channel: 1
     min_angle_deg: 0.0
     max_angle_deg: 90.0
     raw_at_min_angle: 11830
@@ -81,7 +81,7 @@ gpio:
   bucket:
     in1_pin: 23
     in2_pin: 24
-    invert_motor: false
+    invert_motor: true
 
 
 # ================================================================
