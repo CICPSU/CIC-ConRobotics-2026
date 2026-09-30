@@ -36,9 +36,9 @@ Make sure the VS Code window is connected to both **Excavator Pi**, and **ROS PC
 
 ## Step 2 — Download a Fresh Copy of the Repository
 
-For this lab, **do not use an old copy of the repository on the Excavator Pi.**
+For this lab, **do not use an old copy of the repository on the ROS-PC.**
 
-Open a terminal on the ROSPCand run:
+Open a terminal on the ROS PC and run:
 
 ```bash
 cd ~/ws_conrobotics || exit 1
