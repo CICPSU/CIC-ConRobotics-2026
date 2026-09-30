@@ -28,7 +28,7 @@ The normal physical architecture is:
                 │                 │
           Zenoh Router       Command Center
                 │                 │
-        ┌───────┼─────────┐       │
+        ┌───────┼─────────┐───────│
         │       │         │       │
         ▼       ▼         ▼       ▼
      Truck Pi  Truck Pi  Excavator Pi
@@ -183,7 +183,6 @@ Examples:
 ros2 launch construction_site_control \
   command_center.launch.py \
   trucks:=truck1 \
-  excavators:="" \
   start_scenario_manager:=true \
   scenario:=YOUR_TRUCK_SCENARIO.yaml
 ```
@@ -191,7 +190,6 @@ ros2 launch construction_site_control \
 ``` bash
 ros2 launch construction_site_control \
   command_center.launch.py \
-  trucks:="" \
   excavators:=excavator3 \
   start_scenario_manager:=true \
   scenario:=YOUR_EXCAVATOR_SCENARIO.yaml
