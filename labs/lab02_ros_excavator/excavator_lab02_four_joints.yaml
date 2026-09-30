@@ -1,4 +1,4 @@
-# Lab 02 example trajectory for Excavator 3.
+# Lab 02 example trajectory for Excavator.
 # Startup holds its observed swing heading; boom/arm/bucket have configured targets.
 # This is a classroom example, not a validated physical test.
 # Check the actual READY pose and clear the workspace before running.
@@ -6,8 +6,8 @@
 # Each waypoint supplies all four joints because all four are listed below.
 # The task client reads this YAML at run time; editing it needs no rebuild.
 
-trajectory_name: excavator3_lab02_small_dig
-description: Small dig and return near Excavator 3's initial pose.
+trajectory_name: excavatorX_lab02_example
+description: XXX
 
 joints:
   - swing
@@ -18,28 +18,28 @@ joints:
 waypoints:
   - name: initial
     positions:
-      swing: 90.0
-      boom: -10.0
-      arm: 60.0
-      bucket: 0.0
+      swing: XXXX
+      boom: XXXX
+      arm: XXXX
+      bucket: XXXX
 
   - name: lower_boom
     positions:
-      swing: 90.0
-      boom: -25.0
-      arm: 60.0
-      bucket: 0.0
+      swing: XXXX
+      boom: XXXX
+      arm: XXXX
+      bucket: XXXX
 
   - name: small_scoop
     positions:
-      swing: 90.0
-      boom: -25.0
-      arm: 80.0
-      bucket: 90.0
+      swing: XXXX
+      boom: XXXX
+      arm: XXXX
+      bucket: XXXX
 
   - name: return_initial
     positions:
-      swing: 90.0
-      boom: -10.0
-      arm: 60.0
-      bucket: 0.0
+      swing: XXXX
+      boom: XXXX
+      arm: XXXX
+      bucket: XXXX

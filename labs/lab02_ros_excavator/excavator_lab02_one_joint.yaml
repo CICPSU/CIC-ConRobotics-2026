@@ -1,0 +1,19 @@
+# Lab 02 example trajectory for Excavator 3.
+# Startup holds its observed swing heading; boom/arm/bucket have configured targets.
+# This is a classroom example, not a validated physical test.
+# Check the actual READY pose and clear the workspace before running.
+#
+# Each waypoint supplies all four joints because all four are listed below.
+# The task client reads this YAML at run time; editing it needs no rebuild.
+
+trajectory_name: excavator_lab02_move_arm
+description: Small arm move neat the Excavator's initial pose.
+
+joints:
+  - arm
+
+waypoints:
+  - name: initial
+    positions:
+      arm: 80.0
+
