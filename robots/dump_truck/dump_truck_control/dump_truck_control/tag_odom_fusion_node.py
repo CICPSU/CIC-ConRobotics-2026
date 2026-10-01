@@ -12,7 +12,7 @@ This node extends the working v3 idea:
     wheel odom          = smooth relative motion
 
 by adding fixed floor AprilTags as landmarks. The landmark tags are used to estimate
-an updated 2D transform:
+a startup-validated, run-locked 2D transform:
 
     camera/tag raw XY  -->  field/map XY
 
@@ -27,7 +27,10 @@ Recommended setup
 
 Core fusion model
 -----------------
-1. The node estimates camera_to_map from visible landmarks.
+1. The node requires fresh Tag 16/17/18 observations from the same images.
+   After a stable multi-image window passes validation, camera_to_map is LOCKED.
+   It is never recomputed during this node lifetime, even after landmark loss.
+   Relocated tags require new surveyed center coordinates in landmarks.yaml.
 2. The robot tag TF is converted into an absolute map pose.
 3. At startup, the node records:
        initial robot map pose from AprilTag
@@ -40,6 +43,7 @@ Core fusion model
 This keeps waypoints fully absolute in map coordinates.
 """
 
+import json
 import math
 from typing import Dict, Optional, Tuple, List
 
@@ -48,12 +52,14 @@ from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import TransformStamped
 from tf2_msgs.msg import TFMessage
+from std_msgs.msg import String
 import tf2_ros
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover
-    yaml = None
+from dump_truck_control.site_registration import (
+    Similarity2D,
+    StartupSiteRegistration,
+    load_landmark_layout,
+)
 
 
 Pose2D = Tuple[float, float, float]
@@ -92,66 +98,6 @@ def mean_angle(angles: List[float]) -> float:
     return math.atan2(sy, sx)
 
 
-class Similarity2D:
-    """2D similarity transform: map = scale * R(theta) * camera + translation."""
-
-    def __init__(self, scale: float = 1.0, theta: float = 0.0, tx: float = 0.0, ty: float = 0.0):
-        self.scale = scale
-        self.theta = theta
-        self.tx = tx
-        self.ty = ty
-
-    def apply(self, x: float, y: float) -> Point2D:
-        rx, ry = rotate_2d(x, y, self.theta)
-        return self.scale * rx + self.tx, self.scale * ry + self.ty
-
-    def yaw_apply(self, yaw: float) -> float:
-        return normalize_angle(self.theta + yaw)
-
-
-def estimate_similarity_2d(camera_pts: List[Point2D], map_pts: List[Point2D], allow_scale: bool) -> Optional[Similarity2D]:
-    """
-    Estimate best-fit 2D similarity transform from camera_pts to map_pts.
-
-    Uses a lightweight closed-form Procrustes solution without numpy.
-    Needs at least 2 non-identical point pairs. Three landmarks are recommended.
-    """
-    n = min(len(camera_pts), len(map_pts))
-    if n < 2:
-        return None
-
-    cx = sum(p[0] for p in camera_pts) / n
-    cy = sum(p[1] for p in camera_pts) / n
-    mx = sum(p[0] for p in map_pts) / n
-    my = sum(p[1] for p in map_pts) / n
-
-    a = 0.0  # sum ux*vx + uy*vy
-    b = 0.0  # sum ux*vy - uy*vx
-    denom = 0.0
-    for (px, py), (qx, qy) in zip(camera_pts, map_pts):
-        ux = px - cx
-        uy = py - cy
-        vx = qx - mx
-        vy = qy - my
-        a += ux * vx + uy * vy
-        b += ux * vy - uy * vx
-        denom += ux * ux + uy * uy
-
-    if denom < 1e-9:
-        return None
-
-    theta = math.atan2(b, a)
-    if allow_scale:
-        scale = math.sqrt(a * a + b * b) / denom
-    else:
-        scale = 1.0
-
-    rcx, rcy = rotate_2d(cx, cy, theta)
-    tx = mx - scale * rcx
-    ty = my - scale * rcy
-    return Similarity2D(scale, theta, tx, ty)
-
-
 class TagOdomFusionLandmarksNode(Node):
     def __init__(self):
         super().__init__('tag_odom_fusion_landmarks_node')
@@ -165,11 +111,13 @@ class TagOdomFusionLandmarksNode(Node):
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('fused_child_frame', 'base_link_fused')
 
-        # Landmark calibration
+        # Startup-only floor-tag registration. The legacy transform-alpha
+        # parameter remains declared for compatibility but is NOT used to
+        # update a locked transform. Quality limits live in landmarks.yaml.
         self.declare_parameter('landmarks_yaml', '')
         self.declare_parameter('use_landmark_calibration', True)
         self.declare_parameter('allow_landmark_scale', True)
-        self.declare_parameter('min_landmarks_for_update', 2)
+        self.declare_parameter('min_landmarks_for_update', 3)
         self.declare_parameter('landmark_timeout_sec', 1.0)
         self.declare_parameter('landmark_transform_alpha', 0.15)
         self.declare_parameter('publish_landmark_debug', True)
@@ -265,10 +213,25 @@ class TagOdomFusionLandmarksNode(Node):
         # Landmark definitions: child_frame -> map pose/point
         self.landmarks: Dict[str, Dict[str, float]] = self.load_landmarks(self.landmarks_yaml)
 
+        self.startup_registration = None
+        if self.use_landmark_calibration:
+            if self.min_landmarks_for_update != 3:
+                raise ValueError(
+                    'Startup registration requires min_landmarks_for_update=3; '
+                    'a two-tag fallback is not permitted.')
+            self.startup_registration = StartupSiteRegistration(
+                self.landmarks,
+                self.landmark_layout.registration,
+                allow_scale=self.allow_landmark_scale,
+                timeout_sec=self.landmark_timeout_sec,
+                not_before_ns=self.get_clock().now().nanoseconds,
+            )
+
         # Live TF cache: child_frame -> (raw_x, raw_y, raw_yaw, time)
         self.latest_tag_raw: Dict[str, Tuple[float, float, float, rclpy.time.Time]] = {}
 
-        # Current camera-to-map transform. Initial fallback uses manual transform.
+        # Manual transform is used ONLY when landmark calibration is explicitly
+        # disabled. With calibration enabled, initialization is gated on LOCKED.
         self.camera_to_map = Similarity2D(
             scale=1.0,
             theta=self.manual_camera_to_map_yaw,
@@ -303,6 +266,10 @@ class TagOdomFusionLandmarksNode(Node):
         self.create_subscription(Odometry, self.odom_topic, self.odom_callback, 10)
         self.create_subscription(TFMessage, self.tf_topic, self.tf_callback, 10)
         self.fused_pub = self.create_publisher(Odometry, self.fused_odom_topic, 10)
+        self.registration_status_pub = self.create_publisher(
+            String, '~/site_registration', 1)
+        self.registration_status_timer = self.create_timer(
+            1.0, self.publish_registration_status)
         self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
 
         period = 1.0 / max(self.update_rate_hz, 1.0)
@@ -316,31 +283,22 @@ class TagOdomFusionLandmarksNode(Node):
         )
 
     def load_landmarks(self, path: str) -> Dict[str, Dict[str, float]]:
-        if not path:
-            self.get_logger().warn('No landmarks_yaml provided. Landmark calibration will not update.')
-            return {}
-        if yaml is None:
-            self.get_logger().error('PyYAML is not installed. Install with: sudo apt install python3-yaml')
+        self.landmark_layout = None
+        if not self.use_landmark_calibration:
+            self.get_logger().warn(
+                'Landmark calibration is explicitly disabled: using MANUAL camera-to-map. '
+                'This is not the normal physical-course startup mode.')
             return {}
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f) or {}
-        except Exception as exc:
-            self.get_logger().error(f'Failed to read landmarks_yaml={path}: {exc}')
-            return {}
-
-        raw = data.get('landmarks', data)
-        result: Dict[str, Dict[str, float]] = {}
-        for key, val in raw.items():
-            if val is None:
-                continue
-            frame = str(val.get('frame', f'tag36h11_{key}'))
-            result[frame] = {
-                'x': float(val['x']),
-                'y': float(val['y']),
-                'yaw': float(val.get('yaw', 0.0)),
-            }
-        return result
+            self.landmark_layout = load_landmark_layout(path, self.map_frame)
+        except (OSError, ValueError, TypeError) as exc:
+            self.get_logger().error(f'SITE REGISTRATION CONFIG ERROR: {exc}')
+            raise RuntimeError(f'Invalid landmarks_yaml={path}: {exc}') from exc
+        self.get_logger().info(
+            f'Surveyed landmark layout: {path} '
+            f'(fingerprint={self.landmark_layout.fingerprint}); '
+            'Tag 16/17/18 startup lock enabled.')
+        return dict(self.landmark_layout.landmarks)
 
     def odom_callback(self, msg: Odometry):
         q = msg.pose.pose.orientation
@@ -356,6 +314,19 @@ class TagOdomFusionLandmarksNode(Node):
         now = self.get_clock().now()
         for t in msg.transforms:
             if t.header.frame_id != self.tag_parent_frame:
+                continue
+
+            if (self.startup_registration is not None
+                    and t.child_frame_id in self.landmarks):
+                source_ns = (t.header.stamp.sec * 1_000_000_000
+                             + t.header.stamp.nanosec)
+                self.startup_registration.observe(
+                    t.child_frame_id,
+                    (t.transform.translation.x * self.camera_x_scale,
+                     t.transform.translation.y * self.camera_y_scale),
+                    source_ns,
+                    now.nanoseconds,
+                )
                 continue
 
             q = t.transform.rotation
@@ -396,65 +367,52 @@ class TagOdomFusionLandmarksNode(Node):
         return age <= self.robot_tag_timeout_sec
 
     def update_camera_to_map_from_landmarks(self):
-        if not self.use_landmark_calibration or not self.landmarks:
+        # CRITICAL INVARIANT: a locked camera-to-map is never updated, smoothed,
+        # cleared, or invalidated merely because fixed floor tags disappear.
+        if not self.use_landmark_calibration or self.landmark_transform_ready:
             return
-
-        camera_pts: List[Point2D] = []
-        map_pts: List[Point2D] = []
-        landmark_yaw_errors: List[float] = []
-
-        for frame, known in self.landmarks.items():
-            if not self.raw_tag_is_fresh(frame, self.landmark_timeout_sec):
-                continue
-            raw_x, raw_y, raw_yaw, _ = self.latest_tag_raw[frame]
-            camera_pts.append((raw_x, raw_y))
-            map_pts.append((known['x'], known['y']))
-            landmark_yaw_errors.append(normalize_angle(known.get('yaw', 0.0) - raw_yaw))
-
-        if len(camera_pts) < max(2, self.min_landmarks_for_update):
+        status = self.startup_registration.status(self.get_clock().now().nanoseconds)
+        if not self.startup_registration.locked:
             self.get_logger().info(
-                f'Waiting for landmarks: visible={len(camera_pts)}, needed={max(2, self.min_landmarks_for_update)}',
-                throttle_duration_sec=1.0,
+                'SITE REGISTRATION WAIT: '
+                f"visible={len(status['visible_frames'])}/3 "
+                f"samples={status['samples']}/{status['required_samples']} "
+                f"{status['reason']}",
+                throttle_duration_sec=2.0,
             )
             return
+        self.camera_to_map = self.startup_registration.transform
+        self.landmark_transform_ready = True
+        t = self.camera_to_map
+        self.get_logger().info(
+            'SITE REGISTRATION LOCKED: '
+            f"samples={status['samples']} span={status['sample_span_sec']:.2f}s "
+            f'scale={t.scale:.6f} yaw_deg={math.degrees(t.theta):+.3f} '
+            f't=({t.tx:+.4f},{t.ty:+.4f})m '
+            f"RMS={status['rms_m']:.4f}m max={status['max_point_error_m']:.4f}m; "
+            'floor-tag occlusion is allowed. Stop robots and restart the FULL '
+            'Command Center to register again after camera/tag relocation.'
+        )
 
-        estimated = estimate_similarity_2d(camera_pts, map_pts, self.allow_landmark_scale)
-        if estimated is None:
-            self.get_logger().warn('Could not estimate camera_to_map from landmarks.', throttle_duration_sec=1.0)
-            return
-
-        # Position-based transform is the main source. If landmark yaw is reliable, it should be close.
-        # We do not force theta from yaw because AprilTag yaw can have convention offsets.
-        a = max(0.0, min(1.0, self.landmark_transform_alpha))
-        if not self.landmark_transform_ready:
-            self.camera_to_map = estimated
-            self.landmark_transform_ready = True
+    def publish_registration_status(self):
+        if self.startup_registration is None:
+            status = {
+                'state': 'MANUAL',
+                'reason': 'use_landmark_calibration is explicitly false',
+            }
         else:
-            # Smooth scale and translation linearly; smooth angle circularly.
-            old = self.camera_to_map
-            new_theta = normalize_angle(old.theta + a * normalize_angle(estimated.theta - old.theta))
-            self.camera_to_map = Similarity2D(
-                scale=(1.0 - a) * old.scale + a * estimated.scale,
-                theta=new_theta,
-                tx=(1.0 - a) * old.tx + a * estimated.tx,
-                ty=(1.0 - a) * old.ty + a * estimated.ty,
-            )
-
-        if self.publish_landmark_debug:
-            # Residual debug
-            errs = []
-            for cp, mp in zip(camera_pts, map_pts):
-                px, py = self.camera_to_map.apply(cp[0], cp[1])
-                errs.append(math.hypot(px - mp[0], py - mp[1]))
-            rms = math.sqrt(sum(e * e for e in errs) / len(errs)) if errs else 0.0
-            yaw_hint = mean_angle(landmark_yaw_errors)
-            self.get_logger().info(
-                f'landmark camera_to_map: visible={len(camera_pts)} '
-                f'scale={self.camera_to_map.scale:.4f} theta={self.camera_to_map.theta:.3f} '
-                f't=({self.camera_to_map.tx:.3f},{self.camera_to_map.ty:.3f}) '
-                f'rms={rms:.3f} yaw_hint={yaw_hint:.3f}',
-                throttle_duration_sec=1.0,
-            )
+            status = self.startup_registration.status(self.get_clock().now().nanoseconds)
+            status['layout_fingerprint'] = self.landmark_layout.fingerprint
+        status['map_frame'] = self.map_frame
+        status['tag_parent_frame'] = self.tag_parent_frame
+        status['transform_input'] = 'camera XY after axis sign/scale corrections'
+        status['camera_x_scale'] = self.camera_x_scale
+        status['camera_y_scale'] = self.camera_y_scale
+        status['camera_yaw_scale'] = self.camera_yaw_scale
+        status['fusion_initialized'] = self.initialized
+        message = String()
+        message.data = json.dumps(status, sort_keys=True, allow_nan=False)
+        self.registration_status_pub.publish(message)
 
     def convert_robot_raw_to_map_pose(self, raw_x: float, raw_y: float, raw_yaw: float) -> Pose2D:
         tag_x, tag_y = self.camera_to_map.apply(raw_x, raw_y)
@@ -468,14 +426,13 @@ class TagOdomFusionLandmarksNode(Node):
     def try_initialize(self) -> bool:
         if self.initialized:
             return True
+        if self.use_landmark_calibration and not self.landmark_transform_ready:
+            return False
         if self.current_odom_pose is None:
             self.get_logger().info('Waiting for /odom...', throttle_duration_sec=1.0)
             return False
         if not self.robot_tag_is_fresh():
             self.get_logger().info('Waiting for fresh robot AprilTag TF...', throttle_duration_sec=1.0)
-            return False
-        if self.use_landmark_calibration and self.landmarks and not self.landmark_transform_ready:
-            self.get_logger().info('Waiting for landmark-based camera_to_map transform...', throttle_duration_sec=1.0)
             return False
 
         tag_x, tag_y, tag_yaw = self.latest_robot_tag_pose_map
@@ -598,7 +555,8 @@ class TagOdomFusionLandmarksNode(Node):
         return False
 
     def update(self):
-        # Update camera->map from landmarks first, then refresh robot tag pose if raw tag exists.
+        # Accept the startup lock first, then convert the robot pose using
+        # that same immutable transform before any fusion initialization.
         self.update_camera_to_map_from_landmarks()
 
         robot_raw = self.latest_tag_raw.get(self.robot_tag_child_frame)
