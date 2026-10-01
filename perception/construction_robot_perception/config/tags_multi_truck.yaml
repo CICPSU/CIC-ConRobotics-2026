@@ -37,5 +37,5 @@
           "tag36h11_18"
         ]
 
-      # Truck and Excavator tags are 8.0 cm. Landmark tags are 10.8 cm.
-      sizes: [0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.108, 0.108, 0.108]
+      # Truck and Excavator tags are 8.0 cm. Landmark tags are 13.4 cm.
+      sizes: [0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.080, 0.134, 0.134, 0.134]
