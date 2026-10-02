@@ -256,7 +256,7 @@ source network/setup_zenoh.sh client ros-backup-pc
 Create a new file: (You can copy/paste and rename the existing file as shown below)
 
 ```text
-~/ws_conrobotics/lab02/GroupX_onejoint_trajectory.yaml
+~/ws_conrobotics/CIC-ConRobotics-2026/labs/lab02_ros_excavator/GroupX_onejoint_trajectory.yaml
 ```
 
 Start with **one joint only**.
@@ -340,21 +340,26 @@ source network/setup_zenoh.sh client ros-backup-pc
 rqt_graph
 ```
 
-Run your one-joint trajectory again while `rqt_graph` is open.
-
-Look for the trajectory client and the excavator controller.
-
 Take a screenshot.
 
 Save it as:
 
 ```text
-groupX_graph_one_joint.png
+groupX_graph.png
 ```
 
 rqt-graph
 <img src="images/rqt.png" width="900">
 
+**Hit refresh on rqt_graph while the joint is moving.** Take a screenshot.
+
+Save it as:
+
+```text
+groupX_graph_action.png
+```
+
+Compare the two and see the difference.
 
 ---
 
@@ -501,23 +506,7 @@ Watch the complete excavation motion.
 
 ---
 
-# Part 8 — Compare the ROS Graph
-
-Open `rqt_graph` again and run the four-joint trajectory.
-
-Take another screenshot.
-
-Save it as:
-
-```text
-groupX_graph_four_joints.png
-```
-
-Compare it with your first graph.
-
----
-
-# Part 9 — Final Excavation Motion
+# Part 8 — Final Excavation Motion
 
 Create a short final motion that includes:
 
@@ -540,8 +529,8 @@ Submit **one set per group**:
 
 - Short video of the final excavation motion
 - `your_final_trajectory.yaml`
-- `groupX_graph_one_joint.png`
-- `groupX_graph_four_joints.png`
+- `groupX_graph.png`
+- `groupX_graph_action.png`
 
 
 ---
