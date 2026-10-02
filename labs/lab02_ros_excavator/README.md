@@ -74,7 +74,6 @@ Wait until the build completes successfully.
 
 If the build fails, stop here and ask the instructor.
 
-<img src="images/step01_show_apps.png" width="900">
 
 
 ### Checkpoint
@@ -152,7 +151,7 @@ ros2 launch construction_site_control \
   excavators:=excavator3 \
   start_scenario_manager:=false
 ```
-
+<img src="images/step3-5.png" width="900">
 ---
 
 ## Step 6 — Start Your Excavator
@@ -177,7 +176,6 @@ ros2 launch excavator_control \
   mode:=pi \
   robot_name:=excavator3
 ```
-
 Keep this terminal running.
 
 You would need to enter password for running sudo. Ask the instructor for the password.
@@ -187,7 +185,7 @@ Wait until the excavator completes startup.
 Do not send a trajectory while the robot is still initializing.
 
 Screen shot with two ROS terminals and one Pi terminal.
-<img src="images/step01_show_apps.png" width="900">
+<img src="images/step3-6.png" width="900">
 
 
 ---
@@ -207,12 +205,12 @@ source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 source network/setup_zenoh.sh client ros-pc
 ```
-
+<img src="images/step4-7.png" width="900">
 ---
 
 ## Step 7 — Create a One-Joint Trajectory
 
-Create a new file:
+Create a new file: (You can copy/paste and rename the existing file as shown below)
 
 ```text
 ~/ws_conrobotics/lab02/GroupX_onejoint_trajectory.yaml
@@ -235,7 +233,11 @@ waypoints:
       arm: 80.0
 
 ```
-
+<img src="images/step7-1.png" width="900">
+<img src="images/step7-2.png" width="900">
+<img src="images/step7-3.png" width="900">
+<img src="images/step7-4.png" width="900">
+<img src="images/step7-5.png" width="900">
 Use only a **small movement** for your first test.
 
 Save the file.
@@ -249,7 +251,7 @@ From the ROS PC terminal, run:
 ```bash
 ros2 run construction_site_control \
   excavator_task_client \
-  ~/ws_conrobotics/lab02/groupX_onejoint_trajectory.yaml \
+  ~/ws_conrobotics/CIC-ConRobotics-2026/labs/lab02_ros_excavator/GroupX_onejoint_trajectory.yaml \
   --robot excavator3 \
   --seconds-per-waypoint 5.0
 ```
@@ -262,7 +264,7 @@ Only the joint listed in the YAML file should be commanded.
 
 
 Screeshot
-<img src="images/step01_show_apps.png" width="900">
+<img src="images/step8.png" width="900">
 
 ### Checkpoint
 
@@ -301,7 +303,7 @@ groupX_graph_one_joint.png
 ```
 
 rqt-graph
-<img src="images/step01_show_apps.png" width="900">
+<img src="images/rqt.png" width="900">
 
 
 ---
@@ -336,12 +338,25 @@ waypoints:
 
 Every waypoint must contain a position for **both joints**.
 
+Refer to the pictures below for the ranges of each joint
+<img src="images/arm.png" width="900">
+<img src="images/bucket.png" width="900">
+<img src="images/boom.png" width="900">
+
+
+You can get your current joints angles using this ros2 topic just make sure to change Excavator 3 to your assigned Excavator# (Run it on ROS-PC)
+
+```bash
+ros2 topic echo /excavator3/joint_states --once | python3 -c "import sys,yaml,math; m=next(yaml.safe_load_all(sys.stdin)); print('\nJOINT ANGLES\n' + '\n'.join(f'{n:<25} {math.degrees(p):>8.2f}°' for n,p in zip(m['name'],m['position'])))"
+```
+<img src="images/angles.png" width="900">
+
 Save the file and run the same command again:
 
 ```bash
 ros2 run construction_site_control \
   excavator_task_client \
-  ~/ws_conrobotics/lab02/groupX_two_joint_trajectory.yaml \
+  ~/ws_conrobotics/CIC-ConRobotics-2026/labs/lab02_ros_excavator/GroupX_onejoint_trajectory.yaml \
   --robot excavator3 \
   --seconds-per-waypoint 5.0
 ```
@@ -474,7 +489,7 @@ Submit **one set per group**:
 
 - Short video of the final excavation motion
 - `your_final_trajectory.yaml`
-- `graph_one_joint.png`
+- `groupX_graph_one_joint.png`
 - `groupX_graph_four_joints.png`
 
 
