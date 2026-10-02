@@ -50,7 +50,7 @@ git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
 cd CIC-ConRobotics-2026
 ```
 
-This intentionally removes the old course repository from the Excavator Pi and downloads a clean copy.
+This intentionally removes the old course repository from the ROS-PC and downloads a clean copy.
 
 > ⚠️ Make sure you are working on your assigned **ROS-PC** before running these commands.
 
@@ -122,7 +122,9 @@ Think about:
 
 ## Step 5 — Activate the Perception System
 
-Start zenoh on the **first terminal**. This is an example from the ros-pc. Keep this running.
+Start Zenoh on the **first terminal**. Keep this terminal running.
+
+If you are using **ROS-PC**, run:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -132,6 +134,17 @@ source network/setup_zenoh.sh router ros-pc
 ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
+If you are using **ROS-Backup-PC**, run:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh router ros-backup-pc
+ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+> Use your assigned ROS PC as the Zenoh router for this lab.
 
 The excavator uses the overhead camera and AprilTag system for **Swing feedback**.
 
@@ -152,6 +165,25 @@ ros2 launch construction_site_control \
   start_scenario_manager:=false
 ```
 <img src="images/step3-5.png" width="900">
+
+
+If you are using **ROS-Backup-PC**, use `ros-backup-pc` instead:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-backup-pc
+
+ros2 launch construction_site_control \
+  command_center.launch.py \
+  excavators:=excavator3 \
+  start_scenario_manager:=false
+```
+
+
+
 ---
 
 ## Step 6 — Start Your Excavator
@@ -194,18 +226,29 @@ Screen shot with two ROS terminals and one Pi terminal.
 
 You will now send trajectories from the **ROS-PC**.
 
-Run below on the **thrid terminal on ROS-PC**.
+Run below on the **third terminal on ROS-PC**.
 
 Run:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 source network/setup_zenoh.sh client ros-pc
 ```
 <img src="images/step4-7.png" width="900">
+
+
+If you are using **ROS-Backup-PC**, use:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-backup-pc
+```
+
+
 ---
 
 ## Step 7 — Create a One-Joint Trajectory
@@ -221,8 +264,8 @@ Start with **one joint only**.
 Example is shown here ~/ws_conrobotics/CIC-ConRobotics-2026/labs/lab02_ros_excavator/excavator_lab02_one_joint.yaml:
 
 ```yaml
-ttrajectory_name: excavator_lab02_move_arm
-description: Small arm move neat the Excavator's initial pose.
+trajectory_name: excavator_lab02_move_arm
+description: Small arm move r the Excavator's initial pose.
 
 joints:
   - arm
@@ -246,7 +289,7 @@ Save the file.
 
 ## Step 8 — Run the One-Joint Trajectory
 
-From the ROS PC terminal, run:
+Run below on the **third terminal on ROS-PC**:
 
 ```bash
 ros2 run construction_site_control \
@@ -278,15 +321,22 @@ Screeshot
 
 ## Step 9 — Open `rqt_graph`
 
-On the **Forth terminal of the ROS-PC**, open a terminal and use the same ROS 2 / Zenoh setup:
+On the **Fourth terminal of the ROS-PC**, open a terminal and use the same ROS 2 / Zenoh setup:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
-
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 source network/setup_zenoh.sh client ros-pc
+rqt_graph
+```
+If you are using **ROS-Backup-PC**, use:
 
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-backup-pc
 rqt_graph
 ```
 
@@ -346,6 +396,8 @@ Refer to the pictures below for the ranges of each joint
 
 You can get your current joints angles using this ros2 topic just make sure to change Excavator 3 to your assigned Excavator# (Run it on ROS-PC)
 
+Run below on the **fourth terminal on ROS-PC**:
+
 ```bash
 ros2 topic echo /excavator3/joint_states --once | python3 -c "import sys,yaml,math; m=next(yaml.safe_load_all(sys.stdin)); print('\nJOINT ANGLES\n' + '\n'.join(f'{n:<25} {math.degrees(p):>8.2f}°' for n,p in zip(m['name'],m['position'])))"
 ```
@@ -373,7 +425,6 @@ For Swing:
 Choose a target that does not require rotating beyond this range.
 Use a clearly visible but safe movement approved by the instructor.
 
-```
 
 ### Checkpoint
 
@@ -433,7 +484,7 @@ Example is shown here: ~/ws_conrobotics/CIC-ConRobotics-2026/labs/lab02_ros_exca
 
 ## Step 12 — Run the Four-Joint Trajectory
 
-Run the same trajectory command:
+Run the same trajectory command on the **third terminal on ROS-PC**:
 
 ```bash
 ros2 run construction_site_control \
