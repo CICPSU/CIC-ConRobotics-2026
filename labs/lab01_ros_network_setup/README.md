@@ -504,14 +504,39 @@ You should see your active remote connection.
 > **Note:** The screenshot may show an older ROS PC name.
 > For this course, use `ROS-PC` or `ROS-Backup-PC`.
 
-### Checkpoint
+### 7. Configure SSH Access to Your Assigned Raspberry Pi
 
+You will also use VS Code Remote SSH to connect directly to your assigned Raspberry Pi.
+
+Your instructor will assign a robot to your group, for example:
+
+```text
+excavator3
+```
+
+On **your laptop**, copy your SSH key to your assigned Raspberry Pi:
+
+```bash
+ssh-copy-id besure@IP_OF_YOUR_ASSIGNED_ROBOT
+```
+
+If a password is requested, use the Raspberry Pi password provided by the instructor.
+
+> **Windows users:** Run `ssh-copy-id` from **Git Bash**.
+
+After the key is copied, test the connection in **remote ssh on VS Code**. **Make sure you added the RaspberryPi on your configuration file.**
+
+You can now connect to the Raspberry Pi.
+
+### Checkpoint
 - [ ] Remote - SSH is installed.
 - [ ] Your assigned ROS PC appears in the host list.
-- [ ] You can connect to it.
-- [ ] VS Code shows an active remote connection.
+- [ ] You can connect to the ROS PC.
+- [ ] Your assigned Raspberry Pi appears in the host list.
+- [ ] You can connect to your assigned Raspberry Pi.
+- [ ] VS Code shows the correct active remote connection.
 
-> Even though VS Code is displayed on your laptop, commands in this VS Code window are now running on the **ROS PC**.
+> Even though VS Code is displayed on your laptop, commands in a Remote SSH window are running on the **remote computer shown in the bottom-left corner of VS Code**.
 
 ---
 
