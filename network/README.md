@@ -124,7 +124,7 @@ The general process is:
 1. Obtain the Raspberry Pi's **MAC address**.
 2. Register the device on the **IoT network**.
 3. Obtain the **fixed IP address assigned by the IoT network**.
-4. On the computer that will operate the robot, allow firewall access to the assigned fixed IP address as required. This requires higher authentification from IT personnel.
+4. On the computer that will operate the robot, allow firewall access to the assigned fixed IP address as required. This requires higher authentication from IT personnel.
 5. Add the new device profile and assigned IP address to:
 
 ```text
@@ -219,21 +219,9 @@ Check, in this order:
 5. The SSH service is running on the Raspberry Pi.
 6. The robot is reachable over the network.
 
-If local access to the Raspberry Pi is available:
-
-```bash
-sudo systemctl status ssh
-```
-
-and, if necessary:
-
-```bash
-sudo systemctl enable --now ssh
-```
-
 ---
 
-# 6. Standard Zenoh Architecture
+# 5. Standard Zenoh Architecture
 
 
 The physical platform uses:
@@ -351,6 +339,8 @@ is equivalent to:
 ```bash
 source network/setup_zenoh.sh client excavator3 ros-pc
 ```
+> ⚠️ When `ros-backup-pc` is the active router, do **not** omit the second argument. Every client must explicitly specify `ros-backup-pc`.
+
 
 ---
 
@@ -358,7 +348,7 @@ source network/setup_zenoh.sh client excavator3 ros-pc
 
 Only one Zenoh router should normally be running.
 
-## 6.1 Primary Router — ROS PC
+## 7.1 Primary Router — ROS PC
 
 **Machine:** `ros-pc`
 
@@ -375,7 +365,7 @@ source network/setup_zenoh.sh router ros-pc
 ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
-## 6.2 Backup Router — Backup ROS PC
+## 7.2 Backup Router — Backup ROS PC
 
 **Machine:** `ros-backup-pc`
 
@@ -423,7 +413,7 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-source network/setup_zenoh.sh client ros-backup-pc
+source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
 ```
 
 A ROS application running on the active router host connects to its local router through:
@@ -470,7 +460,7 @@ ros-backup-pc
     └── active router
 ```
 
-## 8.1 Primary Router
+## 9.1 Primary Router
 
 When `ros-pc` is active:
 
@@ -488,7 +478,7 @@ Explicitly specifying the default router is also valid:
 source network/setup_zenoh.sh client excavator3 ros-pc
 ```
 
-## 8.2 Backup Router
+## 9.2 Backup Router
 
 When `ros-backup-pc` is active:
 
