@@ -317,10 +317,10 @@ joint_control:
 
     far_error_deg: 30.0
     far_pwm: 255
-    near_pwm: 255
+    near_pwm: 100
 
-    stop_tolerance_rad: 0.1396  # 8 degrees
-    tolerance_rad: 0.2618       # 15 degrees
+    stop_tolerance_rad: 0.0349  # 5 degrees
+    tolerance_rad: 0.1745       # 10 degrees
 
     pulse_err_deg: 30.0
     pulse_on_cycles: 2
