@@ -174,7 +174,7 @@ cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-source network/setup_zenoh.sh client ros-backup-pc
+source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
 
 ros2 launch construction_site_control \
   command_center.launch.py \
@@ -194,6 +194,8 @@ The example below uses `excavator3`.
 
 Replace `excavator3` with your assigned excavator name if needed.
 
+If your group is using **ROS-PC as the Zenoh router**, run the following on the **Excavator Pi**:
+
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 
@@ -208,6 +210,25 @@ ros2 launch excavator_control \
   mode:=pi \
   robot_name:=excavator3
 ```
+
+If your group is using **ROS-Backup-PC as the Zenoh router**, run the following on the **Excavator Pi**:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client excavator3 ros-backup-pc
+
+sudo pigpiod
+
+ros2 launch excavator_control \
+  excavator.launch.py \
+  mode:=pi \
+  robot_name:=excavator3
+```
+
+
 Keep this terminal running.
 
 You would need to enter password for running sudo. Ask the instructor for the password.
@@ -245,7 +266,7 @@ If you are using **ROS-Backup-PC**, use:
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-source network/setup_zenoh.sh client ros-backup-pc
+source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
 ```
 
 
@@ -336,7 +357,7 @@ If you are using **ROS-Backup-PC**, use:
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-source network/setup_zenoh.sh client ros-backup-pc
+source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
 rqt_graph
 ```
 
