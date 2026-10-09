@@ -1,305 +1,122 @@
-# Lab 04 — Integrating an Excavator and Dump Truck
+# Lab 04 — ROS 2 Excavation and Hauling
 
-In Lab 01, you established ROS 2 communication across computers using Zenoh. In Lab 02, you sent a YAML trajectory to a model excavator. In Lab 03, you sent a waypoint task to a dump truck. This lab connects the two robots through the **Command Center**.
+In this lab, your team will create a construction scenario using **one excavator and one dump truck**.
 
-You will run the same two types of robot task in two ways:
+The truck begins at the loading position. The excavator digs, loads the truck, and moves its bucket clear. **Only after the excavator trajectory succeeds will the truck drive to the hauling destination.**
 
-| Scenario | What happens? | When is it finished? |
-| --- | --- | --- |
-| **Sequential** | Truck 1 finishes its waypoint task; then Excavator 3 starts its trajectory. | Both Actions succeed in order. |
-| **Parallel** | The truck task and excavator trajectory start in the same parallel block. | Both child Actions succeed. |
+You will:
 
-**Estimated time: 30 minutes. Work with your assigned group.**
+1. Prepare your assigned robot pair and ROS PC.
+2. Start the Command Center and check both robots.
+3. Prepare and test an excavation-and-loading trajectory.
+4. Prepare and test a truck route.
+5. Combine the two tasks in a scenario YAML.
+6. Observe the ROS 2 system and record the complete operation.
 
-By the end of this lab, you will be able to:
-
-- distinguish a truck waypoint task from an excavator trajectory in a scenario YAML
-- explain the difference between **task after task** and **parallel** execution
-- launch a scenario using the Command Center
-- use the terminal output and physical robots to tell when each task started and completed
-
-> **Instructor preparation:** Start or verify the one shared Zenoh router, both robot Pis, and one Command Center with `start_scenario_manager:=false` before the 30-minute activity. Have Truck 1 localized, Excavator 3 reporting `READY`, and the shared camera/AprilTag setup working. Precheck the two task files and the physical paths **separately and together**. See the setup appendix for exact commands.
-
-| Your station | Instructor fills in |
-| --- | --- |
-| ROS PC and assigned robot pair | __________ |
-| Truck route approved for both runs | __________ |
-| Excavator trajectory approved for both runs | __________ |
-| Start positions and space between robot work areas | __________ |
-| Stop/power cutoff procedure | __________ |
-
-The supplied example scenarios use `truck1_waypoints3.yaml` and `excavator3_excavation_cycle_test.yaml`, which already exist in the course repository. **Their presence does not by itself validate their physical use in your station.** If you used different, validated files in Labs 02 and 03, replace the two `task_file` values in **both** scenario files with those filenames before running.
-
----
-
-# Part A — Identify What the Command Center Will Run
-
-## Step 1 — Confirm the Starting Conditions (4 minutes)
-
-Look at the physical robots and the instructor's station card. Confirm:
-
-- [ ] The truck starts where its validated route expects it and localization is current.
-- [ ] The excavator has completed initialization and reports `READY`.
-- [ ] The overhead camera sees the required AprilTags.
-- [ ] The truck route stays clear of the excavator and everyone around it.
-- [ ] The group's stop procedure is understood.
-
-Open a **ROS PC** terminal, not a Raspberry Pi terminal. As in the previous labs, load ROS 2, your workspace, and the Zenoh client:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_zenoh.sh client ros-pc
-echo "$RMW_IMPLEMENTATION"
-```
-
-Expected: `rmw_zenoh_cpp`. The instructor will confirm both robots and their Actions are available before scenario execution:
+The task you are going to execute is:
 
 ```text
-/truck1/execute_robot_task
-/excavator3/upper_arm_controller/follow_joint_trajectory
+Truck waiting at the loading position
+                  ↓
+Excavator: dig → lift → load truck → clear truck
+                  ↓
+Excavator Action succeeds
+                  ↓
+Truck: follow hauling waypoints → stop
+                  ↓
+Scenario complete
 ```
 
-> The truck uses `ExecuteRobotTask` with a waypoint YAML. The excavator uses `FollowJointTrajectory` with a joint trajectory YAML. The scenario tells the Command Center **which task to send to which robot and when**.
-
-<!-- INSERT IMAGE: images/step01_two_robots.png
-Photo of Truck 1 and Excavator 3 in their approved separate work areas.
-Label truck route and excavator working area; use actual course equipment. -->
-
-### Checkpoint — Ready to Start
-
-- [ ] We can point to both robots and their separate work areas.
-- [ ] We know which Action belongs to each robot.
+The required scenario ends when the truck reaches its destination and stops. Truck-bed dumping and a return trip are optional extensions after the basic scenario works.
 
 ---
 
-# Part B — Task After Task
+# Part 1 — Prepare Your Robot Pair
 
-## Step 2 — Read the Sequential Scenario (5 minutes)
+## Step 1 — Connect to Your Assigned Robots
 
-In a **ROS PC** terminal, create your group's copy. Replace `group1` with your assigned group number:
+Use VS Code Remote SSH as in the previous labs. Open connections to the ROS PC, the Excavator Pi, and the Dump Truck Pi.
 
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-cp operations/scenarios/lab04_sequential.yaml \
-  operations/scenarios/lab04_group1_sequential.yaml
-```
+The examples use these names:
 
-Open your new file in VS Code. The example contains two top-level steps:
-
-```yaml
-scenario_name: lab04_truck_then_excavator
-
-steps:
-  - id: truck1_route_first
-    type: task
-    robot: truck1
-    task_type: waypoint
-    task_file: truck1_waypoints3.yaml
-
-  - id: excavator3_cycle_after_truck
-    type: excavator_trajectory
-    robot: excavator3
-    task_file: excavator3_excavation_cycle_test.yaml
-    seconds_per_waypoint: 5.0
-```
-
-Before you run it, make a group copy in `operations/scenarios/` with a unique name, such as `lab04_group1_sequential.yaml`. Edit only the `scenario_name`, step `id` values if desired, and the two `task_file` values if your validated Lab 02/03 files have different names.
-
-**Read the indentation:** Both `- id:` lines are directly under `steps:`. They are separate steps. The Scenario Manager waits for the first Action to **succeed** before starting the second. If the first fails, the scenario aborts.
-
-Which robot should move first? `__________`
-What must happen before the other robot starts? `__________`
-
-<!-- INSERT IMAGE: images/step02_sequential_yaml.png
-VS Code screenshot showing the two top-level steps and task_file lines. -->
-
-### Checkpoint — Sequential YAML
-
-- [ ] The first step names `truck1` and a validated waypoint task.
-- [ ] The second step names `excavator3` and a validated trajectory.
-- [ ] Both referenced files exist on the ROS PC under their respective `operations/` folders.
-
-## Step 3 — Run the Sequential Scenario (5 minutes)
-
-The instructor's Command Center stays running without an automatic scenario. When the instructor confirms the space is clear, open a **second ROS PC terminal** for the Scenario Manager:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_zenoh.sh client ros-pc
-
-ros2 run construction_site_control scenario_manager_node \
-  --ros-args \
-  -p scenario:=operations/scenarios/lab04_group1_sequential.yaml \
-  -p trucks:=truck1
-```
-
-Replace `lab04_group1_sequential.yaml` with your **actual group filename**. The Scenario Manager starts its scenario automatically, so check the work area **before pressing Enter**. Keep this terminal open and observe both robots. The Command Center, router, and robot Pi processes stay running separately.
-
-Look for `SCENARIO START`, a truck task, an excavator trajectory, and finally `SCENARIO COMPLETE`. Note the order in which the two robot tasks begin. If you see `SCENARIO ABORTED`, stop and ask the instructor to check the failed step before trying again.
-
-Take a screenshot named `lab04_sequential_log.png` showing the task order and result. A short video may help you compare the two runs.
-
-<!-- INSERT IMAGE: images/step03_sequential_log.png
-Actual ROS PC terminal screenshot showing distinct truck and excavator steps
-and SCENARIO COMPLETE; crop to keep step IDs readable. -->
-
-### Checkpoint — Sequential Run
-
-- [ ] The truck's Action began first.
-- [ ] The excavator began only after the truck succeeded.
-- [ ] The terminal reported `SCENARIO COMPLETE`.
-
----
-
-# Part C — Run Both Robot Tasks in Parallel
-
-## Step 4 — Read and Prepare the Parallel Scenario (4 minutes)
-
-Make your group's parallel copy on the **ROS PC** (again, replace `group1`):
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-cp operations/scenarios/lab04_parallel.yaml \
-  operations/scenarios/lab04_group1_parallel.yaml
-```
-
-Open the copy in VS Code. Use the **same validated task files** as in Step 2.
-
-```yaml
-scenario_name: lab04_truck_and_excavator_parallel
-
-steps:
-  - id: truck_and_excavator_together
-    type: parallel
-    tasks:
-      - id: truck1_parallel_route
-        type: task
-        robot: truck1
-        task_type: waypoint
-        task_file: truck1_waypoints3.yaml
-
-      - id: excavator3_parallel_cycle
-        type: excavator_trajectory
-        robot: excavator3
-        task_file: excavator3_excavation_cycle_test.yaml
-        seconds_per_waypoint: 5.0
-```
-
-Here there is **one top-level step** of type `parallel`. Its `tasks:` list contains one child for each robot. The Scenario Manager starts both child Actions and waits for **both** results. “Parallel” means the tasks overlap in time; the joints of the excavator itself may still move in sequence.
-
-The two robots must stay in **separate, checked work areas**. Parallel execution alone does not coordinate collision avoidance. If either child fails, do not assume the other robot stopped immediately; follow the station's stop procedure.
-
-<!-- INSERT IMAGE: images/step04_parallel_yaml.png
-VS Code screenshot highlighting the parent type: parallel, child tasks,
-and the distinct robot fields. -->
-
-### Checkpoint — Parallel YAML
-
-- [ ] There is one `type: parallel` parent under `steps:`.
-- [ ] Its `tasks:` list contains exactly one truck and one excavator child.
-- [ ] Both children reference validated task files.
-
-## Step 5 — Reset and Run the Parallel Scenario (6 minutes)
-
-After `SCENARIO COMPLETE` appears, stop **only the previous Scenario Manager** with `Ctrl + C`. Leave the Command Center, shared Zenoh router, and robot Pis running. Do not start a second Scenario Manager while the first remains active.
-
-With the instructor, return the truck to a valid starting position for its waypoint route. Confirm its localization again. Check the excavator's actual pose and `READY` status, and recheck the two work areas.
-
-From the **ROS PC Scenario Manager terminal**, run:
-
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_zenoh.sh client ros-pc
-
-ros2 run construction_site_control scenario_manager_node \
-  --ros-args \
-  -p scenario:=operations/scenarios/lab04_group1_parallel.yaml \
-  -p trucks:=truck1
-```
-
-Replace the group filename with yours. **The scenario starts automatically**, so only press Enter after the instructor confirms that both robots are ready and the paths are clear.
-
-Watch for `PARALLEL START` and two child tasks. The parallel step finishes only after both child results succeed; then look for `PARALLEL COMPLETE` and `SCENARIO COMPLETE`.
-
-Save a screenshot named `lab04_parallel_log.png` showing the parallel block and results. Film a short clip that includes **both robots in one frame** so their overlapping motion is visible.
-
-<!-- INSERT IMAGE: images/step05_parallel_log.png
-Actual terminal output showing PARALLEL START, both child IDs,
-PARALLEL COMPLETE, and SCENARIO COMPLETE. -->
-
-### Checkpoint — Parallel Run
-
-- [ ] Both tasks were started under the same parallel block.
-- [ ] Both robots visibly carried out their individual tasks.
-- [ ] The manager waited for both to succeed.
-
----
-
-# Part D — Compare and Submit
-
-## Step 6 — Explain the Difference (3 minutes)
-
-Complete this comparison with your group:
-
-| Observation | Sequential | Parallel |
+| Component | Example | Your assignment |
 | --- | --- | --- |
-| When did the excavator task start relative to the truck task? | | |
-| How many top-level `steps` did the YAML contain? | | |
-| What had to succeed before the scenario completed? | | |
+| Active ROS PC / Zenoh router | `ros-pc` | __________ |
+| Excavator | `excavator3` | __________ |
+| Dump Truck | `dumptruck1` | __________ |
+| Group label | `GroupX` | __________ |
 
-**Question:** If Truck 1's Action fails during the sequential scenario, will the excavator task start? What must your group do if one robot has a problem during the parallel scenario?
+Replace these names consistently throughout the commands and YAML files. **`dumptruck1` is the network profile; `truck1` is the ROS robot name.**
 
-Submit **one set per group**:
+Keep separate terminals for these jobs:
 
-- your `lab04_group1_sequential.yaml` and `lab04_group1_parallel.yaml` (use your actual group filenames)
-- `lab04_sequential_log.png` and `lab04_parallel_log.png`
-- the short video showing the parallel run
-- two or three sentences answering the comparison question
+| Terminal | Computer | Job |
+| --- | --- | --- |
+| 1 | ROS PC | Zenoh router |
+| 2 | ROS PC | Command Center / Scenario Manager |
+| 3 | ROS PC | Individual tests|
+| 4 | ROS PC | Comuncation Checks, etc. |
+| 1 | Excavator Pi | Excavator control |
+| 1 | Dump Truck Pi | Truck hardware |
 
-### Before You Leave
+If the instructor has already started the router or Command Center, use those running services. Do not start duplicate copies.
 
-Stop your group's Scenario Manager with `Ctrl + C` when the run is complete. The instructor will manage the Command Center and robot power. **Do not stop the shared Zenoh router** while another group is using it.
+## Step 2 — Prepare and Build the Repository
+
+Check the existing repository:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+```
+
+If the repository is not installed yet, clone it once instead:
+
+```bash
+mkdir -p ~/ws_conrobotics
+cd ~/ws_conrobotics
+git clone https://github.com/CICPSU/CIC-ConRobotics-2026.git
+```
+
+Build on the ROS PC:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+```
+
+Wait for a successful build. 
+
+## Step 3 — Plan the Loading and Hauling Operation
+
+Sketch the construction site. Mark the excavator, digging area, parked truck, departure path, and final truck position.
+
+| Stage | Excavator | Dump truck |
+| --- | --- | --- |
+| Start | At the checked starting pose | Parked at the loading position |
+| Dig and lift | Scoops and raises its bucket | Remains stationary |
+| Load | Positions and empties its bucket over the truck bed | Remains stationary |
+| Clear | Moves the bucket and arm out of the departure path | Remains stationary |
+| Haul | Holds its final pose | Drives through the route and stops |
+
+For the rehearsal, demonstrate the motions with an empty bucket. 
+The excavator trajectory must finish with the truck's departure path clear. The software does not measure whether the truck is loaded or whether the bucket is clear; your team must establish those conditions through the tested motion.
+
+### Checkpoint
+
+- [ ] We have one assigned excavator and one assigned truck.
+- [ ] We can identify the correct computer for every terminal.
+- [ ] The ROS PC build completed successfully.
+- [ ] We have agreed on the loading position, hauling destination, and station stop procedure.
 
 ---
 
-# Lab Complete
+# Part 2 — Start the ROS 2 System
 
-You used one Command Center and two robot Actions to run two scheduling patterns. The truck's waypoint task and the excavator's joint trajectory remained the same; the scenario YAML determined whether the tasks ran **one after the other** or **at the same time**. Later, you can add conditions or other tasks to build a larger site scenario.
+## Step 4 — Start the Zenoh Router
 
-<!-- INSTRUCTOR IMAGE CHECKLIST
-Before distributing this README, capture real course screenshots and replace the comments:
-<img src="images/step01_two_robots.png" width="900">
-<img src="images/step02_sequential_yaml.png" width="900">
-<img src="images/step03_sequential_log.png" width="900">
-<img src="images/step04_parallel_yaml.png" width="900">
-<img src="images/step05_parallel_log.png" width="900">
-Match Lab 01's image width and put each image beside its corresponding step.
-Do not publish links to images that have not been captured.
--->
-
----
-
-# Instructor Setup — Before the 30-Minute Activity
-
-Use the current `command_center/README.md` for the operational sequence. Lab 04 uses **one shared router, Truck 1 Pi, Excavator 3 Pi, and one Command Center**. The example below assumes those are the assigned robots. Configure every terminal for Zenoh; keep the three underlying services running between the two student scenario runs.
-
-Before class, place the three supplied files into the course repository:
-
-| Supplied file | Repository destination |
-| --- | --- |
-| `Lab04_ROS_Integration_Draft.md` | `labs/lab04_ros_integration/README.md` |
-| `lab04_sequential.yaml` | `operations/scenarios/lab04_sequential.yaml` |
-| `lab04_parallel.yaml` | `operations/scenarios/lab04_parallel.yaml` |
-
-The student `cp` commands in Steps 2 and 4 expect these scenario files at those destinations. Capture the real lab screenshots into `labs/lab04_ros_integration/images/` before replacing the image comments above with links.
-
-### ROS PC — Router terminal
+In **Terminal 1 on the ROS PC**, run:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -309,42 +126,29 @@ source network/setup_zenoh.sh router ros-pc
 ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
-Start it only if the shared router is not already running.
+Keep this terminal running. Use the one instructor-designated router for the station.
 
-### Truck 1 Pi — Hardware terminal
+**If the assigned router is ROS-Backup-PC:** use the following setup lines in place of the corresponding Zenoh lines throughout this lab. Every client must select the same router.
 
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_zenoh.sh client dumptruck1
-sudo pigpiod
-ros2 launch dump_truck_bringup \
-  dump_truck_pi.launch.py \
-  truck_name:=truck1
-```
+| Terminal location and role | Replacement setup line |
+| --- | --- |
+| Backup PC — router | `source network/setup_zenoh.sh router ros-backup-pc` |
+| Backup PC — any client terminal | `source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc` |
+| Excavator Pi — client | `source network/setup_zenoh.sh client excavator3 ros-backup-pc` |
+| Truck Pi — client | `source network/setup_zenoh.sh client dumptruck1 ros-backup-pc` |
 
-### Excavator 3 Pi — Hardware terminal
+## Step 5 — Start the Command Center
 
-```bash
-cd ~/ws_conrobotics/CIC-ConRobotics-2026
-source /opt/ros/jazzy/setup.bash
-source install/setup.bash
-source network/setup_zenoh.sh client excavator3
-sudo pigpiod
-ros2 launch excavator_control \
-  excavator.launch.py \
-  mode:=pi \
-  robot_name:=excavator3
-```
+Make sure the overhead camera can see all three fixed floor AprilTags: **16, 17, and 18**. They must be visible together during startup so the system can register the camera to the site map.
 
-### ROS PC — Command Center terminal
+In **Terminal 2 on the ROS PC**, run:
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 source network/setup_zenoh.sh client ros-pc
+
 ros2 launch construction_site_control \
   command_center.launch.py \
   trucks:=truck1 \
@@ -352,6 +156,382 @@ ros2 launch construction_site_control \
   start_scenario_manager:=false
 ```
 
-Start the Command Center once with `start_scenario_manager:=false`, as recommended in the operating manual for validating new physical scenarios, and keep it running while students execute each YAML through `scenario_manager_node`. Do not keep two Command Center processes running. The excavator Pi waits for fresh AprilTag swing feedback before READY and does not turn swing at startup. The sample excavation cycle has fixed site-frame swing targets; inspect the measured starting heading and expected sweep before running it. Validate the assigned waypoint route and excavator trajectory individually, then inspect both physical work areas for the parallel run.
+Keep this terminal running during the setup of the individual tests. This starts shared perception, truck localization and its task server, and excavator perception. Setting `start_scenario_manager:=false` lets you check the system and test each motion before starting the combined scenario.
 
-Both example scenario YAMLs refer to existing repository filenames. If a Lab 02 or Lab 03 file uses a different name, copy that validated file into its respective `operations/excavator/trajectories/` or `operations/dump_truck/waypoints/` directory and update both scenario references. For repeated truck runs, verify the route is meaningful from **each** actual start pose; return the truck to an approved start between runs if needed. The example scenarios have been checked for YAML structure and file references, **not physically run**.
+## Step 6 — Start Both Physical Robots
+
+Clear the excavator's working area before startup; initialization can move the boom, arm, and bucket.
+
+In **Terminal 1 on the Excavator Pi**, run:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client excavator3
+sudo pigpiod
+
+ros2 launch excavator_control \
+  excavator.launch.py \
+  mode:=pi \
+  robot_name:=excavator3
+```
+
+In **Terminal 1 on the Dump Truck Pi**, run:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client dumptruck1
+sudo pigpiod
+
+ros2 launch dump_truck_bringup \
+  dump_truck_pi.launch.py \
+  truck_name:=truck1
+```
+
+Keep both terminals running. Ask the instructor for the `sudo` password if needed. If `pigpiod` is already running, use the existing daemon.
+
+The excavator needs fresh AprilTag swing feedback to finish initialization. Wait for its successful initialization / `READY` message before sending a trajectory.
+
+## Step 7 — Check Communication and Localization
+
+In **each of Terminals 3 and 4 on the ROS PC**, prepare the environment:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-pc
+```
+
+In Terminal 4, run:
+
+```bash
+ros2 action list -t
+```
+
+Find these two Actions for the example pair:
+
+```text
+/excavator3/upper_arm_controller/follow_joint_trajectory [control_msgs/action/FollowJointTrajectory]
+/truck1/execute_robot_task [construction_site_interfaces/action/ExecuteRobotTask]
+```
+
+Look for `state: LOCKED` in the status content, or `SITE REGISTRATION LOCKED` in the Command Center log. Then check the robot feedback:
+
+```bash
+ros2 topic echo /truck1/fused_odom --once
+ros2 topic echo /excavator3/joint_states --once
+```
+
+Confirm that the truck's reported pose agrees with its position on the site map and that feedback continues updating. An Action appearing in the list does not by itself prove that the robot is ready. After registration locks, temporary occlusion of the floor tags is allowed. 
+
+### Checkpoint
+
+- [ ] Both expected Actions are available.
+- [ ] The excavator completed initialization.
+- [ ] Truck site registration is locked and localization is updating.
+- [ ] The camera can observe the required robot tags.
+
+---
+
+# Part 3 — Prepare the Excavator Motion
+
+## Step 8 — Create Your Excavation-and-Loading Trajectory
+
+On the **ROS PC**, create this group file:
+
+```text
+operations/excavator/trajectories/GroupX_lab04_excavation.yaml
+```
+
+Use your tested Lab 02 four-joint trajectory as the starting point. Copy it into this location using VS Code, then adapt it to the truck's loading position.
+
+The example's angles belong to a particular setup. Inspect and adjust them for your assigned excavator and truck position **before running the copy**.
+
+Set `trajectory_name` to `GroupX_lab04_excavation`. Include all four joints:
+
+```yaml
+joints:
+  - swing
+  - boom
+  - arm
+  - bucket
+```
+
+Build a sequence with these outcomes. You may use additional waypoints to keep the bucket clear of the truck:
+
+| Suggested waypoint | Required outcome |
+| --- | --- |
+| `approach` | Bucket is positioned above the digging area |
+| `lower` | Bucket approaches the material |
+| `scoop` | Bucket and arm produce the digging motion |
+| `lift` | Bucket rises clear of the digging area |
+| `swing_to_truck` | Raised bucket moves over the parked truck bed |
+| `load_truck` | Bucket opens over the bed |
+| `clear_truck` | Bucket and arm finish outside the truck's departure path |
+
+Every waypoint must contain numeric positions for `swing`, `boom`, `arm`, and `bucket`. Trajectory values are in **degrees**; `/joint_states` reports positions in **radians**.
+
+Use the actual machine's configured joint limits. Swing targets are site-frame headings between `-180` and `180` degrees. The controller selects the shortest rotation from the measured heading; do not add `swing_direction`. Avoid an exactly 180-degree swing change, which the controller rejects as ambiguous.
+
+Check the complete swept path, including the movement from the robot's actual starting pose to the first waypoint. Recheck it when repeating a run.
+
+## Step 9 — Test the Excavator by Itself
+
+With the instructor, rehearse the trajectory independently before combining it with truck motion. Keep the truck stationary and make sure the bucket clears the truck throughout the loading motion.
+
+In **Terminal 3 on the ROS PC**, run:
+
+```bash
+ros2 run construction_site_control \
+  excavator_task_client \
+  operations/excavator/trajectories/GroupX_lab04_excavation.yaml \
+  --robot excavator3 \
+  --seconds-per-waypoint 5.0
+```
+
+Watch the whole motion and check the Action result. The final pose must let the truck leave without contacting the bucket, arm, or excavator body.
+
+`--seconds-per-waypoint` sets trajectory timing. It is not a separate timer that authorizes the truck to move.
+
+### Checkpoint
+
+- [ ] The trajectory uses the intended four joints and checked angles.
+- [ ] The excavator performs the digging and loading sequence.
+- [ ] The final pose clears the truck's departure path.
+- [ ] The individual trajectory succeeds.
+
+---
+
+# Part 4 — Prepare the Dump Truck Route
+
+## Step 10 — Create Your Hauling Waypoints
+
+On the **ROS PC**, create:
+
+```text
+operations/dump_truck/waypoints/GroupX_lab04_haul.yaml
+```
+
+Use a previously tested truck route if it fits this loading position and destination. Otherwise, create a short route with an exit point and a destination point, using the instructor's site map.
+
+The following is an **editing template**. Replace every `REPLACE_WITH_...` item with a measured numeric coordinate before testing:
+
+```yaml
+waypoints:
+  - [REPLACE_WITH_DESTINATION_X, REPLACE_WITH_DESTINATION_Y, 1]
+```
+
+| Field | Meaning |
+| --- | --- |
+| First value | Target `x` in meters in the site/map frame |
+| Second value | Target `y` in meters in the same frame |
+| Third value | Travel direction: `1` forward, `-1` reverse |
+| Fourth value | dump: `dump` |
+
+Coordinates are **absolute map positions**, not distances from the truck's current position. Choose reachable points that account for its starting heading and turning space. A waypoint list does not provide obstacle avoidance.
+
+For this first scenario, use a short hauling route that ends with the truck stopped. Do not add a fourth `dump` field unless the instructor has approved and tested that extra truck-bed operation.
+
+Record your route:
+
+| Position | x (m) | y (m) | Direction / heading note |
+| --- | --- | --- | --- |
+| Truck loading/start pose | | | |
+| Exit waypoint | | | |
+| Hauling destination | | | |
+
+## Step 11 — Test the Truck by Itself
+
+Place the excavator in its checked final clearance pose. Position the empty truck at the loading/start pose and verify its localization.
+
+In **Terminal 3 on the ROS PC**, send the truck task:
+
+```bash
+ros2 action send_goal \
+  /truck1/execute_robot_task \
+  construction_site_interfaces/action/ExecuteRobotTask \
+  "{robot_name: truck1, task_type: waypoint, task_file: GroupX_lab04_haul.yaml}" \
+  --feedback
+```
+
+This command starts truck motion. Observe its departure, turns, and final stop. Look for `success: true` in the result; a goal being accepted is only the start of the task.
+
+After the test, return the truck to the same loading position and heading using the station's approved procedure. Verify localization again. Do not rerun the route from its destination and assume it will behave the same way.
+
+### Checkpoint
+
+- [ ] Every waypoint contains numeric site coordinates and a valid direction.
+- [ ] The truck leaves the loading position without contacting the excavator.
+- [ ] It reaches the hauling destination, stops, and reports success.
+- [ ] We restored the starting conditions for the combined run.
+
+---
+
+# Part 5 — Create the Combined Scenario
+
+## Step 12 — Write the Scenario YAML
+
+On the **ROS PC**, create:
+
+```text
+operations/scenarios/GroupX_lab04_dig_then_haul.yaml
+```
+
+Paste the following, then replace the group label and robot names with your assignments:
+
+```yaml
+scenario_name: GroupX_lab04_dig_then_haul
+
+steps:
+  - id: excavate_load_and_clear
+    type: excavator_trajectory
+    robot: excavator3
+    task_file: GroupX_lab04_excavation.yaml
+    seconds_per_waypoint: 5.0
+
+  - id: haul_to_destination
+    type: task
+    robot: truck1
+    task_type: waypoint
+    task_file: GroupX_lab04_haul.yaml
+```
+
+Both `- id:` entries are at the same indentation directly under `steps:`. They execute in order.
+
+| Step | Action | Requirement for the next step |
+| --- | --- | --- |
+| `excavate_load_and_clear` | Excavator `FollowJointTrajectory` | The entire trajectory succeeds, including its clearance pose |
+| `haul_to_destination` | Truck `ExecuteRobotTask` | The route succeeds; the scenario can then complete |
+
+If the excavator Action fails or its goal is rejected, the Scenario Manager aborts the sequence and does not send the truck task. If it is still waiting for the excavator result, the truck step has not started.
+
+Before continuing, confirm all three files exist on the ROS PC:
+
+```bash
+ls operations/excavator/trajectories/GroupX_lab04_excavation.yaml \
+   operations/dump_truck/waypoints/GroupX_lab04_haul.yaml \
+   operations/scenarios/GroupX_lab04_dig_then_haul.yaml
+```
+
+**Editing only these YAML files does not require rebuilding the workspace.**
+
+### Checkpoint
+
+- [ ] The excavation step appears before the hauling step.
+- [ ] The robot names match the Command Center launch arguments.
+- [ ] Both `task_file` names exactly match our tested files.
+- [ ] We can explain what authorizes the truck to start.
+
+---
+
+# Part 6 — Run the Excavation-and-Hauling Scenario
+
+## Step 13 — Check the Start and Run the Scenario
+
+Before pressing Enter, confirm:
+
+- [ ] The truck is stationary at the checked loading position and heading.
+- [ ] The excavator is ready and its actual pose is suitable for the trajectory.
+- [ ] Localization is current and the digging, loading, and departure areas are clear.
+- [ ] Both individual tests succeeded using these same files.
+- [ ] No individual task, teleoperation program, or other Scenario Manager is commanding either robot.
+
+Keep the Zenoh running on your **Terminal 1 on the ROS PC**:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh router ros-pc
+ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+Keep running **Terminal 1 on the Excavator Pi**:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client excavator3
+sudo pigpiod
+
+ros2 launch excavator_control \
+  excavator.launch.py \
+  mode:=pi \
+  robot_name:=excavator3
+```
+
+In **Terminal 1 on the Dump Truck Pi**, run:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client dumptruck1
+sudo pigpiod
+
+ros2 launch dump_truck_bringup \
+  dump_truck_pi.launch.py \
+  truck_name:=truck1
+```
+
+Return to **Terminal 2 on the ROS PC**, where the Command Center is running with `start_scenario_manager:=false`.
+
+After both individual tasks have finished and both robots are stationary, press **`Ctrl+C` in Terminal 2** to stop that Command Center. Wait for its processes to exit and the terminal prompt to return. Leave the Zenoh router in Terminal 1 and both robot Pi terminals running.
+
+In **the same Terminal 2**, restart the Command Center with the scenario enabled:
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-pc
+
+ros2 launch construction_site_control \
+  command_center.launch.py \
+  trucks:=truck1 \
+  excavators:=excavator3 \
+  start_scenario_manager:=true \
+  scenario:=GroupX_lab04_dig_then_haul.yaml
+```
+
+The `scenario` filename refers to your file in `operations/scenarios/`. Replace it and both robot names with your group's actual assignments.
+
+**This launch starts the Scenario Manager automatically inside the Command Center.** Be ready for robot motion before pressing Enter; there is no separate start prompt. The Command Center also restarts perception and localization, so watch for a new `SITE REGISTRATION LOCKED` message during startup.
+
+From this point onward, **Terminal 2 runs the Command Center with `start_scenario_manager:=true`**, including the Scenario Manager. Keep it open to monitor the complete operation. Terminal 5 is available for checks; do not start a separate Scenario Manager there.
+
+If motion is unexpected, use the station's stop procedure immediately. **Pressing `Ctrl+C` in Terminal 2 stops the Command Center and its Scenario Manager, but does not guarantee cancellation of an Action already running on a robot Pi. Make sure you kill the terminal with Ctrl+C on the Pi** Confirm both robots are stopped before resetting the setup.
+
+If Terminal 2 reports `SCENARIO ABORTED` or `SCENARIO ERROR`, identify the failed step before trying again. After `SCENARIO COMPLETE`, the Command Center remains running; the scenario does not automatically repeat.
+
+For another run, first confirm that both robots are stopped and no earlier Action remains active. Restore the checked start poses using the station's approved procedure, verify feedback, and ensure all three floor tags are visible. Then stop the Command Center with `Ctrl+C` in Terminal 2, wait for it to exit, and repeat the Step 3 launch command with `start_scenario_manager:=true`. This restarts site registration and runs the scenario from the beginning.
+
+**Record a video of your sequence** for submission.
+
+
+### Final Checkpoint
+
+- [ ] Terminal 2 is running the Command Center with `start_scenario_manager:=true` and our scenario file.
+- [ ] The excavator completed one digging-and-loading cycle.
+- [ ] The bucket cleared the departure path before the truck moved.
+- [ ] The truck started after the excavator's successful result.
+- [ ] The truck completed its route and stopped.
+- [ ] We recorded the combined operation and its log.
+
+---
+
+# Submission
+
+Submit one set per group:
+- Short video of the scenario 
+- Three yaml files: Excavation trajectory, Dump Truck Waypoints, Scenario
+
+# Before You Leave
+
+- Close all the terminal with Ctrl+C. 
+- Follow the instructor's directions.
