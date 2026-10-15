@@ -36,8 +36,9 @@ This lab uses **Truck 1** as the example.
 
 Replace `dumptruck1` and `truck1` with your assigned names throughout the lab.
 
-> **Picture placeholder:** Two VS Code windows showing the ROS PC and assigned Dump Truck Pi connections.
 
+
+<img src="images/Two_VS.png" width="900">
 ---
 
 ## Step 2 — Prepare the Workspace
@@ -100,8 +101,8 @@ The camera and wheel encoders provide information used to estimate the truck's p
 
 ROS 2 messages travel between the ROS PC and Pi through **Zenoh**, as in Lab 01.
 
-> **Picture placeholder:** A labeled photo showing the Raspberry Pi, AprilTag, left/right wheel motors, and dump bed (loading container).
 
+<img src="images/dumptruck.png" width="900">
 Before continuing, ask the instructor to show your group how to stop the truck. Only one group member should send movement commands at a time.
 
 ---
@@ -222,16 +223,6 @@ ros2 launch construction_site_control \
 
 For this lab, select only your assigned truck. Selecting several trucks together will be used in a future lab.
 
-Keep this terminal running. Wait for:
-
-```text
-SITE REGISTRATION LOCKED
-```
-
-This means the camera has been aligned with the site's coordinate system.
-
-After registration is locked, temporary blocking of the **floor tags** is allowed. Keep the **truck's tag** visible for its position measurements.
-
 Do not move the camera or fixed floor tags after registration. If either moves, stop operation and ask the instructor to update any relocated landmark coordinates and restart the full Command Center.
 
 Your terminal layout should now be:
@@ -245,8 +236,8 @@ Your terminal layout should now be:
 
 Use the same terminal layout on ROS-Backup-PC.
 
-> **Picture placeholder:** The running ROS PC and Pi terminals, including the registration message.
 
+<img src="images/Part3Step6.png" width="900">
 ---
 
 # Part 4 — Check the Truck's Position
@@ -324,7 +315,7 @@ If the position does not look correct, ask the instructor before sending a task.
 In the **ROS PC** VS Code window, create:
 
 ```text
-~/ws_conrobotics/CIC-ConRobotics-2026/operations/dump_truck/waypoints/GroupX_lab03.yaml
+~/ws_conrobotics/CIC-ConRobotics-2026/labs/lab03_ros_dumptruck/GroupX_lab03.yaml
 ```
 
 Replace `GroupX` with your group number. Use the same filename in the command in Step 9.
@@ -356,8 +347,8 @@ The third value is a direction, not a speed or angle.
 
 Save the file. Use spaces for indentation.
 
-> **Picture placeholder:** The YAML file open in VS Code beside a labeled site photo showing A, B, and the positive x/y directions.
 
+<img src="images/Part5Step8.png" width="900">
 ---
 
 ## Step 9 — Run the Forward Movement
@@ -377,7 +368,7 @@ On **ROS PC — Terminal 3**, run:
 ros2 action send_goal \
   /truck1/execute_robot_task \
   construction_site_interfaces/action/ExecuteRobotTask \
-  "{robot_name: truck1, task_type: waypoint, task_file: '~/ws_conrobotics/CIC-ConRobotics-2026/operations/dump_truck/waypoints/GroupX_lab03.yaml'}" \
+  "{robot_name: truck1, task_type: waypoint, task_file: '~//ws_conrobotics/CIC-ConRobotics-2026/labs/lab03_ros_dumptruck/GroupX_lab03.yaml'}" \
   --feedback
 ```
 
@@ -520,8 +511,8 @@ groupX_graph_action.png
 
 Compare the screenshots. Connections may remain the same even when the messages change; a moving truck does not necessarily create new graph connections.
 
-> **Picture placeholder:** Example `rqt_graph` screenshot with the assigned truck's nodes and topics labeled.
 
+<img src="images/rqt.png" width="900">
 ---
 
 # Part 9 — Final Demonstration
