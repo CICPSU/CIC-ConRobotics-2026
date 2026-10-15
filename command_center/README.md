@@ -770,6 +770,32 @@ successfully.
 ### 5.5 `condition`
 
 Waits for a supported ROS topic value to satisfy a condition.
+
+```yaml
+- id: wait_for_truck1_idle
+  type: condition
+  condition:
+    source: topic
+    topic: /truck1/status
+    msg_type: construction_site_interfaces/msg/RobotStatus
+    field: state
+    equals: idle
+    timeout: 10.0
+  then:
+    - id: truck1_is_idle
+      type: wait
+      duration: 2.0
+  else:
+    - id: truck1_not_idle
+      type: wait
+      duration: 5.0
+```
+
+This example waits up to 10 seconds for the `state` field on
+`/truck1/status` to equal `idle`. If the condition is satisfied, the
+`then` steps run; if it times out, the `else` steps run. The scenario
+continues after the selected branch completes successfully.
+
 The current Scenario Manager supports condition handling for:
 
 ```text
@@ -779,19 +805,44 @@ construction_site_interfaces/msg/RobotStatus
 
 This can be used to synchronize scenario execution with robot or system
 state.
-Use an existing scenario under `operations/scenarios/` as the template
-when creating a new condition step.
+For `std_msgs/String`, the condition compares the message's `data`
+value with `equals`; `field` is not required.
 
 ### 5.6 `topic_publish`
 
 Publishes directly to a supported ROS topic.
+
+```yaml
+- id: direct_move_truck1
+  type: topic_publish
+  topic: /truck1/cmd_vel
+  msg_type: geometry_msgs/Twist
+  duration: 1.0
+  rate_hz: 10.0
+  message:
+    linear:
+      x: 0.10
+      y: 0.0
+      z: 0.0
+    angular:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+```
+
+This example commands Truck 1 to move forward at 0.10 m/s by publishing
+to `/truck1/cmd_vel` at 10 Hz for 1 second. The Scenario Manager then
+publishes a zero-velocity `Twist` before continuing to the next step.
+
 This is useful for:
+
 - simple commands
 - integration testing
 - operations that do not require a complete Action abstraction
-Use an existing `topic_publish` scenario under `operations/scenarios/`
-as the template for the exact message definition required by the target
-topic.
+
+The current Scenario Manager supports `std_msgs/String` and
+`geometry_msgs/Twist` for direct publication. The `message` fields must
+match the selected message type.
 
 ### 5.7 Scenario Design Rules
 
