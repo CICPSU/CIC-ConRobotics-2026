@@ -173,26 +173,26 @@ joint_control:
   swing:
     position_topic: /excavator1/swing_joint_state
     # Allow brief camera/AprilTag gaps; motion stops if feedback is older.
-    sensor_timeout_sec: 1.0
+    sensor_timeout_sec: 1.5
 
     # Allowed target headings; feedback still spans the full circle.
     command_min_angle_deg: -180.0
     command_max_angle_deg: 180.0
 
     far_error_deg: 30.0
-    far_pwm: 255
-    near_pwm: 255
+    far_pwm: 200
+    near_pwm: 100
 
-    stop_tolerance_rad: 0.1396 # 8 degrees
-    tolerance_rad: 0.2618 # 15 degrees
+    stop_tolerance_rad: 0.1396  # 5 degrees
+    tolerance_rad: 0.2       # 10 degrees
 
     pulse_err_deg: 30.0
     pulse_on_cycles: 2
     pulse_off_cycles: 4
 
     # Allow camera frame gaps and swing motor startup before declaring a stall.
-    progress_timeout_sec: 1.5
-    min_progress_deg: 1.0
+    progress_timeout_sec: 3.0
+    min_progress_deg: 0.01
 
   boom:
     kp: 120.0
