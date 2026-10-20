@@ -316,19 +316,19 @@ joint_control:
     command_max_angle_deg: 180.0
 
     far_error_deg: 30.0
-    far_pwm: 255
+    far_pwm: 200
     near_pwm: 100
 
-    stop_tolerance_rad: 0.0349  # 5 degrees
-    tolerance_rad: 0.1745       # 10 degrees
+    stop_tolerance_rad: 0.2  # 5 degrees
+    tolerance_rad: 0.5       # 10 degrees
 
     pulse_err_deg: 30.0
     pulse_on_cycles: 2
     pulse_off_cycles: 4
 
     # Allow camera frame gaps and swing motor startup before declaring a stall.
-    progress_timeout_sec: 1.5
-    min_progress_deg: 1.0
+    progress_timeout_sec: 3.0
+    min_progress_deg: 0.01
 
 
   # --------------------------------------------------------------
@@ -360,7 +360,7 @@ joint_control:
     kick_pwm: 180
 
     stop_tolerance_rad: 0.1396  # 8 degrees
-    tolerance_rad: 0.2618       # 15 degrees
+    tolerance_rad: 0.5       # 15 degrees
 
 
   # --------------------------------------------------------------
@@ -376,4 +376,4 @@ joint_control:
     kick_pwm: 80
 
     stop_tolerance_rad: 0.1745  # 10 degrees
-    tolerance_rad: 0.2618       # 15 degrees
+    tolerance_rad: 0.5       # 15 degrees
