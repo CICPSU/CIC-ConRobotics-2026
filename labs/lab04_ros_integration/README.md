@@ -42,8 +42,8 @@ The examples use these names:
 | Component | Example | Your assignment |
 | --- | --- | --- |
 | Active ROS PC / Zenoh router | `ros-pc` | __________ |
-| Excavator | `excavator3` | __________ |
-| Dump Truck | `dumptruck1` | __________ |
+| Excavator | `excavatorX` | __________ |
+| Dump Truck | `dumptruckX` | __________ |
 | Group label | `GroupX` | __________ |
 
 Replace these names consistently throughout the commands and YAML files. **`dumptruck1` is the network profile; `truck1` is the ROS robot name.**
@@ -87,6 +87,7 @@ source install/setup.bash
 ```
 
 Wait for a successful build. 
+<img src="images/Step2.png" width="900">
 
 ## Step 3 — Plan the Loading and Hauling Operation
 
@@ -116,7 +117,9 @@ The excavator trajectory must finish with the truck's departure path clear. The 
 
 ## Step 4 — Start the Zenoh Router
 
-In **Terminal 1 on the ROS PC**, run:
+In **Terminal 1 on your assigned ROS PC**, run:
+
+**Option 1 — ROS-PC (Main PC)**
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -126,22 +129,27 @@ source network/setup_zenoh.sh router ros-pc
 ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
+**Option 2 — ROS-Backup-PC (Backup PC)**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh router ros-backup-pc
+ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
 Keep this terminal running. Use the one instructor-designated router for the station.
 
-**If the assigned router is ROS-Backup-PC:** use the following setup lines in place of the corresponding Zenoh lines throughout this lab. Every client must select the same router.
-
-| Terminal location and role | Replacement setup line |
-| --- | --- |
-| Backup PC — router | `source network/setup_zenoh.sh router ros-backup-pc` |
-| Backup PC — any client terminal | `source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc` |
-| Excavator Pi — client | `source network/setup_zenoh.sh client excavator3 ros-backup-pc` |
-| Truck Pi — client | `source network/setup_zenoh.sh client dumptruck1 ros-backup-pc` |
+**Choose only one option in each step.** All ROS clients and both robot Pis must use the router selected by your instructor.
 
 ## Step 5 — Start the Command Center
 
 Make sure the overhead camera can see all three fixed floor AprilTags: **16, 17, and 18**. They must be visible together during startup so the system can register the camera to the site map.
 
-In **Terminal 2 on the ROS PC**, run:
+In **Terminal 2 on your assigned ROS PC**, run:
+
+**Option 1 — ROS-PC (Main PC)**
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -151,59 +159,119 @@ source network/setup_zenoh.sh client ros-pc
 
 ros2 launch construction_site_control \
   command_center.launch.py \
-  trucks:=truck1 \
-  excavators:=excavator3 \
+  trucks:=truckX \
+  excavators:=excavatorX \
+  start_scenario_manager:=false
+```
+
+**Option 2 — ROS-Backup-PC (Backup PC)**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
+
+ros2 launch construction_site_control \
+  command_center.launch.py \
+  trucks:=truckX \
+  excavators:=excavatorX \
   start_scenario_manager:=false
 ```
 
 Keep this terminal running during the setup of the individual tests. This starts shared perception, truck localization and its task server, and excavator perception. Setting `start_scenario_manager:=false` lets you check the system and test each motion before starting the combined scenario.
-
+<img src="images/Step5.png" width="900">
 ## Step 6 — Start Both Physical Robots
 
 Clear the excavator's working area before startup; initialization can move the boom, arm, and bucket.
 
 In **Terminal 1 on the Excavator Pi**, run:
 
+**Option 1 — ROS-PC (Main PC)**
+
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-source network/setup_zenoh.sh client excavator3
+source network/setup_zenoh.sh client excavatorX
 sudo pigpiod
 
 ros2 launch excavator_control \
   excavator.launch.py \
   mode:=pi \
-  robot_name:=excavator3
+  robot_name:=excavatorX
 ```
 
-In **Terminal 1 on the Dump Truck Pi**, run:
+**Option 2 — ROS-Backup-PC (Backup PC)**
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-source network/setup_zenoh.sh client dumptruck1
+source network/setup_zenoh.sh client excavatorX ros-backup-pc
+sudo pigpiod
+
+ros2 launch excavator_control \
+  excavator.launch.py \
+  mode:=pi \
+  robot_name:=excavatorX
+```
+
+In **Terminal 1 on the Dump Truck Pi**, run:
+
+**Option 1 — ROS-PC (Main PC)**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client dumptruckX
 sudo pigpiod
 
 ros2 launch dump_truck_bringup \
   dump_truck_pi.launch.py \
-  truck_name:=truck1
+  truck_name:=truckX
+```
+
+**Option 2 — ROS-Backup-PC (Backup PC)**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client dumptruckX ros-backup-pc
+sudo pigpiod
+
+ros2 launch dump_truck_bringup \
+  dump_truck_pi.launch.py \
+  truck_name:=truckX
 ```
 
 Keep both terminals running. Ask the instructor for the `sudo` password if needed. If `pigpiod` is already running, use the existing daemon.
 
 The excavator needs fresh AprilTag swing feedback to finish initialization. Wait for its successful initialization / `READY` message before sending a trajectory.
+<img src="images/Step6.png" width="900">
 
 ## Step 7 — Check Communication and Localization
 
-In **each of Terminals 3 and 4 on the ROS PC**, prepare the environment:
+In **each of Terminals 3 and 4 on your assigned ROS PC**, prepare the environment:
+
+**Option 1 — ROS-PC (Main PC)**
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 source network/setup_zenoh.sh client ros-pc
+```
+
+**Option 2 — ROS-Backup-PC (Backup PC)**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
 ```
 
 In Terminal 4, run:
@@ -215,15 +283,15 @@ ros2 action list -t
 Find these two Actions for the example pair:
 
 ```text
-/excavator3/upper_arm_controller/follow_joint_trajectory [control_msgs/action/FollowJointTrajectory]
-/truck1/execute_robot_task [construction_site_interfaces/action/ExecuteRobotTask]
+/excavatorX/upper_arm_controller/follow_joint_trajectory [control_msgs/action/FollowJointTrajectory]
+/truckX/execute_robot_task [construction_site_interfaces/action/ExecuteRobotTask]
 ```
 
 Look for `state: LOCKED` in the status content, or `SITE REGISTRATION LOCKED` in the Command Center log. Then check the robot feedback:
 
 ```bash
-ros2 topic echo /truck1/fused_odom --once
-ros2 topic echo /excavator3/joint_states --once
+ros2 topic echo /truckX/fused_odom --once
+ros2 topic echo /excavatorX/joint_states --once
 ```
 
 Confirm that the truck's reported pose agrees with its position on the site map and that feedback continues updating. An Action appearing in the list does not by itself prove that the robot is ready. After registration locks, temporary occlusion of the floor tags is allowed. 
@@ -234,7 +302,9 @@ Confirm that the truck's reported pose agrees with its position on the site map 
 - [ ] The excavator completed initialization.
 - [ ] Truck site registration is locked and localization is updating.
 - [ ] The camera can observe the required robot tags.
-
+<img src="images/Step7.1.png" width="900">
+<img src="images/Step7.2.png" width="900">
+<img src="images/Step7.3.png" width="900">
 ---
 
 # Part 3 — Prepare the Excavator Motion
@@ -278,6 +348,7 @@ Every waypoint must contain numeric positions for `swing`, `boom`, `arm`, and `b
 Use the actual machine's configured joint limits. Swing targets are site-frame headings between `-180` and `180` degrees. The controller selects the shortest rotation from the measured heading; do not add `swing_direction`. Avoid an exactly 180-degree swing change, which the controller rejects as ambiguous.
 
 Check the complete swept path, including the movement from the robot's actual starting pose to the first waypoint. Recheck it when repeating a run.
+<img src="images/Part3-step8.png" width="900">
 
 ## Step 9 — Test the Excavator by Itself
 
@@ -289,7 +360,7 @@ In **Terminal 3 on the ROS PC**, run:
 ros2 run construction_site_control \
   excavator_task_client \
   operations/excavator/trajectories/GroupX_lab04_excavation.yaml \
-  --robot excavator3 \
+  --robot excavatorX \
   --seconds-per-waypoint 5.0
 ```
 
@@ -352,9 +423,9 @@ In **Terminal 3 on the ROS PC**, send the truck task:
 
 ```bash
 ros2 action send_goal \
-  /truck1/execute_robot_task \
+  /truckX/execute_robot_task \
   construction_site_interfaces/action/ExecuteRobotTask \
-  "{robot_name: truck1, task_type: waypoint, task_file: GroupX_lab04_haul.yaml}" \
+  "{robot_name: truckX, task_type: waypoint, task_file: GroupX_lab04_haul.yaml}" \
   --feedback
 ```
 
@@ -389,13 +460,13 @@ scenario_name: GroupX_lab04_dig_then_haul
 steps:
   - id: excavate_load_and_clear
     type: excavator_trajectory
-    robot: excavator3
+    robot: excavatorX
     task_file: GroupX_lab04_excavation.yaml
     seconds_per_waypoint: 5.0
 
   - id: haul_to_destination
     type: task
-    robot: truck1
+    robot: truckX
     task_type: waypoint
     task_file: GroupX_lab04_haul.yaml
 ```
@@ -426,6 +497,7 @@ ls operations/excavator/trajectories/GroupX_lab04_excavation.yaml \
 - [ ] Both `task_file` names exactly match our tested files.
 - [ ] We can explain what authorizes the truck to start.
 
+<img src="images/Part5-step12.png" width="900">
 ---
 
 # Part 6 — Run the Excavation-and-Hauling Scenario
@@ -440,7 +512,9 @@ Before pressing Enter, confirm:
 - [ ] Both individual tests succeeded using these same files.
 - [ ] No individual task, teleoperation program, or other Scenario Manager is commanding either robot.
 
-Keep the Zenoh running on your **Terminal 1 on the ROS PC**:
+Keep the Zenoh router running in **Terminal 1 on your assigned ROS PC**. If it is already running from Step 4, do not start another one:
+
+**Option 1 — ROS-PC (Main PC)**
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -450,33 +524,76 @@ source network/setup_zenoh.sh router ros-pc
 ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
-Keep running **Terminal 1 on the Excavator Pi**:
+**Option 2 — ROS-Backup-PC (Backup PC)**
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-source network/setup_zenoh.sh client excavator3
+source network/setup_zenoh.sh router ros-backup-pc
+ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+Keep running **Terminal 1 on the Excavator Pi**:
+
+**Option 1 — ROS-PC (Main PC)**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client excavatorX
 sudo pigpiod
 
 ros2 launch excavator_control \
   excavator.launch.py \
   mode:=pi \
-  robot_name:=excavator3
+  robot_name:=excavatorX
 ```
 
-In **Terminal 1 on the Dump Truck Pi**, run:
+**Option 2 — ROS-Backup-PC (Backup PC)**
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-source network/setup_zenoh.sh client dumptruck1
+source network/setup_zenoh.sh client excavatorX ros-backup-pc
+sudo pigpiod
+
+ros2 launch excavator_control \
+  excavator.launch.py \
+  mode:=pi \
+  robot_name:=excavatorX
+```
+
+In **Terminal 1 on the Dump Truck Pi**, run:
+
+**Option 1 — ROS-PC (Main PC)**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client dumptruckX
 sudo pigpiod
 
 ros2 launch dump_truck_bringup \
   dump_truck_pi.launch.py \
-  truck_name:=truck1
+  truck_name:=truckX
+```
+
+**Option 2 — ROS-Backup-PC (Backup PC)**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client dumptruckX ros-backup-pc
+sudo pigpiod
+
+ros2 launch dump_truck_bringup \
+  dump_truck_pi.launch.py \
+  truck_name:=truckX
 ```
 
 Return to **Terminal 2 on the ROS PC**, where the Command Center is running with `start_scenario_manager:=false`.
@@ -484,6 +601,8 @@ Return to **Terminal 2 on the ROS PC**, where the Command Center is running with
 After both individual tasks have finished and both robots are stationary, press **`Ctrl+C` in Terminal 2** to stop that Command Center. Wait for its processes to exit and the terminal prompt to return. Leave the Zenoh router in Terminal 1 and both robot Pi terminals running.
 
 In **the same Terminal 2**, restart the Command Center with the scenario enabled:
+
+**Option 1 — ROS-PC (Main PC)**
 
 ```bash
 cd ~/ws_conrobotics/CIC-ConRobotics-2026
@@ -493,8 +612,24 @@ source network/setup_zenoh.sh client ros-pc
 
 ros2 launch construction_site_control \
   command_center.launch.py \
-  trucks:=truck1 \
-  excavators:=excavator3 \
+  trucks:=truckX \
+  excavators:=excavatorX \
+  start_scenario_manager:=true \
+  scenario:=GroupX_lab04_dig_then_haul.yaml
+```
+
+**Option 2 — ROS-Backup-PC (Backup PC)**
+
+```bash
+cd ~/ws_conrobotics/CIC-ConRobotics-2026
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+source network/setup_zenoh.sh client ros-backup-pc ros-backup-pc
+
+ros2 launch construction_site_control \
+  command_center.launch.py \
+  trucks:=truckX \
+  excavators:=excavatorX \
   start_scenario_manager:=true \
   scenario:=GroupX_lab04_dig_then_haul.yaml
 ```
