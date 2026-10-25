@@ -69,13 +69,13 @@ joints:
   # --------------------------------------------------------------
 
   boom:
-    adc_channel: 2
+    adc_channel: 3
 
     min_angle_deg: -60.0
     max_angle_deg: 5.0
 
-    raw_at_min_angle: 5950
-    raw_at_max_angle: 1050
+    raw_at_min_angle: 18960
+    raw_at_max_angle: 13180
 
 
   # --------------------------------------------------------------
