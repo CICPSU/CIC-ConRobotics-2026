@@ -27,8 +27,8 @@ joints:
     adc_channel: 0
     min_angle_deg: -60.0
     max_angle_deg: 5.0
-    raw_at_min_angle: 14420
-    raw_at_max_angle: 19000
+    raw_at_min_angle: 19000
+    raw_at_max_angle: 14420
 
   arm:
     adc_channel: 2
