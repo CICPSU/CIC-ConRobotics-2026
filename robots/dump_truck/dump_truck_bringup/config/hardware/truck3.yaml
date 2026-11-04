@@ -1,7 +1,7 @@
 bucket_action_node:
   ros__parameters:
-    servo_center: 1500
-    servo_dump: 2000
+    servo_center: 1000
+    servo_dump: 1500
 
 motor_drive_node:
   ros__parameters:
